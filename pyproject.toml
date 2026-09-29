@@ -1,0 +1,28 @@
+[project]
+name = "spanish-tutor"
+version = "0.1.0"
+description = "Word-bank-constrained Spanish tutor with a comprehensible-input recommender"
+readme = "README.md"
+authors = [
+    { name = "JasonLaRuez", email = "jasonlaruez@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "langchain>=1.4.3",
+    "langchain-anthropic>=1.7.5",
+    "langchain-chroma>=1.1.0",
+    "python-dotenv>=1.2.3",
+]
+
+[project.scripts]
+spanish-tutor = "spanish_tutor:main"
+
+[build-system]
+requires = ["uv_build>=0.12.8,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.16.9",
+]

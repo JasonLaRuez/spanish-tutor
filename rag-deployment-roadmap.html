@@ -1,0 +1,490 @@
+<title>Spanish tutor roadmap</title>
+<style>
+:root{
+  --ink:#1A1D1B;
+  --ink-soft:#4B534E;
+  --ink-faint:#7A8179;
+  --paper:#F7F6F2;
+  --surface:#FFFFFF;
+  --line:#DEDBD1;
+  --line-strong:#C7C3B6;
+  --accent:#1F6F5C;
+  --accent-ink:#0F3C31;
+  --accent-soft:#DCEEE8;
+  --gap:#A8501F;
+  --gap-soft:#F5E2D4;
+  --gap-ink:#6E340F;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ink:#EDEBE4;
+    --ink-soft:#B9BEB6;
+    --ink-faint:#82897F;
+    --paper:#15181A;
+    --surface:#1D2123;
+    --line:#33383A;
+    --line-strong:#454B4D;
+    --accent:#4FAF97;
+    --accent-ink:#CDEEE3;
+    --accent-soft:#1E3831;
+    --gap:#E08A54;
+    --gap-soft:#3A2A1E;
+    --gap-ink:#F3CDA8;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --ink:#EDEBE4;
+  --ink-soft:#B9BEB6;
+  --ink-faint:#82897F;
+  --paper:#15181A;
+  --surface:#1D2123;
+  --line:#33383A;
+  --line-strong:#454B4D;
+  --accent:#4FAF97;
+  --accent-ink:#CDEEE3;
+  --accent-soft:#1E3831;
+  --gap:#E08A54;
+  --gap-soft:#3A2A1E;
+  --gap-ink:#F3CDA8;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{
+  background:var(--paper);
+  color:var(--ink);
+  font-family:'IBM Plex Sans',-apple-system,sans-serif;
+  padding:0 16px;
+  margin:0;
+}
+.wrap{max-width:720px;margin:0 auto;padding-block:2.5rem 4rem}
+.mono{font-family:'IBM Plex Mono',ui-monospace,monospace}
+h1{font-size:26px;font-weight:600;margin:0 0 .4rem;text-wrap:balance;letter-spacing:-.01em}
+h2{font-size:19px;font-weight:600;margin:0 0 .9rem;letter-spacing:-.005em}
+h3{font-size:15px;font-weight:600;margin:0 0 .3rem}
+p{line-height:1.65;color:var(--ink-soft);margin:0 0 .8rem}
+.lede{font-size:15.5px;color:var(--ink-soft);max-width:60ch;line-height:1.7}
+a{color:var(--accent-ink);text-decoration-color:var(--line-strong)}
+section{margin-top:2.75rem;padding-top:2.75rem;border-top:0.5px solid var(--line)}
+section:first-of-type{margin-top:2.25rem;padding-top:0;border-top:none}
+.eyebrow{
+  font-family:'IBM Plex Mono',monospace;
+  font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--accent-ink);background:var(--accent-soft);
+  display:inline-block;padding:3px 9px;border-radius:20px;margin-bottom:.7rem;
+}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-top:1.4rem}
+.stat{background:var(--surface);border:0.5px solid var(--line);border-radius:12px;padding:.85rem 1rem}
+.stat .n{font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:500;font-variant-numeric:tabular-nums}
+.stat .l{font-size:12px;color:var(--ink-faint);margin-top:2px}
+.progress-row{display:flex;align-items:center;gap:10px;margin-top:1.6rem}
+.progress-track{flex:1;height:6px;border-radius:4px;background:var(--line);overflow:hidden}
+.progress-fill{height:100%;background:var(--accent);width:0%;transition:width .3s ease}
+.progress-label{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--ink-faint);white-space:nowrap}
+table.gaps{width:100%;border-collapse:collapse;font-size:13.5px;margin-top:1rem}
+table.gaps th{text-align:left;font-weight:500;color:var(--ink-faint);font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;padding:0 8px 8px 0;border-bottom:0.5px solid var(--line-strong)}
+table.gaps td{padding:9px 8px 9px 0;border-bottom:0.5px solid var(--line);vertical-align:top}
+table.gaps tr:last-child td{border-bottom:none}
+.pill{display:inline-block;font-family:'IBM Plex Mono',monospace;font-size:11px;padding:2px 8px;border-radius:20px;background:var(--accent-soft);color:var(--accent-ink);white-space:nowrap}
+.objectives{list-style:none;padding:0;margin:1rem 0 0;display:flex;flex-direction:column;gap:10px}
+.objectives li{display:flex;gap:10px;align-items:flex-start;font-size:14.5px;line-height:1.55;color:var(--ink)}
+.objectives .num{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--accent-ink);background:var(--accent-soft);border-radius:6px;min-width:22px;height:22px;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px}
+.flowlabel{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-faint);margin:1.4rem 0 .5rem}
+.flowlabel:first-child{margin-top:0}
+.flow{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.flow .box{background:var(--surface);border:0.5px solid var(--line-strong);border-radius:10px;padding:.55rem .8rem;font-size:12.5px;line-height:1.35;max-width:150px}
+.flow .box.state{border-style:dashed;border-color:var(--accent)}
+.flow .box .t{font-weight:500;color:var(--ink)}
+.flow .box .s{color:var(--ink-faint);font-size:11px}
+.flow .arrow{color:var(--ink-faint);font-size:15px;flex-shrink:0}
+.flow-note{font-size:12.5px;color:var(--ink-faint);margin-top:.7rem;line-height:1.6}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-top:1.1rem}
+.card{background:var(--surface);border:0.5px solid var(--line);border-radius:12px;padding:1rem 1.1rem}
+.card.rec{border:2px solid var(--accent)}
+.card .badge{font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;background:var(--accent);color:var(--surface);padding:2px 8px;border-radius:20px;display:inline-block;margin-bottom:.5rem}
+.card .badge.warn{background:var(--gap)}
+.card p{font-size:13px;margin-bottom:.4rem}
+.card .why{font-size:12.5px;color:var(--ink-faint);border-top:0.5px solid var(--line);margin-top:.6rem;padding-top:.6rem}
+.skillgrid{display:flex;flex-direction:column;gap:14px;margin-top:1.2rem}
+.skillcard{background:var(--surface);border:0.5px solid var(--line);border-radius:12px;padding:1rem 1.15rem}
+.skillcard .head{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:.5rem;flex-wrap:wrap}
+.skillcard h3{margin:0}
+.skillcard .closes{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--gap-ink);background:var(--gap-soft);padding:2px 8px;border-radius:20px;white-space:nowrap}
+.reslist{list-style:none;padding:0;margin:.5rem 0 0;display:flex;flex-direction:column;gap:6px}
+.reslist li{font-size:13px;color:var(--ink-soft);display:flex;gap:8px}
+.reslist .rtype{font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--ink-faint);min-width:52px;flex-shrink:0;padding-top:2px}
+.phase{background:var(--surface);border:0.5px solid var(--line);border-radius:12px;padding:1.1rem 1.2rem;margin-top:14px}
+.phase .head{display:flex;align-items:baseline;gap:10px;justify-content:space-between;flex-wrap:wrap;margin-bottom:.15rem}
+.phase .name{display:flex;align-items:baseline;gap:8px}
+.phase .idx{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--accent-ink)}
+.phase .when{font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:var(--ink-faint)}
+.phase .goal{font-size:13px;color:var(--ink-faint);margin-bottom:.7rem}
+.tasks{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:7px}
+.tasks li{display:flex;align-items:flex-start;gap:9px;font-size:13.5px;line-height:1.5}
+.tasks input[type=checkbox]{margin-top:3px;width:15px;height:15px;flex-shrink:0;accent-color:var(--accent);cursor:pointer}
+.tasks label{cursor:pointer}
+.tasks input:checked + label{color:var(--ink-faint);text-decoration:line-through;text-decoration-color:var(--line-strong)}
+.callout{background:var(--gap-soft);border:0.5px solid var(--gap);border-radius:12px;padding:.95rem 1.1rem;margin-top:1.3rem}
+.callout p{color:var(--gap-ink);font-size:13.5px;margin:0 0 .5rem}
+.callout p:last-child{margin-bottom:0}
+.callout .lbl{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--gap-ink);display:block;margin-bottom:.35rem}
+.deliverables{list-style:none;padding:0;margin:1rem 0 0;display:flex;flex-direction:column;gap:8px}
+.deliverables li{font-size:14px;color:var(--ink);display:flex;gap:9px;align-items:flex-start}
+.deliverables li::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--accent);flex-shrink:0;margin-top:7px}
+footer{margin-top:3rem;padding-top:1.5rem;border-top:0.5px solid var(--line);font-size:12px;color:var(--ink-faint)}
+@media(max-width:480px){
+  .flow{flex-direction:column;align-items:stretch}
+  .flow .arrow{transform:rotate(90deg);align-self:center}
+  .flow .box{max-width:none}
+}
+</style>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+
+<div class="wrap">
+
+  <span class="eyebrow">Skill-building project</span>
+  <h1>Spanish tutor roadmap</h1>
+  <p class="lede">A word-bank-constrained Spanish tutor &mdash; conversation, lyrics, and reading skills, a topic pre-teacher, and a comprehensible-input recommender that always suggests the content requiring the fewest new words. Built to close the same four skill gaps found across the 106-posting macro analysis.</p>
+
+  <div class="stats">
+    <div class="stat"><div class="n">4</div><div class="l">gaps closed by one build</div></div>
+    <div class="stat"><div class="n">5/5</div><div class="l">title families touched</div></div>
+    <div class="stat"><div class="n">10&ndash;12</div><div class="l">weeks, part-time</div></div>
+    <div class="stat"><div class="n">9</div><div class="l">phases</div></div>
+  </div>
+
+  <div class="progress-row">
+    <span class="progress-label mono" id="progress-label">0 / 0 tasks</span>
+    <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
+  </div>
+
+  <section id="why">
+    <h2>Why this still closes the gaps</h2>
+    <p>Same four gaps as the original plan. The extra scope &mdash; three skills instead of one, plus the recommender &mdash; doesn't dilute any of them; it gives the cloud-platform and orchestration gaps a second real reason to exist.</p>
+    <div style="overflow-x:auto">
+    <table class="gaps">
+      <tr><th>Gap</th><th>Where it shows up</th><th>This project's answer</th></tr>
+      <tr><td>LLM / RAG</td><td>42&ndash;63% of DS, Applied/Research Sci, AI/ML Eng</td><td>Retrieval-grounded, vocabulary-constrained conversation, lyrics, and reading skills</td></tr>
+      <tr><td>MLOps / production deployment</td><td>33&ndash;47% of the same three</td><td>Containerized, deployed behind a real endpoint</td></tr>
+      <tr><td>Cloud / modern data platform</td><td><span class="pill">5 of 5 titles</span> &mdash; 45&ndash;55% of Data Engineer</td><td>Word bank + vector store + content-difficulty index, all hosted on a named cloud platform</td></tr>
+      <tr><td>Orchestration (Airflow/dbt)</td><td>36% of Data Engineer</td><td>Two scheduled jobs: spaced-repetition recalculation and content-difficulty re-indexing</td></tr>
+    </table>
+    </div>
+    <p style="margin-top:1.1rem">One more thread, layered on top rather than counted in the four above: <strong style="color:var(--ink);font-weight:500">SQL</strong>. It isn't a gap in the same sense &mdash; the resume already claims "working knowledge" &mdash; but it's the single most requested skill in the two data-facing title families (75% of Data Analyst postings, common in Data Engineer), and "working knowledge" undersells what actually needs to be shown. The word bank's schema, the recommender's core ranking query, and dbt's models are all SQL by construction &mdash; this project is where that claim gets real.</p>
+  </section>
+
+  <section id="objectives">
+    <h2>Objectives</h2>
+    <ol class="objectives">
+      <li><span class="num">1</span>Ship a tutor with three skills &mdash; <strong style="font-weight:500">conversation</strong> (topic-focused, pre-teaches vocabulary before it's needed), <strong style="font-weight:500">lyrics/figurative translation</strong>, and <strong style="font-weight:500">reading</strong> (short stories and sequence-aware multi-chapter books) &mdash; that you'd actually keep using after the project is "done."</li>
+      <li><span class="num">2</span>Build a real word bank: a persistent, structured store of vocabulary you've learned, read before every response and written to whenever something new gets taught.</li>
+      <li><span class="num">3</span>Build a comprehensible-input recommender: given the word bank and a set of candidate topics/songs/stories/chapters, default to whichever needs the fewest new words &mdash; unless you explicitly ask for something specific. This is a direct implementation of Krashen's i+1 hypothesis, not folk intuition about how learning works.</li>
+      <li><span class="num">4</span>Design and validate a custom evaluation framework &mdash; vocabulary adherence, teaching completeness, translation naturalness, and recommendation quality. The direct extension of the dissertation's evaluation discipline into new territory.</li>
+      <li><span class="num">5</span>Deploy it behind a containerized, real endpoint with basic observability.</li>
+      <li><span class="num">6</span>Run two scheduled jobs against real state: spaced-repetition recalculation and content-difficulty re-indexing.</li>
+      <li><span class="num">7</span>Produce a documented, public artifact &mdash; with any copyrighted lyrics or books kept private &mdash; that a resume bullet or cover-letter evidence block can honestly point to.</li>
+      <li><span class="num">8</span>Write real, demonstrable SQL throughout &mdash; schema design, the recommender's core ranking query, and dbt models &mdash; upgrading the resume's "working knowledge of SQL" into something you can actually defend in an interview.</li>
+    </ol>
+  </section>
+
+  <section id="architecture">
+    <h2>Architecture</h2>
+
+    <div class="flowlabel">Content pipeline &mdash; mostly static, refreshed occasionally</div>
+    <div class="flow">
+      <div class="box"><div class="t">Corpora</div><div class="s">Tatoeba, Gutenberg texts, curated lyrics/topics</div></div>
+      <span class="arrow">&rarr;</span>
+      <div class="box"><div class="t">Chunk + embed</div><div class="s">by chapter for books</div></div>
+      <span class="arrow">&rarr;</span>
+      <div class="box"><div class="t">Vector store</div><div class="s">Chroma &rarr; cloud</div></div>
+      <span class="arrow">&rarr;</span>
+      <div class="box"><div class="t">Difficulty index</div><div class="s">vocab set per item</div></div>
+    </div>
+
+    <div class="flowlabel">Recommend + pre-teach &mdash; runs before a skill starts</div>
+    <div class="flow">
+      <div class="box state"><div class="t">Word bank</div><div class="s">+ difficulty index</div></div>
+      <span class="arrow">&rarr;</span>
+      <div class="box"><div class="t">Recommender</div><div class="s">fewest new words; book chapters stay in sequence</div></div>
+      <span class="arrow">&rarr;</span>
+      <div class="box"><div class="t">Selected content</div><div class="s">or an explicit request</div></div>
+      <span class="arrow">&rarr;</span>
+      <div class="box"><div class="t">Pre-teach</div><div class="s">define new words up front</div></div>
+      <span class="arrow">&rarr;</span>
+      <div class="box state"><div class="t">Word bank</div><div class="s">updated</div></div>
+    </div>
+
+    <div class="flowlabel">Skill loop &mdash; runs during the interaction</div>
+    <div class="flow">
+      <div class="box state"><div class="t">Word bank</div><div class="s">known vocabulary, state</div></div>
+      <span class="arrow">&rarr;</span>
+      <div class="box"><div class="t">Skill</div><div class="s">conversation / lyrics / reading</div></div>
+      <span class="arrow">&rarr;</span>
+      <div class="box"><div class="t">Response</div><div class="s">new words taught + defined</div></div>
+      <span class="arrow">&rarr;</span>
+      <div class="box state"><div class="t">Word bank</div><div class="s">updated</div></div>
+    </div>
+    <p class="flow-note">The dashed boxes are the same two tables &mdash; word bank and difficulty index &mdash; read and written throughout, not separate stores per stage. A book's chapters are just difficulty-indexed content items like any song or story, with one added constraint: the recommender can rank <em>which</em> book to start or continue, but never suggests chapter 7 before chapter 6 of the same book.</p>
+
+    <p class="flow-note" style="margin-top:1.2rem"><strong style="color:var(--ink);font-weight:500">Two things wrap around all three loops:</strong> an <strong style="color:var(--ink);font-weight:500">orchestrator</strong> (dbt or Airflow) runs the spaced-repetition recalculation against the word bank, and separately re-indexes content difficulty whenever new corpus items are added. A <strong style="color:var(--ink);font-weight:500">deployment layer</strong> (Docker + FastAPI, hosted on the cloud platform) puts all three skills behind a real endpoint instead of a notebook cell.</p>
+  </section>
+
+  <section id="data">
+    <h2>Data source options</h2>
+    <p>The one real constraint here is copyright, not availability &mdash; worth deciding up front rather than discovering it at the last phase.</p>
+    <div class="cards">
+      <div class="card rec">
+        <div class="badge">Recommended primary corpus</div>
+        <p><strong style="font-weight:500">Tatoeba.</strong> CC-licensed, community-built corpus of translated sentence pairs, explicitly built for language learners. Grounds the conversation skill and grammar/usage examples at a given difficulty level.</p>
+        <div class="why">Real, well-known, free, and legally clean to redistribute in a public repo &mdash; unlike almost anything else on this list.</div>
+      </div>
+      <div class="card">
+        <div class="badge" style="background:var(--ink-faint)">Topic vocabulary</div>
+        <p><strong style="font-weight:500">Subtlex-ESP</strong>, a freely available Spanish word-frequency corpus (built from subtitles), for grounding "what vocabulary is actually relevant to gardening/sports/weather" rather than trusting the model's unverified guess.</p>
+        <div class="why">Same instinct as the LittleSIS data-integrity story &mdash; check the claim against a real source before you teach it.</div>
+      </div>
+      <div class="card">
+        <div class="badge" style="background:var(--ink-faint)">Reading skill</div>
+        <p><strong style="font-weight:500">Project Gutenberg's Spanish-language collection</strong> for short stories and public-domain books &mdash; real, well-known, explicitly public domain, no licensing ambiguity.</p>
+        <div class="why">Solves the reading skill's copyright question outright rather than needing a private/public split, for anything sourced from it.</div>
+      </div>
+      <div class="card">
+        <div class="badge warn">Keep private</div>
+        <p><strong style="font-weight:500">Song lyrics, and any book under copyright.</strong> Fine for your own local use; not fine baked into a public repo or corpus, chapter-split or not.</p>
+        <div class="why">Keep these as your own local, gitignored input at runtime. The public repo ships with Gutenberg texts and public-domain poetry as the demo equivalent.</div>
+      </div>
+    </div>
+  </section>
+
+  <section id="skills">
+    <h2>Skills to learn</h2>
+    <p>Each block closes one of the four gaps. Free or low-cost resources only.</p>
+    <div class="skillgrid">
+
+      <div class="skillcard">
+        <div class="head"><h3>LLM/RAG fundamentals &amp; constrained generation</h3><span class="closes">closes gap 1</span></div>
+        <ul class="reslist">
+          <li><span class="rtype mono">course</span>DeepLearning.AI short courses (free): <em>LangChain for LLM Application Development</em>, <em>LangChain: Chat with Your Data</em>, <em>Building and Evaluating Advanced RAG</em> &mdash; learn.deeplearning.ai</li>
+          <li><span class="rtype mono">docs</span>LangChain / LangGraph official docs &mdash; python.langchain.com</li>
+          <li><span class="rtype mono">docs</span>Anthropic's own prompt-engineering documentation &mdash; the vocabulary-constraint and pre-teaching mechanisms are fundamentally system-prompt-plus-retrieval design problems</li>
+        </ul>
+      </div>
+
+      <div class="skillcard">
+        <div class="head"><h3>Vector databases, ranking &amp; custom evaluation</h3><span class="closes">closes gap 1</span></div>
+        <ul class="reslist">
+          <li><span class="rtype mono">tool</span>Chroma &mdash; open-source, runs locally, zero cloud cost while prototyping</li>
+          <li><span class="rtype mono">course</span>DeepLearning.AI: <em>Vector Databases: from Embeddings to Applications</em></li>
+          <li><span class="rtype mono">library</span>RAGAS as a baseline grounding check, then custom metrics on top: vocabulary adherence, teaching completeness, and recommendation quality (does "fewest new words" actually track real new-word counts)</li>
+          <li><span class="rtype mono">note</span>The recommender itself is a set-difference-and-sort problem &mdash; no dedicated course needed, just careful indexing</li>
+        </ul>
+      </div>
+
+      <div class="skillcard">
+        <div class="head"><h3>Cloud / modern data platform</h3><span class="closes">closes gap 3 &mdash; the widest gap, 5/5 titles</span></div>
+        <ul class="reslist">
+          <li><span class="rtype mono">course</span>Databricks Academy &mdash; free self-paced <em>Data Engineering with Databricks</em>, plus the free Community Edition. Hosts the vector store, the word bank, and the difficulty index.</li>
+          <li><span class="rtype mono">alt.</span>If you'd rather go AWS-generic: AWS Skill Builder (free tier) toward AWS Certified Cloud Practitioner</li>
+        </ul>
+      </div>
+
+      <div class="skillcard">
+        <div class="head"><h3>Containerization &amp; deployment</h3><span class="closes">closes gap 2</span></div>
+        <ul class="reslist">
+          <li><span class="rtype mono">docs</span>Docker's official <em>Get Started</em> tutorial &mdash; docs.docker.com</li>
+          <li><span class="rtype mono">docs</span>FastAPI tutorial/user guide &mdash; fastapi.tiangolo.com. Wraps all three skills in a real HTTP endpoint.</li>
+        </ul>
+      </div>
+
+      <div class="skillcard">
+        <div class="head"><h3>Orchestration</h3><span class="closes">closes gap 4</span></div>
+        <ul class="reslist">
+          <li><span class="rtype mono">course</span>dbt Labs' free <em>dbt Fundamentals</em> &mdash; courses.getdbt.com. SQL-based, fastest to pick up given your SQL is currently "working knowledge."</li>
+          <li><span class="rtype mono">alt.</span>Apache Airflow's own <em>Quick Start</em> docs if you want the more universally-recognized keyword instead &mdash; either one schedules both jobs</li>
+        </ul>
+      </div>
+
+      <div class="skillcard">
+        <div class="head"><h3>SQL &mdash; working knowledge to depth</h3><span class="closes">objective 8, not one of the four gaps</span></div>
+        <ul class="reslist">
+          <li><span class="rtype mono">course</span>Mode's free SQL Tutorial (mode.com/sql-tutorial) &mdash; covers core querying through window functions and is aimed squarely at analytics use cases like the ones this project needs</li>
+          <li><span class="rtype mono">practice</span>SQLZoo or LeetCode's SQL problem set for deliberate practice outside the project itself</li>
+          <li><span class="rtype mono">applied</span>Three places in this project where it has to be real, not multiple-choice: the word bank's <code class="mono">CREATE TABLE</code> schema, the recommender's join-and-aggregate ranking query, and every dbt model in Phase 6</li>
+        </ul>
+      </div>
+
+    </div>
+  </section>
+
+  <section id="phases">
+    <h2>Phased plan</h2>
+    <p>~10&ndash;12 weeks, part-time &mdash; longer than a single-skill RAG demo, since there are three skills, a recommender, and a state layer. Check items off as you go &mdash; progress is saved in this browser.</p>
+
+    <div class="phase" data-phase="0">
+      <div class="head"><div class="name"><span class="idx">Phase 0</span><strong>Learning sprint</strong></div><span class="when">Week 1</span></div>
+      <p class="goal">No building yet &mdash; core LangChain/RAG, vector-DB, and prompt-engineering material so Phase 1 isn't learning-while-building.</p>
+      <ul class="tasks">
+        <li><input type="checkbox" id="p0-1"><label for="p0-1">Complete the DeepLearning.AI LangChain short course</label></li>
+        <li><input type="checkbox" id="p0-2"><label for="p0-2">Complete the DeepLearning.AI vector databases short course</label></li>
+        <li><input type="checkbox" id="p0-3"><label for="p0-3">Read Anthropic's prompt-engineering docs with an eye toward constrained/controlled generation</label></li>
+      </ul>
+    </div>
+
+    <div class="phase" data-phase="1">
+      <div class="head"><div class="name"><span class="idx">Phase 1</span><strong>Word bank + basic conversation skill</strong></div><span class="when">Weeks 2&ndash;3</span></div>
+      <p class="goal">Prove the core loop &mdash; word bank constrains generation, new words get taught and logged &mdash; before adding topics, other skills, or the recommender.</p>
+      <ul class="tasks">
+        <li><input type="checkbox" id="p1-1"><label for="p1-1">Design the word bank schema: word, part of speech, date learned, familiarity score, example sentence</label></li>
+        <li><input type="checkbox" id="p1-1b"><label for="p1-1b">Write it as real SQL &mdash; a <code class="mono">CREATE TABLE</code> in SQLite, not an ORM model or a Python dict</label></li>
+        <li><input type="checkbox" id="p1-2"><label for="p1-2">Seed it with ~100 common beginner words via <code class="mono">INSERT</code> statements</label></li>
+        <li><input type="checkbox" id="p1-3"><label for="p1-3">Ingest Tatoeba into a local Chroma store</label></li>
+        <li><input type="checkbox" id="p1-4"><label for="p1-4">Build a basic conversation skill: retrieve, generate using only word-bank vocabulary, flag and define anything new</label></li>
+        <li><input type="checkbox" id="p1-5"><label for="p1-5">Confirm newly-taught words get written back to the word bank</label></li>
+        <li><input type="checkbox" id="p1-6"><label for="p1-6">Have ~20 real conversations and eyeball the results</label></li>
+      </ul>
+    </div>
+
+    <div class="phase" data-phase="2">
+      <div class="head"><div class="name"><span class="idx">Phase 2</span><strong>Topic focus + pre-teaching</strong></div><span class="when">Weeks 3&ndash;4</span></div>
+      <p class="goal">Extend the conversation skill: pick a topic, identify and pre-teach its vocabulary, then converse.</p>
+      <ul class="tasks">
+        <li><input type="checkbox" id="p2-1"><label for="p2-1">Pick 5&ndash;10 starter topics (gardening, sports, weather, etc.)</label></li>
+        <li><input type="checkbox" id="p2-2"><label for="p2-2">Ground topic vocabulary against Subtlex-ESP rather than trusting an unverified model guess</label></li>
+        <li><input type="checkbox" id="p2-3"><label for="p2-3">Build the pre-teach flow: present new topic words + definitions before the conversation starts</label></li>
+        <li><input type="checkbox" id="p2-4"><label for="p2-4">Log pre-taught words into the word bank</label></li>
+        <li><input type="checkbox" id="p2-5"><label for="p2-5">Start a topic conversation end to end and confirm pre-teaching actually happens first</label></li>
+      </ul>
+    </div>
+
+    <div class="phase" data-phase="3">
+      <div class="head"><div class="name"><span class="idx">Phase 3</span><strong>Content-difficulty index + recommender</strong></div><span class="when">Weeks 4&ndash;6</span></div>
+      <p class="goal">The novel subsystem: rank any candidate content by how many new words it costs against the live word bank, and default to the minimum.</p>
+      <ul class="tasks">
+        <li><input type="checkbox" id="p3-1"><label for="p3-1">Design the difficulty-index schema: content id, type, full vocabulary set, book id + chapter sequence where relevant</label></li>
+        <li><input type="checkbox" id="p3-2"><label for="p3-2">Compute vocabulary sets for existing content (topics, any test songs/stories)</label></li>
+        <li><input type="checkbox" id="p3-3"><label for="p3-3">Implement the "fewest new words" ranking as a real SQL query &mdash; join content vocabulary against the word bank, aggregate the unmatched words per item, order ascending</label></li>
+        <li><input type="checkbox" id="p3-4"><label for="p3-4">Add the book-sequence constraint: only the next unread chapter of a started book is eligible</label></li>
+        <li><input type="checkbox" id="p3-5"><label for="p3-5">Add the explicit-request override for a specific song/story/topic</label></li>
+        <li><input type="checkbox" id="p3-6"><label for="p3-6">Confirm the recommender's default suggestion actually has the lowest new-word count among candidates</label></li>
+      </ul>
+    </div>
+
+    <div class="phase" data-phase="4">
+      <div class="head"><div class="name"><span class="idx">Phase 4</span><strong>Lyrics + reading skills, and evaluation</strong></div><span class="when">Weeks 6&ndash;8</span></div>
+      <p class="goal">Add the two content-based skills on top of the recommender, then build the eval framework this project actually needs.</p>
+      <ul class="tasks">
+        <li><input type="checkbox" id="p4-1"><label for="p4-1">Set up the lyrics skill against your own (private, gitignored) song lyrics</label></li>
+        <li><input type="checkbox" id="p4-2"><label for="p4-2">Add an idiom/expression corpus (Wiktionary) so figurative translations aren't literal</label></li>
+        <li><input type="checkbox" id="p4-3"><label for="p4-3">Build the reading skill against Project Gutenberg short stories</label></li>
+        <li><input type="checkbox" id="p4-4"><label for="p4-4">Add a multi-chapter public-domain book, chunked and difficulty-indexed by chapter</label></li>
+        <li><input type="checkbox" id="p4-5"><label for="p4-5">Confirm the recommender's sequence constraint holds across real chapters</label></li>
+        <li><input type="checkbox" id="p4-6"><label for="p4-6">Run RAGAS as a baseline grounding check on the grammar/idiom retrieval</label></li>
+        <li><input type="checkbox" id="p4-7"><label for="p4-7">Implement custom metrics: vocabulary-constraint adherence, new-word teaching completeness, translation naturalness (LLM-as-judge), recommendation quality</label></li>
+        <li><input type="checkbox" id="p4-8"><label for="p4-8">Write up the eval results &mdash; this becomes the future cover-letter evidence block</label></li>
+      </ul>
+    </div>
+
+    <div class="phase" data-phase="5">
+      <div class="head"><div class="name"><span class="idx">Phase 5</span><strong>Cloud platform</strong></div><span class="when">Weeks 8&ndash;9</span></div>
+      <p class="goal">Move the vector store, word bank, and difficulty index onto Databricks (or AWS) while working through the platform course in parallel.</p>
+      <ul class="tasks">
+        <li><input type="checkbox" id="p5-1"><label for="p5-1">Set up Databricks Community Edition (or an AWS free-tier account)</label></li>
+        <li><input type="checkbox" id="p5-2"><label for="p5-2">Work through the Databricks Academy data engineering course, or AWS Skill Builder cloud practitioner path</label></li>
+        <li><input type="checkbox" id="p5-3"><label for="p5-3">Migrate the vector store, word bank, and difficulty index onto the platform</label></li>
+      </ul>
+    </div>
+
+    <div class="phase" data-phase="6">
+      <div class="head"><div class="name"><span class="idx">Phase 6</span><strong>Orchestration &mdash; two real jobs</strong></div><span class="when">Weeks 9&ndash;10</span></div>
+      <p class="goal">Spaced-repetition recalculation and content-difficulty re-indexing, both on a schedule.</p>
+      <ul class="tasks">
+        <li><input type="checkbox" id="p6-1"><label for="p6-1">Complete dbt Fundamentals (or Airflow Quick Start)</label></li>
+        <li><input type="checkbox" id="p6-2"><label for="p6-2">Implement spaced-repetition scoring over the word bank (SM-2 or similar) as a dbt SQL model, not a Python script wrapping raw SQL</label></li>
+        <li><input type="checkbox" id="p6-3"><label for="p6-3">Implement the content re-indexing job for newly added songs/stories/chapters, same SQL-first approach</label></li>
+        <li><input type="checkbox" id="p6-4"><label for="p6-4">Wrap both in dbt models or Airflow DAGs and put them on a schedule</label></li>
+      </ul>
+    </div>
+
+    <div class="phase" data-phase="7">
+      <div class="head"><div class="name"><span class="idx">Phase 7</span><strong>Deployment</strong></div><span class="when">Weeks 10&ndash;11</span></div>
+      <p class="goal">Put all three skills and the recommender behind a real, containerized endpoint with basic observability.</p>
+      <ul class="tasks">
+        <li><input type="checkbox" id="p7-1"><label for="p7-1">Wrap all three skills + the recommender in a FastAPI app</label></li>
+        <li><input type="checkbox" id="p7-2"><label for="p7-2">Containerize it with Docker</label></li>
+        <li><input type="checkbox" id="p7-3"><label for="p7-3">Deploy behind a real endpoint (Databricks Model Serving, AWS, or a low-cost host)</label></li>
+        <li><input type="checkbox" id="p7-4"><label for="p7-4">Add basic logging: latency, request count, error rate, word-bank growth rate</label></li>
+        <li><input type="checkbox" id="p7-5"><label for="p7-5">Write a handful of analytics queries over that log data &mdash; window functions for growth-over-time and review-compliance rate, not just single-row lookups</label></li>
+      </ul>
+    </div>
+
+    <div class="phase" data-phase="8">
+      <div class="head"><div class="name"><span class="idx">Phase 8</span><strong>Polish &amp; publish</strong></div><span class="when">Weeks 11&ndash;12</span></div>
+      <p class="goal">Turn the working system into a portfolio artifact someone else can actually evaluate &mdash; and keep using it yourself.</p>
+      <ul class="tasks">
+        <li><input type="checkbox" id="p8-1"><label for="p8-1">Public GitHub repo with a real README &mdash; lyrics and any copyrighted books gitignored</label></li>
+        <li><input type="checkbox" id="p8-2"><label for="p8-2">One-page architecture note (the flow diagram above is a starting point)</label></li>
+        <li><input type="checkbox" id="p8-3"><label for="p8-3">Written case study of the custom evaluation framework and findings from Phase 4</label></li>
+        <li><input type="checkbox" id="p8-4"><label for="p8-4">Only now: add the honest resume bullets this earns, and a new cover-letter evidence block</label></li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="deliverables">
+    <h2>What "done" looks like</h2>
+    <ul class="deliverables">
+      <li>A public repo someone could clone and actually run, with a README that explains the architecture in two paragraphs &mdash; and no copyrighted lyrics or books anywhere in it</li>
+      <li>A written evaluation of the custom metrics (vocabulary adherence, teaching completeness, translation naturalness, recommendation quality), with real numbers, not just "it works"</li>
+      <li>A live or recorded demo of a topic conversation: pre-teaching happening first, then the model staying inside your word bank, then correctly teaching a new word when it has to</li>
+      <li>A demo of the recommender picking the lowest-new-word option by default, and correctly honoring an explicit request instead</li>
+      <li>A handful of real SQL queries &mdash; the schema, the recommender's ranking query, the dbt models, the analytics queries &mdash; you can walk through line by line in an interview</li>
+      <li>One new, true sentence for a cover letter's evidence blocks &mdash; the same 300-350 word module format already in use</li>
+      <li>Something you're actually still using in week 16</li>
+    </ul>
+    <div class="callout">
+      <span class="lbl">Honesty checkpoints</span>
+      <p>Nothing here gets added to any resume variant until it's actually true &mdash; the same discipline already applied to every bullet on file.</p>
+      <p>And separately: don't let a copyrighted lyric sheet or a copyrighted book end up committed to a public repo, chapter-split or not &mdash; chunking a book changes its architecture, not its license. Keep anything copyrighted local and gitignored from the start.</p>
+    </div>
+  </section>
+
+  <footer>Built from the macro keyword-gap analysis across 106 postings (Data Scientist, Applied/Research Scientist, AI/ML Engineer, Data Analyst, Data Engineer) &middot; jobhunt-agents</footer>
+
+</div>
+
+<script>
+(function(){
+  var checkboxes = document.querySelectorAll('.tasks input[type=checkbox]');
+  var STORAGE_KEY = 'spanish-tutor-roadmap-progress';
+  function loadState(){
+    try{
+      var raw = localStorage.getItem(STORAGE_KEY);
+      return raw ? JSON.parse(raw) : {};
+    }catch(e){ return {}; }
+  }
+  function saveState(state){
+    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(e){}
+  }
+  function updateProgress(){
+    var total = checkboxes.length;
+    var done = 0;
+    checkboxes.forEach(function(cb){ if(cb.checked) done++; });
+    var pct = total ? Math.round((done/total)*100) : 0;
+    var fill = document.getElementById('progress-fill');
+    var label = document.getElementById('progress-label');
+    if(fill) fill.style.width = pct + '%';
+    if(label) label.textContent = done + ' / ' + total + ' tasks';
+  }
+  var state = loadState();
+  checkboxes.forEach(function(cb){
+    if(state[cb.id]) cb.checked = true;
+    cb.addEventListener('change', function(){
+      var s = loadState();
+      s[cb.id] = cb.checked;
+      saveState(s);
+      updateProgress();
+    });
+  });
+  updateProgress();
+})();
+</script>
