@@ -72,6 +72,59 @@ date learned, familiarity score, an example sentence. Every skill response reads
 generating (to constrain vocabulary) and writes to it whenever something new gets taught.
 It is the one piece of state everything else in the project revolves around.
 
+Schema decisions (settled with Jason 2026-09-29; the schema lives in `sql/schema.sql`):
+- **Words are keyed on `(lemma, pos)`** in `lexemes`. *bajo* ADJ/ADP/NOUN are distinct
+  words; POS-tagger mistakes are an accepted cost. spaCy's AUX is folded into VERB at
+  ingestion so *ser*/*estar*/*haber* aren't split in two. Multi-word expressions are
+  allowed (`pos = 'EXPR'`); likely source is Wiktionary via kaikki.org (CC BY-SA),
+  detected in text with spaCy's `Matcher` on lemmas.
+- **Recognition and production are tracked separately** (the `mode` column). A word enters
+  recognition when taught and production the first time the learner uses it. This is the
+  passive/active gap the project exists to close, so it belongs in the data model.
+- **`word_events` is an append-only log and the source of truth**, chosen so scores can be
+  recalculated when the formula changes and so evaluation has full history.
+  `word_bank` is a derived table kept current by a trigger (per-word recompute), because a
+  pure view over the log was benchmarked at 6.7 s per single-word lookup at 1M events.
+  With the trigger, at 11M events (~a decade of heavy use): 0.1 ms single-word lookup,
+  8 ms for the full known-word set, 0.23 ms to log an event, ~3.3 min for a full rebuild.
+  `word_bank_rebuild` (view) plus `sql/rebuild_word_bank.sql` recompute it from full history.
+  The familiarity formula exists in both the trigger and the rebuild view; a test asserts
+  they agree.
+- **Single learner.** Generalizing later is expected to mean a `learner_id`; not planned soon.
+- Familiarity is a placeholder (mean of the last 5 grades, 0–1, NULL = not yet assessed)
+  until Phase 6 replaces it with SM-2.
+
+### Proficiency goals: DELE / SIELE
+Part of the tool's purpose is preparing for the DELE or SIELE exams, giving the learner
+concrete goals. Levels come from the *Plan Curricular del Instituto Cervantes* (PCIC), which
+lists expected grammar, functions and topic vocabulary per level A1–C2 (freely readable
+online, but copyrighted: check the license before committing anything extracted from it;
+treat it like `private/` until then).
+- `lexemes.cefr_level` tags each word with its PCIC level where known.
+- Progress is reported as vocabulary coverage per level, split by mode: e.g. "B1:
+  recognize 68%, can produce 41%." Jason wants this visualized (e.g. a circular progress
+  ring per level). There is no UI in the roadmap yet, so this adds new scope.
+- **Always label this as vocabulary readiness, never as a CEFR level.** The exams also test
+  grammar, listening and writing.
+- PCIC topic vocabulary is a second grounding source for Phase 2 topics, alongside
+  Subtlex-ESP. The recommender may use the target level to break ties between equal-cost items.
+
+### Spanish-language definitions
+Definitions switch from English to Spanish per word, not at a global level threshold. When a
+word is defined, take its Spanish definition, lemmatize it, and check each word against the
+learner's *recognition* word bank (the same new-word check the recommender uses):
+- Every word known → show the Spanish definition.
+- Exactly one word U unknown → U is taught. Show U's definition first: in Spanish if every
+  word in *U's* Spanish definition is known, otherwise in English. Then **always** show the
+  original word's Spanish definition, which is now fully comprehensible.
+- Two or more unknown → show the original word's English definition.
+The check goes one level deep only, so definitions never recursively teach new words and
+overwhelm the learner. `lexemes.definition_es` caches the generated definition; the
+known-words check runs at display time because it depends on the current word bank. The
+share of definitions given in Spanish over time is a natural growth metric. For other
+interface text (instructions, feedback), a vocabulary-level threshold is the likely
+default; an explicit user override always wins.
+
 ### The recommender (comprehensible-input engine)
 Given the word bank and a set of candidate content items (topics, songs, stories, book
 chapters), rank them by how many *new* words each one would require, and default to the
@@ -201,14 +254,15 @@ file if it's been lost. Phase structure:
 - **Layout:** `sql/` (schema, seeds, hand-written queries), `src/spanish_tutor/` (package),
   `data/raw/` and `data/processed/` (gitignored corpora, DB, Chroma store), `private/`
   (gitignored copyrighted lyrics/books), `tests/`. `tests/test_repo_hygiene.py` asserts
-  that `private/` and `.env` stay gitignored. Keep it passing.
-- **Open design points for Phase 1:** (1) the word bank should be keyed on the
-  lemma/dictionary form (e.g. *hablar*, not *hablamos*), and content vocabulary lemmatized
-  the same way (likely spaCy `es_core_news_*`), or the Phase 3 ranking query miscounts;
-  (2) the schema should anticipate SM-2 spaced repetition (ease, interval, next review,
-  review history) so Phase 6 doesn't force a migration; (3) Claude has no embeddings
-  endpoint, so pick a multilingual embedding model for Chroma (Chroma's default is
-  English-centric).
+  that `private/` and `.env` stay gitignored. Keep it passing. `src/spanish_tutor/db.py`
+  opens connections (always with `PRAGMA foreign_keys = ON`) and applies `sql/schema.sql`.
+- **Content vocabulary must be lemmatized the same way as the word bank** (likely spaCy
+  `es_core_news_*`), or the Phase 3 ranking query miscounts.
+- **Open design point:** Claude has no embeddings endpoint, so choose a multilingual
+  embedding model for Chroma before ingesting Tatoeba (Chroma's default is English-centric).
+- **Schema workflow:** the schema is designed *together with* Jason, not handed to him. He
+  needs to be able to defend every line of the SQL in an interview. Propose and explain;
+  let him decide.
 - Treat the phase order above as the intended build order unless Jason says otherwise — it
   exists specifically so later phases (recommender, cloud migration, orchestration) build on
   working, tested earlier ones rather than everything landing at once.
