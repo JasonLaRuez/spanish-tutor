@@ -110,6 +110,23 @@ treat it like `private/` until then).
   Subtlex-ESP. The recommender may use the target level to break ties between equal-cost items.
 
 ### Spanish-language definitions
+**A Spanish definition is monolingual, not a translation.** The English definition of
+*leer* is "to read"; its Spanish definition *explains* the word in other Spanish words, the
+way a Spanish dictionary does (e.g. "pasar la vista por un texto para entender lo que
+dice"). It is never a translation of the English gloss, a bare synonym, or anything
+containing the headword itself (translating "to read" back would just give "leer"). The
+known-words check below should therefore reject a definition that uses the headword or any
+form of its lemma.
+
+Source is an open decision:
+- **Spanish Wiktionary** via kaikki.org (`https://kaikki.org/dictionary/downloads/es/es-extract.jsonl.gz`,
+  ~97 MB, mixed languages, so filter `lang_code == "es"`; CC BY-SA). A real, citable
+  source, but written for native speakers, so fewer definitions will pass the known-words
+  check.
+- **Claude-generated, constrained to the learner's word bank**, like a learner's dictionary
+  with a restricted defining vocabulary. More would pass, and it's the project's core
+  mechanism, but it isn't grounded in a real source.
+
 Definitions switch from English to Spanish per word, not at a global level threshold. When a
 word is defined, take its Spanish definition, lemmatize it, and check each word against the
 learner's *recognition* word bank (the same new-word check the recommender uses):
@@ -256,8 +273,30 @@ file if it's been lost. Phase structure:
   (gitignored copyrighted lyrics/books), `tests/`. `tests/test_repo_hygiene.py` asserts
   that `private/` and `.env` stay gitignored. Keep it passing. `src/spanish_tutor/db.py`
   opens connections (always with `PRAGMA foreign_keys = ON`) and applies `sql/schema.sql`.
-- **Content vocabulary must be lemmatized the same way as the word bank** (likely spaCy
-  `es_core_news_*`), or the Phase 3 ranking query miscounts.
+- **All text → `(lemma, pos)` goes through `src/spanish_tutor/lexicon.py`** (spaCy
+  `es_core_news_md`: NFC, lowercase, accents kept, AUX→VERB, `del`/`al` expanded, clitic
+  verbs reduced to the verb, and **personal pronouns keep their own form**, because spaCy
+  would otherwise merge *me/nos/conmigo* into *yo* and *se/lo/le* into *él*). Phase 3
+  content indexing must reuse it, or the word bank and difficulty index disagree about
+  what's "new". Known weakness: spaCy mis-lemmatizes some inflected verbs (`crees`,
+  `has`, `dámelo` → `dámelir`). The seed's Wiktionary check drops these, but content
+  indexing would count them as new words. A likely fix is correcting lemmas through
+  Wiktionary's form-of data (`crees` → *creer*); do this before Phase 3.
+- **Wiktionary matching** (`ingest/wiktionary.py`): form-of senses are kept only for
+  function words (*ti* = "prepositional of tú"), and function words may match across
+  compatible POS (spaCy's PRON *cómo* ↔ Wiktionary's adverb), always keeping spaCy's POS.
+  Accepted consequence of `(lemma, pos)` keys: tagger-inconsistent function words appear
+  under several POS (*mismo* DET/ADJ/PRON) and are marked separately.
+- **Data licensing rule:** the repo ships code, never data. SUBTLEX-ESP is CC BY-NC-SA 4.0,
+  Wiktionary (kaikki.org) CC BY-SA, Tatoeba CC BY 2.0 FR with per-sentence author credit
+  (stored in `lexemes.example_source`/`example_author`), and the spaCy model is GPL-3.0.
+  Everything downloaded or derived lives in `data/raw/` and `data/processed/` (gitignored,
+  enforced by `tests/test_repo_hygiene.py`). Credits are in the README.
+- **Seed pipeline** (`seed.py`, commands in the README): SUBTLEX form counts are split across
+  `(lemma, pos)` by how spaCy analyzed each form in Tatoeba sentences, filtered to pairs with
+  a Wiktionary entry, and the top ~1,500 are written to a CSV. Jason marks each `r`
+  (recognize) or `p` (can produce), and `seed build` loads the marked rows via a
+  re-runnable, set-based SQL script.
 - **Open design point:** Claude has no embeddings endpoint, so choose a multilingual
   embedding model for Chroma before ingesting Tatoeba (Chroma's default is English-centric).
 - **Schema workflow:** the schema is designed *together with* Jason, not handed to him. He

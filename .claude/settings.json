@@ -3,7 +3,9 @@
     "allow": [
       "Bash(uv run *)",
       "Bash(git add *)",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "Bash(uv add *)",
+      "Bash(uv run python -c ' *)"
     ]
   }
 }

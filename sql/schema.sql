@@ -18,6 +18,7 @@
 -- learner knows it; that's what word_bank is for.
 CREATE TABLE IF NOT EXISTS lexemes (
     lexeme_id     INTEGER PRIMARY KEY,
+    -- Normalized by src/spanish_tutor/lexicon.py: NFC, lowercase, accents kept.
     lemma         TEXT NOT NULL CHECK (lemma <> '' AND lemma = trim(lemma)),
     -- Universal Dependencies POS tag as produced by spaCy, plus EXPR for
     -- multi-word expressions ('echar de menos'). AUX is folded into VERB at
@@ -31,8 +32,13 @@ CREATE TABLE IF NOT EXISTS lexemes (
     -- Cached Spanish definition. Whether it can be SHOWN depends on the learner's
     -- current word bank, so that check happens at display time, not here.
     definition_es TEXT,
-    example_es    TEXT,
-    example_en    TEXT,
+    -- Provenance, required for attribution: Wiktionary is CC BY-SA, and Tatoeba
+    -- (CC BY 2.0 FR) requires crediting each sentence's author.
+    definition_source TEXT,           -- e.g. 'wiktionary'
+    example_es        TEXT,
+    example_en        TEXT,
+    example_source    TEXT,           -- e.g. 'tatoeba:12345' -> tatoeba.org/en/sentences/show/12345
+    example_author    TEXT,           -- Tatoeba username
     UNIQUE (lemma, pos)
 );
 

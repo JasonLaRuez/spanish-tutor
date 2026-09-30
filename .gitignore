@@ -35,3 +35,7 @@ build/
 .idea/
 .DS_Store
 Thumbs.db
+
+# --- Claude Code --------------------------------------------------------------
+# Personal permissions; the shared project settings (.claude/settings.json) are committed.
+.claude/settings.local.json

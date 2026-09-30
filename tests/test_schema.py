@@ -21,9 +21,7 @@ def add_lexeme(conn, lemma, pos="NOUN"):
     return cur.lastrowid
 
 
-def add_event(
-    conn, lexeme_id, event_type, *, grade=None, source="conversation", at=None
-):
+def add_event(conn, lexeme_id, event_type, *, grade=None, source="conversation", at=None):
     mode = "production" if event_type == "used" else "recognition"
     conn.execute(
         """
@@ -162,3 +160,18 @@ def test_rebuild_restores_word_bank_from_log(conn):
     rebuild_word_bank(conn)
 
     assert snapshot(conn, "word_bank") == before
+
+
+def test_lexemes_record_provenance_for_attribution(conn):
+    conn.execute(
+        """
+        INSERT INTO lexemes (lemma, pos, definition_en, definition_source,
+                             example_es, example_en, example_source, example_author)
+        VALUES ('casa', 'NOUN', 'house', 'wiktionary',
+                'Mi casa es tu casa.', 'My house is your house.', 'tatoeba:12345', 'someone')
+        """
+    )
+    row = conn.execute("SELECT * FROM lexemes WHERE lemma = 'casa'").fetchone()
+    assert row["example_source"] == "tatoeba:12345"
+    assert row["example_author"] == "someone"
+    assert row["definition_source"] == "wiktionary"

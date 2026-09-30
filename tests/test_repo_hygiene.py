@@ -22,7 +22,14 @@ def is_git_ignored(relative_path: str) -> bool:
         "private/lyrics/some_song.txt",
         "private/books/some_book/chapter_01.txt",
         ".env",
+        ".claude/settings.local.json",
         "data/processed/word_bank.db",
+        # Derived from NC-SA / BY-SA / BY sources, and personal: never committed.
+        "data/processed/seed_candidates.csv",
+        "data/processed/seed_words.sql",
+        "data/processed/tatoeba_analyzed.jsonl",
+        "data/raw/SUBTLEX-ESP.xlsx",
+        "data/raw/wiktionary_es.jsonl",
     ],
 )
 def test_private_and_generated_files_are_ignored(path):
