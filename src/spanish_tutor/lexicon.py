@@ -12,10 +12,15 @@ import unicodedata
 from collections import Counter
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from functools import cache
+from pathlib import Path
+from typing import TYPE_CHECKING
 
 import spacy
 from spacy.language import Language
 from spacy.tokens import Token
+
+if TYPE_CHECKING:
+    from spanish_tutor.ingest.wiktionary import Wiktionary
 
 MODEL = "es_core_news_md"
 
@@ -42,6 +47,13 @@ PERSONAL_PRONOUN_LEMMAS = frozenset(
     ["yo", "tú", "vos", "él", "ella", "ello", "nosotros", "nosotras", "vosotros", "vosotras"]
     + ["ellos", "ellas", "usted", "ustedes"]
 )
+
+# Forms of the personal pronouns that keep their own form as lemma (see above), plus the
+# prepositional forms. Articles (la, lo, los...) are left out: they're ambiguous.
+PERSONAL_PRONOUN_FORMS = PERSONAL_PRONOUN_LEMMAS | {"mí", "ti", "conmigo", "contigo", "consigo"}
+
+# Closed-class parts of speech: a word's function-word reading wins over a noun sense.
+FUNCTION_POS = frozenset(["ADP", "CCONJ", "DET", "PRON", "SCONJ"])
 
 Analysis = tuple[str, str]  # (lemma, pos)
 
@@ -112,6 +124,46 @@ class LemmaCorrector:
             return analysis
         return self._record(form, analysis, choice)
 
+    def retag_proper_noun(self, form: str) -> Analysis | None:
+        """The dictionary reading of a lowercase word the tagger called a proper noun.
+
+        spaCy tags some common words PROPN even lowercase mid-sentence ("Me gusta la
+        nube", "el perro"), and PROPN is not vocabulary, so they'd silently vanish
+        (measured 2026-10-01: 8.5k Tatoeba tokens, 1,652 distinct words). Names are
+        capitalized, so a lowercase PROPN that the dictionary knows is a tagging error:
+
+        1. A personal pronoun form is a pronoun (contigo, which Wiktionary files as an
+           adverb, and which normal tagging makes PRON).
+        2. If the headword has a function-word POS, only those count: the noun senses
+           of mi, yo, a are names of musical notes and letters, not what a sentence means.
+        3. The form is a headword under one (remaining) POS: use it (madre, llover, tu).
+        4. A headword under several POS, NOUN among them: NOUN, since the tagger saw it
+           in a noun slot (perro, rosa).
+        5. Not a headword: an inflected form, resolved as in `correct` (quieres -> querer).
+        Anything else (several non-noun POS, tied lemmas) is reported, not guessed; words
+        the dictionary doesn't know at all (foreign words, typos) return None silently.
+        """
+        before = (form, "PROPN")
+        if form in PERSONAL_PRONOUN_FORMS:
+            return self._record(form, before, (form, "PRON"))
+        own = [pos for pos in self.parts_of_speech(form) if pos in VOCAB_POS]
+        own = [pos for pos in own if pos in FUNCTION_POS] or own
+        links = [c for c in self.form_links.get(form, []) if c[1] in VOCAB_POS]
+        if len(own) == 1:
+            choice: Analysis | None = (form, own[0])
+        elif "NOUN" in own:
+            choice = (form, "NOUN")
+        elif own:
+            choice = None
+        elif links:
+            choice = self._most_common(links)
+        else:
+            return None
+        if choice is None:
+            self.unresolved[form, before] += 1
+            return None
+        return self._record(form, before, choice)
+
     def _most_common(self, candidates: list[Analysis]) -> Analysis | None:
         if len(candidates) == 1:
             return candidates[0]
@@ -125,27 +177,36 @@ class LemmaCorrector:
         return after
 
 
-@cache
-def load_corrector() -> LemmaCorrector:
-    """The corrector built from the downloaded Wiktionary and SUBTLEX-ESP files."""
-    from spanish_tutor.ingest import subtlex
-    from spanish_tutor.ingest.download import RAW_DIR, WIKTIONARY_FILE, WIKTIONARY_FORMS_FILE
-    from spanish_tutor.ingest.wiktionary import Wiktionary
-
-    paths = [
-        RAW_DIR / WIKTIONARY_FILE,
-        RAW_DIR / WIKTIONARY_FORMS_FILE,
-        RAW_DIR / "SUBTLEX-ESP.xlsx",
-    ]
+def _require(*paths: Path) -> None:
     if missing := [p.name for p in paths if not p.exists()]:
         raise FileNotFoundError(
             f"Missing {', '.join(missing)}. Run `uv run python -m spanish_tutor.ingest.download`."
         )
-    wiktionary = Wiktionary(paths[0])
+
+
+@cache
+def load_wiktionary() -> "Wiktionary":
+    """The downloaded Wiktionary, loaded once and shared (the corrector, new lexemes)."""
+    from spanish_tutor.ingest.download import RAW_DIR, WIKTIONARY_FILE
+    from spanish_tutor.ingest.wiktionary import Wiktionary
+
+    _require(RAW_DIR / WIKTIONARY_FILE)
+    return Wiktionary(RAW_DIR / WIKTIONARY_FILE)
+
+
+@cache
+def load_corrector() -> LemmaCorrector:
+    """The corrector built from the downloaded Wiktionary and SUBTLEX-ESP files."""
+    from spanish_tutor.ingest import subtlex
+    from spanish_tutor.ingest.download import RAW_DIR, WIKTIONARY_FORMS_FILE
+
+    forms, counts = RAW_DIR / WIKTIONARY_FORMS_FILE, RAW_DIR / "SUBTLEX-ESP.xlsx"
+    _require(forms, counts)
+    wiktionary = load_wiktionary()
     return LemmaCorrector(
         is_word=lambda analysis: analysis in wiktionary,
-        form_links=wiktionary.form_links(paths[1]),
-        prior=subtlex.load_counts(paths[2]),
+        form_links=wiktionary.form_links(forms),
+        prior=subtlex.load_counts(counts),
         parts_of_speech=wiktionary.parts_of_speech,
     )
 
@@ -153,8 +214,17 @@ def load_corrector() -> LemmaCorrector:
 def normalize(
     form: str, lemma: str, pos: str, corrector: LemmaCorrector | None = None
 ) -> list[Analysis]:
-    """Map a token's surface form and tagger (lemma, pos) to zero or more vocabulary analyses."""
+    """Map a token's surface form and tagger (lemma, pos) to zero or more vocabulary analyses.
+
+    `form` is the token as written: its capitalization tells a name ("Juan") from a
+    common word mis-tagged as one ("perro"), which the corrector re-tags.
+    """
+    written_lowercase = form[:1].islower()
     form = normalize_text(form)
+    if pos == "PROPN":
+        if written_lowercase and corrector is not None:
+            return [found] if (found := corrector.retag_proper_noun(form)) else []
+        return []
     lemma = normalize_text(lemma)
     pos = POS_FOLDS.get(pos, pos)
     if pos == "PRON" and lemma in PERSONAL_PRONOUN_LEMMAS:

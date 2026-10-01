@@ -1,3 +1,5 @@
+-- Snapshot of sql/schema.sql at schema version 1 (commit 994e3f2), for migration tests.
+-- Never edit: it records what real version-1 databases look like.
 -- Word bank schema (SQLite; kept close to ANSI SQL for the Phase 5 platform migration).
 --
 -- Design: word_events is an append-only log and the single source of truth.
@@ -70,38 +72,6 @@ CREATE TABLE IF NOT EXISTS lexeme_reviews (
 CREATE INDEX IF NOT EXISTS ix_lexeme_reviews_lexeme ON lexeme_reviews (lexeme_id, field);
 
 
--- One run of a skill (a conversation, a song, a reading session).
-CREATE TABLE IF NOT EXISTS sessions (
-    session_id INTEGER PRIMARY KEY,
-    skill      TEXT NOT NULL CHECK (skill IN ('conversation', 'lyrics', 'reading')),
-    topic      TEXT,
-    model      TEXT NOT NULL,                -- LLM model id used for the session
-    started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-
--- The transcript, one row per message, with per-turn metrics. Append-only.
--- The adherence columns are the raw data for the Phase 4 vocabulary-adherence metric;
--- the token and latency columns are basic observability. All are NULL on learner turns.
-CREATE TABLE IF NOT EXISTS turns (
-    turn_id           INTEGER PRIMARY KEY,
-    session_id        INTEGER NOT NULL REFERENCES sessions (session_id),
-    turn_no           INTEGER NOT NULL CHECK (turn_no >= 1),
-    role              TEXT NOT NULL CHECK (role IN ('learner', 'tutor')),
-    text_es           TEXT NOT NULL,
-    correction_en     TEXT,              -- note on the learner's previous message
-    draft_out_of_bank INTEGER CHECK (draft_out_of_bank >= 0),  -- words outside the bank, first draft
-    final_out_of_bank INTEGER CHECK (final_out_of_bank >= 0),  -- ... in the reply shown (all taught)
-    retried           INTEGER CHECK (retried IN (0, 1)),
-    input_tokens      INTEGER,           -- uncached input tokens, summed over any retry
-    cache_read_tokens INTEGER,
-    output_tokens     INTEGER,           -- includes thinking
-    latency_ms        INTEGER,
-    created_at        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (session_id, turn_no)
-);
-
-
 -- Append-only learning history. Never UPDATE or DELETE rows here.
 CREATE TABLE IF NOT EXISTS word_events (
     event_id    INTEGER PRIMARY KEY,
@@ -118,8 +88,6 @@ CREATE TABLE IF NOT EXISTS word_events (
     -- SM-2-style quality score 0-5, where one can be assigned; NULL otherwise.
     grade       INTEGER CHECK (grade BETWEEN 0 AND 5),
     occurred_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,  -- ISO-8601, UTC
-    -- The turn that caused the event; NULL for events outside a session (the seed).
-    turn_id     INTEGER REFERENCES turns (turn_id),
     -- Each event type belongs to exactly one mode. Extend this mapping when
     -- adding event types (e.g. a production quiz).
     CHECK (
@@ -130,8 +98,6 @@ CREATE TABLE IF NOT EXISTS word_events (
 
 CREATE INDEX IF NOT EXISTS ix_word_events_lexeme_mode_time
     ON word_events (lexeme_id, mode, occurred_at);
-
-CREATE INDEX IF NOT EXISTS ix_word_events_turn ON word_events (turn_id);
 
 
 -- The word bank: one row per (lexeme, mode) the learner has acquired.

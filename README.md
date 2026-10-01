@@ -46,7 +46,27 @@ uv run python -m spanish_tutor.vectorstore "the weather"     # only words you kn
 uv run python -m spanish_tutor.vectorstore "I'm hungry" --max-unknown 1   # one new word (i+1)
 ```
 
-`uv run pytest` runs the fast suite; `uv run pytest -m slow` also loads the real embedding model.
+## Conversation
+
+Chat with Claude in Spanish, inside the vocabulary you know. Each reply may use at most
+one word outside your word bank (two or more trigger a single rewrite). Any new word is
+taught with a definition and an example sentence you can read. The words you use
+yourself are credited to your production vocabulary, and a mistake gets a gentle recast
+plus a short note in English.
+
+```sh
+uv run python -m spanish_tutor.conversation --topic "el tiempo"
+```
+
+Commands during a conversation: `/q palabra` (look a word up), `/en` (the last reply in
+English), `/palabras` (words taught this session), `/salir` (quit). Needs
+`ANTHROPIC_API_KEY` in `.env`; a turn costs about a cent. Every turn is logged in the
+`sessions` and `turns` tables, and each word event links to the turn that caused it.
+
+## Tests
+
+`uv run pytest` runs the fast suite. `uv run pytest -m slow` also loads the real embedding
+model, and `uv run pytest -m live` calls the Claude API (two turns, about a cent).
 
 ## Layout
 

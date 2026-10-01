@@ -25,6 +25,10 @@ from spanish_tutor.lexicon import Analysis
 
 COLLECTION = "tatoeba"
 
+# A useful example length in words, the same range the lexicon's example picker prefers
+# (ingest/build_lexicon.py).
+MIN_EXAMPLE_WORDS, MAX_EXAMPLE_WORDS = 4, 10
+
 
 class EmbeddingModelMismatch(RuntimeError):
     """The collection was built with a different embedding model than the one in use."""
@@ -116,6 +120,42 @@ def search_sentences(
         if len(hits) == k:
             break
     return hits
+
+
+def find_example(
+    store: Chroma,
+    target: Analysis,
+    known: set[Analysis],
+    query: str,
+    *,
+    fetch_k: int = 100,
+) -> SentenceHit | None:
+    """The translated sentence most similar to `query` that contains `target` and no other
+    word outside `known`: an example the learner can read once taught this one word.
+
+    The query should describe the word ("nadar: to swim") so similarity finds sentences
+    that use it. Like the lexicon's own examples, a sentence of useful length is
+    preferred: fragments ("¡Disparad!", "¿Subes?") show almost no usage. A shorter or
+    longer one is returned only if no other qualifies. None when none of the `fetch_k`
+    nearest sentences qualifies (measured 2026-10-01: found for ~72% of words whose
+    stored example wasn't readable).
+    """
+    fallback = None
+    for doc, distance in store.similarity_search_with_score(query, k=fetch_k):
+        vocab = decode_vocab(doc.metadata["vocab"])
+        if target in vocab and doc.metadata.get("en") and vocab - known <= {target}:
+            hit = SentenceHit(
+                sentence_id=doc.metadata["sentence_id"],
+                es=doc.page_content,
+                en=doc.metadata["en"],
+                author=doc.metadata.get("author"),
+                similarity=1.0 - distance,
+                unknown=frozenset({target} - known),
+            )
+            if MIN_EXAMPLE_WORDS <= len(doc.page_content.split()) <= MAX_EXAMPLE_WORDS:
+                return hit
+            fallback = fallback or hit
+    return fallback
 
 
 def main() -> None:

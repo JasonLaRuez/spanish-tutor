@@ -25,8 +25,12 @@ dependencies = [
 
 [tool.pytest.ini_options]
 # Slow tests load the real embedding model; run them with `uv run pytest -m slow`.
-markers = ["slow: loads large models; excluded by default"]
-addopts = "-m 'not slow'"
+# Live tests call the Claude API (about 1 cent); run them with `uv run pytest -m live`.
+markers = [
+    "slow: loads large models; excluded by default",
+    "live: calls the Claude API; excluded by default",
+]
+addopts = "-m 'not slow and not live'"
 
 [project.scripts]
 spanish-tutor = "spanish_tutor:main"

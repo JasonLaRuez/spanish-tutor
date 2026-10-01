@@ -2,10 +2,13 @@
 
 import random
 import sqlite3
+from pathlib import Path
 
 import pytest
 
 from spanish_tutor.db import connect, init_schema, rebuild_word_bank
+
+FIXTURES = Path(__file__).parent / "fixtures"
 
 
 @pytest.fixture
@@ -205,7 +208,7 @@ def test_database_created_before_migration_1_is_upgraded_without_data_loss():
     from spanish_tutor.db import migrations
 
     old = connect(":memory:")
-    # The lexemes table as it was before migration 1, holding a word and its event.
+    # The lexemes and word_events tables as they were before migration 1, holding a word.
     old.executescript(
         """
         CREATE TABLE lexemes (
@@ -213,6 +216,11 @@ def test_database_created_before_migration_1_is_upgraded_without_data_loss():
             cefr_level TEXT, definition_en TEXT, definition_es TEXT,
             definition_source TEXT, example_es TEXT, example_en TEXT,
             example_source TEXT, example_author TEXT, UNIQUE (lemma, pos)
+        );
+        CREATE TABLE word_events (
+            event_id INTEGER PRIMARY KEY, lexeme_id INTEGER NOT NULL REFERENCES lexemes,
+            mode TEXT NOT NULL, event_type TEXT NOT NULL, source TEXT NOT NULL,
+            grade INTEGER, occurred_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
         INSERT INTO lexemes (lemma, pos, definition_en) VALUES ('casa', 'NOUN', 'house');
         """
@@ -231,6 +239,93 @@ def test_database_created_before_migration_1_is_upgraded_without_data_loss():
     assert {"lexeme_reviews", "word_events", "word_bank"} <= tables
 
 
+def table_shapes(conn):
+    """Every table's columns (name, type, notnull, default, pk) and foreign keys."""
+    names = [
+        r["name"]
+        for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
+    ]
+    return {
+        name: (
+            sorted(tuple(c)[1:] for c in conn.execute(f"PRAGMA table_info({name})")),
+            sorted(tuple(f)[2:5] for f in conn.execute(f"PRAGMA foreign_key_list({name})")),
+        )
+        for name in names
+    }
+
+
+def test_version_1_database_upgrades_to_the_same_shape_as_a_new_one(conn):
+    old = connect(":memory:")
+    old.executescript((FIXTURES / "schema_v1.sql").read_text(encoding="utf-8"))
+    old.execute("PRAGMA user_version = 1")
+    casa = add_lexeme(old, "casa")
+    add_event(old, casa, "taught", source="seed")
+
+    init_schema(old)
+
+    assert table_shapes(old) == table_shapes(conn)
+    assert old.execute("SELECT turn_id FROM word_events").fetchone()[0] is None
+    assert [r["lemma"] for r in old.execute("SELECT lemma FROM lexemes")] == ["casa"]
+
+
+# --- Sessions and turns ----------------------------------------------------------------
+
+
+def add_session(conn):
+    return conn.execute(
+        "INSERT INTO sessions (skill, topic, model) VALUES ('conversation', 'el tiempo', 'm')"
+    ).lastrowid
+
+
+def add_turn(conn, session_id, turn_no, role="learner", text="Hola."):
+    return conn.execute(
+        "INSERT INTO turns (session_id, turn_no, role, text_es) VALUES (?, ?, ?, ?)",
+        (session_id, turn_no, role, text),
+    ).lastrowid
+
+
+def test_turn_numbers_are_unique_within_a_session(conn):
+    first, second = add_session(conn), add_session(conn)
+    add_turn(conn, first, 1)
+    add_turn(conn, second, 1)
+    with pytest.raises(sqlite3.IntegrityError):
+        add_turn(conn, first, 1)
+
+
+@pytest.mark.parametrize(
+    "column, value",
+    [("role", "system"), ("turn_no", 0), ("retried", 2), ("draft_out_of_bank", -1)],
+)
+def test_turn_values_are_checked(conn, column, value):
+    session = add_session(conn)
+    turn = add_turn(conn, session, 1)
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute(f"UPDATE turns SET {column} = ? WHERE turn_id = ?", (value, turn))
+
+
+def test_sessions_must_name_a_known_skill(conn):
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute("INSERT INTO sessions (skill, model) VALUES ('chat', 'm')")
+
+
+def test_events_can_reference_the_turn_that_caused_them(conn):
+    casa = add_lexeme(conn, "casa")
+    turn = add_turn(conn, add_session(conn), 1)
+    conn.execute(
+        "INSERT INTO word_events (lexeme_id, mode, event_type, source, turn_id) "
+        "VALUES (?, 'recognition', 'taught', 'conversation', ?)",
+        (casa, turn),
+    )
+    add_event(conn, casa, "seen")  # turn_id is optional
+    assert conn.execute("SELECT encounters FROM word_bank").fetchone()[0] == 2
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute(
+            "INSERT INTO word_events (lexeme_id, mode, event_type, source, turn_id) "
+            "VALUES (?, 'recognition', 'seen', 'conversation', 999)",
+            (casa,),
+        )
+
+
 def test_lexeme_reviews_record_verdicts_with_their_reviewer(conn):
     casa = add_lexeme(conn, "casa")
     conn.execute(
@@ -244,3 +339,14 @@ def test_lexeme_reviews_record_verdicts_with_their_reviewer(conn):
             "VALUES (?, 'definition_en', 'maybe', 'human')",
             (casa,),
         )
+
+
+def test_pending_migrations_lists_only_what_an_old_database_needs(conn):
+    from spanish_tutor.db import pending_migrations
+
+    assert pending_migrations(conn) == []  # created at the latest version
+    assert pending_migrations(connect(":memory:")) == []  # empty: schema.sql creates it
+    old = connect(":memory:")
+    old.executescript((FIXTURES / "schema_v1.sql").read_text(encoding="utf-8"))
+    old.execute("PRAGMA user_version = 1")
+    assert pending_migrations(old) == [2]

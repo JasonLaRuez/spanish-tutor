@@ -9,6 +9,7 @@ from spanish_tutor.vectorstore import (
     EmbeddingModelMismatch,
     decode_vocab,
     encode_vocab,
+    find_example,
     open_store,
     search_sentences,
 )
@@ -112,3 +113,30 @@ def test_update_vocab_refreshes_metadata_without_touching_vectors(store):
     after = store.get(ids=["tatoeba:2"], include=["embeddings", "metadatas"])
     assert decode_vocab(after["metadatas"][0]["vocab"]) == {GATO, ("rarísimo", "ADJ")}
     assert list(after["embeddings"][0]) == list(before)
+
+
+def test_find_example_needs_the_target_and_nothing_else_unknown(store):
+    index_sentences(store, CORPUS, report=quiet)
+    # Sentence 2 ("Un gato raro.") is the only one with raro, and gato is known.
+    hit = find_example(store, RARO, {GATO}, "raro: strange")
+    assert (hit.sentence_id, hit.unknown) == (2, frozenset({RARO}))
+    # Without gato known, sentence 2 has a second unknown word: no example.
+    assert find_example(store, RARO, set(), "raro: strange") is None
+
+
+def test_find_example_returns_none_for_a_word_no_sentence_contains(store):
+    index_sentences(store, CORPUS, report=quiet)
+    assert find_example(store, ("perro", "NOUN"), {GATO, CASA, COMER}, "perro: dog") is None
+
+
+def test_find_example_prefers_a_sentence_of_useful_length(store):
+    fragment = sentence(10, "¡Raro!", [RARO])
+    full = sentence(11, "El gato come algo raro en casa.", [GATO, COMER, RARO, CASA])
+    index_sentences(store, [fragment, full], report=quiet)
+    hit = find_example(store, RARO, {GATO, COMER, CASA}, "raro: strange")
+    assert hit.sentence_id == 11
+
+
+def test_find_example_falls_back_to_a_fragment_when_nothing_else_qualifies(store):
+    index_sentences(store, [sentence(10, "¡Raro!", [RARO])], report=quiet)
+    assert find_example(store, RARO, set(), "raro: strange").sentence_id == 10

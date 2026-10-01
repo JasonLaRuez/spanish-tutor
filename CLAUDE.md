@@ -259,40 +259,108 @@ file if it's been lost. Phase structure:
 
 ## Working conventions
 
-- **Status (as of 2026-10-01):** Phase 0 is complete. Phase 1 has 3 of 7 roadmap steps done,
+- **Status (as of 2026-10-01):** Phase 0 is complete. Phase 1 has 5 of 7 roadmap steps done,
   plus extra groundwork:
   - Done: the word bank schema; the seed (987 recognized / 730 produced words); Tatoeba in
-    Chroma (261k sentences).
+    Chroma (261k sentences); **the conversation skill with write-back**
+    (`conversation.py`, `words.py`, `teaching.py`, migration 002: `sessions`, `turns`,
+    `word_events.turn_id`).
   - Extra: lemma correction, and the general lexicon (26k words).
-  - **Next: the conversation skill**, then write-back of taught words, then ~20 real
-    conversations.
-  - The API key is in `.env` (gitignored) and authenticates, but the account had **no
-    credits** on 2026-10-01. Jason needs to add credits (Console → Plans & Billing) before
-    any LLM call.
+  - **Next: ~20 real conversations** by Jason. The real database is migrated (with a
+    backup) on the first CLI run.
+  - Measured in end-to-end runs on a copy of the database:
+    - prompt cache hits from turn 2 (~4.9k tokens read; ~300–460 uncached input tokens);
+    - ~5 s per turn;
+    - Claude stayed fully inside the word bank in 6 of 6 turns.
   - Build log, published (private): https://claude.ai/artifact/NAheU5cpSBdxY7QpoeQbHQ.
     Republish it after milestones. The roadmap artifact's link is still unknown; ask Jason.
-- **Open design points for the conversation skill** (settle with Jason before building):
-  - **The loop:** retrieve with `vectorstore.search_sentences(query, db.known_vocabulary(conn),
-    max_unknown=0|1)`; generate with Claude, constrained to known words; detect new words
-    with `lexicon.analyze` + `vocabulary()`; teach them; log events.
-  - **Logging:** a `taught` event teaches a word already in `lexemes`. Words *not* in the
-    lexicon (absent from Tatoeba) still need an on-demand `ensure_lexeme(lemma, pos)`
-    (Wiktionary definition, rejecting non-words), and that isn't built yet.
+- **Conversation skill design (decided with Jason 2026-10-01):**
+  - **The loop:** retrieve 3–5 fully readable Tatoeba sentences on the topic with
+    `vectorstore.search_sentences(query, db.known_vocabulary(conn), max_unknown=0)`, falling
+    back to 1. They go into the prompt as on-topic style anchors (the RAG step). Generate
+    with Claude, constrained to known words. Detect new words with `lexicon.analyze` +
+    `vocabulary()`, teach them, and log events.
+  - **Adherence (Jason's choice):** one out-of-bank word per reply is allowed (i+1) and
+    taught. Two or more trigger **one** retry that names the offending words; whatever
+    remains is then taught. The violation count is logged either way, because it's the
+    Phase 4 adherence metric.
+  - **Flagged words are always fully taught (Jason's choice).** There's no "I already know
+    it" shortcut, even though measurement shows many flags are false: the seed only offered
+    ranks 1–1,500, and 60% of the single unknown words in i+1 Tatoeba sentences rank past
+    1,500 (*nadar*, *llover*, *idioma*). Expect lessons on some known words; revisit if
+    that gets tedious.
+  - **Grading (hybrid; placeholder until SM-2):**
+    - Rules decide *which* words the learner used: the lexicon, plus the accent fallback
+      below. Claude, in the same reply call, flags which used words were misused
+      (ser/estar, agreement, tense).
+    - `used` correctly = 4, misused = 2. `looked_up` = 1. `seen` = NULL (an encounter, not
+      evidence of recall). `taught` = NULL.
+    - Measured reason for hybrid: the lemmatizer credits *Soy cansado* as a correct use of
+      *ser*, and it can't see grammar errors.
+  - **Corrections:** recast plus note. The tutor reuses the correct form naturally in its
+    reply, then gives a short separate correction note in English.
+  - **Accent fallback for learner input:** *jardin*, *dificil* and *dia* don't match the
+    accented lemmas. Strip accents only when the unaccented form isn't itself a lexeme and
+    exactly one lexeme matches. Only 129 of 26k lexicon keys collide once accents are
+    stripped, almost all function words (*el/él*, *si/sí*, *mas/más*).
+  - **`ensure_lexeme(lemma, pos)`** (not built yet) handles words not in `lexemes`. If
+    Wiktionary has the word, insert it with its definition. Otherwise report it and never
+    log it: misspellings like *sabo* are tagged `sabo/NOUN`.
   - **Examples at teach time:** re-choose them against the learner's word bank. For rare
     words with no stored example, use the sentence where the word was met.
-  - **Grading policy is undecided.** What grade does a `seen`, `looked_up` or `used` event
-    get, and who grades production: Claude as judge, or rules?
-  - **Model settings:** `claude-opus-5-5` rejects `temperature` and can't disable thinking;
-    its effort defaults to `medium` (set it explicitly; `low` likely suits chat turns). Use
-    prompt caching for the system prompt and vocabulary. Check how `langchain-anthropic`
-    exposes `output_config.effort` before relying on it.
-  - **Adherence check:** the Spanish output should be checked against the word bank after
-    generation (it's also a Phase 4 metric). Decide whether a violation triggers a retry or
-    gets taught as a new word.
+  - **Model settings:** `claude-opus-5-5` rejects `temperature` and can't disable thinking.
+    `langchain-anthropic` 1.7.5 exposes effort as `ChatAnthropic(effort="low")`, which maps
+    to `output_config.effort`; use `low` for chat turns. Prompt-cache the system prompt
+    and the known-word list. The ~987 lemmas are stable within a session.
 - **Known data limits:** *ven* resolves to *ver* by frequency (often the imperative of
   *venir*); sentence-initial words are sometimes tagged as names and dropped; ~100
   NOUN-tagged *conmigo* tokens became an ADV entry; multi-word expressions (`EXPR`) are
   allowed in the schema but not yet detected in text.
+  - **Lowercase words tagged PROPN: fixed in the pipeline on 2026-10-01.**
+    - The problem: spaCy tags some common words as proper nouns even lowercase and
+      mid-sentence (*Me gusta la nube.*). PROPN was dropped, so 8.5k Tatoeba tokens
+      (1,652 distinct dictionary words: *tu*, *perro*, *llover*, *madre*…) were
+      invisible. That included the conversation skill's adherence check.
+    - The fix: `LemmaCorrector.retag_proper_noun`, called from `lexicon.normalize` for
+      PROPN tokens written lowercase.
+    - Rule, in order:
+      1. Personal pronoun forms become PRON (*contigo*).
+      2. If the headword has a function-word POS, only those POS count (Wiktionary's
+         noun *mi* is the musical note E).
+      3. A headword under one remaining POS gets it.
+      4. If it has several POS including NOUN, use NOUN.
+      5. Otherwise treat it as an inflected form and use the form-of lemma.
+    - Rules 1 and 2 were added after measuring the first version against the word bank:
+      2.7% of re-tagged tokens landed on a POS Jason didn't have; now 0.8%. The rest is
+      mostly ADJ/NOUN words (*loco*, *azul*), where NOUN is a defensible guess.
+    - The first version left 3 orphan lexemes with stale frequencies and no events:
+      *mi*, *yo*, *cualquiera* as NOUN. They haven't been deleted, because lexicon rows
+      are never deleted; deleting them is Jason's call.
+    - Ties are reported in `lemma_corrections.csv`, never guessed. Capitalized PROPN
+      stays a name. Only PROPN was affected; measured, no other tag was.
+    - Measured outcome on the dropped tokens: ~87% recovered, 8.9% correctly dropped as
+      non-words (*toki pona*, English), and 4.4% left as unguessed ties (*tuyo*,
+      *rosas*).
+    - It runs inside every analysis, so a fresh build needs no extra step. Existing
+      data needs a re-run of `ingest.tatoeba` (move the old jsonl aside first),
+      `build_lexicon` and `index_tatoeba --update-vocab`; Jason's data was rebuilt
+      2026-10-01.
+  - A single typed word is a separate case: a lone *perro* is always tagged PROPN, with
+    no context. `/q` avoids it with `LexiconIndex.headword`.
+  - **Wiktionary misspelling entries became lexemes (found 2026-10-01; fix proposed, not
+    made).**
+    - Wiktionary lists some typos as entries ("*dia*: misspelling of *día*"). Tatoeba
+      contains them, so the lexicon has 37 such words (513 tokens): *reir*, *rio*,
+      *dia*, *mas* (ADV), *picnic*…
+    - For learner typing, an exact match to one beats the accent fallback, so *dia* is
+      credited to the misspelling, not to *día*.
+    - Only entries tagged "misspelling" are safe to redirect. "Alternative form"
+      (375 words) includes *mi* → *mío* and *buen* → *bueno*, which are separate words.
+      "Obsolete spelling" (41) has odd cases (*ay* → *hay*).
+    - *mas* and *órden* are in Jason's seeded bank, so redirecting needs a decision
+      about those seed events and the never-delete rule.
+  - `find_example` prefers 4–10-word sentences, the lexicon picker's range. It first
+    returned fragments (*¡Disparad!*, *¿Subes?*).
 - **Notebook:** `notebooks/01_data_pipeline.ipynb` is now the source; edit it directly. The
   generator script used to create it was temporary and no longer exists.
   - Verify edits with

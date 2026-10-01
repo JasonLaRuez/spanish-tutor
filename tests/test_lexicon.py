@@ -94,6 +94,9 @@ DICTIONARY = {
     ("creer", "VERB"), ("crear", "VERB"), ("haber", "VERB"), ("oír", "VERB"),
     ("hambriento", "ADJ"), ("salir", "VERB"), ("salar", "VERB"), ("vez", "NOUN"),
     ("serio", "ADJ"), ("seriar", "VERB"), ("vosotros", "PRON"),
+    ("madre", "NOUN"), ("perro", "NOUN"), ("perro", "ADJ"), ("querer", "VERB"),
+    ("tuyo", "PRON"), ("tuyo", "DET"), ("nube", "NOUN"),
+    ("mi", "DET"), ("mi", "NOUN"), ("contigo", "ADV"),
 }  # fmt: skip
 FORM_LINKS = {
     "crees": [("crear", "VERB"), ("creer", "VERB")],
@@ -102,6 +105,7 @@ FORM_LINKS = {
     "veces": [("vez", "NOUN")],
     "sales": [("salir", "VERB"), ("salar", "VERB")],
     "serio": [("seriar", "VERB")],
+    "quieres": [("querer", "VERB")],
 }
 PRIOR = {"creer": 10_568, "crear": 1_417, "haber": 60_000, "salir": 900, "salar": 900}
 
@@ -153,3 +157,54 @@ def test_wrong_tag_on_a_dictionary_word_is_fixed_before_following_form_links(cor
     # "en serio" tagged NOUN: serio is an adjective, not the verb seriar it's a form of.
     assert normalize("serio", "serio", "NOUN", corrector) == [("serio", "ADJ")]
     assert normalize("vosotros", "vosotro", "NOUN", corrector) == [("vosotros", "PRON")]
+
+
+# --- Common words mis-tagged as proper nouns ------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("form", "expected"),
+    [
+        ("madre", ("madre", "NOUN")),  # a headword under one POS
+        ("perro", ("perro", "NOUN")),  # several POS: NOUN, the slot the tagger saw
+        ("quieres", ("querer", "VERB")),  # an inflected form
+    ],
+)
+def test_lowercase_proper_noun_that_is_a_dictionary_word_is_retagged(corrector, form, expected):
+    assert normalize(form, form, "PROPN", corrector) == [expected]
+    assert corrector.corrected == {(form, (form, "PROPN"), expected): 1}
+
+
+def test_function_word_reading_beats_a_letter_or_note_noun(corrector):
+    # Wiktionary's noun "mi" is the musical note E; the possessive is what's meant.
+    assert normalize("mi", "mi", "PROPN", corrector) == [("mi", "DET")]
+
+
+def test_personal_pronoun_form_is_retagged_as_a_pronoun(corrector):
+    # Wiktionary files contigo as an adverb; normal tagging (and the word bank) says PRON.
+    assert normalize("contigo", "contigo", "PROPN", corrector) == [("contigo", "PRON")]
+
+
+def test_ambiguous_lowercase_proper_noun_is_reported_not_guessed(corrector):
+    assert normalize("tuyo", "tuyo", "PROPN", corrector) == []  # PRON or DET: a tie
+    assert corrector.unresolved == {("tuyo", ("tuyo", "PROPN")): 1}
+
+
+def test_lowercase_proper_noun_unknown_to_the_dictionary_is_dropped_silently(corrector):
+    assert normalize("toki", "toki", "PROPN", corrector) == []
+    assert not corrector.unresolved and not corrector.corrected
+
+
+def test_capitalized_proper_noun_stays_a_name_even_if_it_is_a_word(corrector):
+    assert normalize("Madre", "Madre", "PROPN", corrector) == []
+
+
+def test_without_a_corrector_proper_nouns_are_dropped():
+    assert normalize("perro", "perro", "PROPN") == []
+
+
+def test_model_retags_a_mid_sentence_common_word_it_calls_a_name(corrector):
+    # es_core_news_md tags "nube" PROPN here, and "Juan" correctly so.
+    tokens = next(analyze(["Juan dice que le gusta la nube."], corrector=corrector))
+    assert ("nube", [("nube", "NOUN")]) in tokens
+    assert ("juan", []) in tokens

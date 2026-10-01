@@ -25,6 +25,14 @@ def migrations() -> list[tuple[int, Path]]:
     return sorted((int(path.name.split("_", 1)[0]), path) for path in MIGRATIONS_DIR.glob("*.sql"))
 
 
+def pending_migrations(conn: sqlite3.Connection) -> list[int]:
+    """Migration numbers an existing database still needs (none for a new database)."""
+    if not conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'lexemes'").fetchone():
+        return []
+    applied = conn.execute("PRAGMA user_version").fetchone()[0]
+    return [number for number, _ in migrations() if number > applied]
+
+
 def init_schema(conn: sqlite3.Connection) -> None:
     """Create the schema in a new database, or upgrade an existing one. Safe to rerun.
 
@@ -80,6 +88,44 @@ def known_vocabulary(conn: sqlite3.Connection, mode: str = "recognition") -> set
         (mode,),
     )
     return {(lemma, pos) for lemma, pos in rows}
+
+
+def start_session(
+    conn: sqlite3.Connection, skill: str, model: str, topic: str | None = None
+) -> int:
+    return conn.execute(
+        "INSERT INTO sessions (skill, topic, model) VALUES (?, ?, ?)", (skill, topic, model)
+    ).lastrowid
+
+
+TURN_METRICS = (
+    "correction_en",
+    "draft_out_of_bank",
+    "final_out_of_bank",
+    "retried",
+    "input_tokens",
+    "cache_read_tokens",
+    "output_tokens",
+    "latency_ms",
+)
+
+
+def add_turn(
+    conn: sqlite3.Connection,
+    session_id: int,
+    turn_no: int,
+    role: str,
+    text_es: str,
+    **metrics: object,
+) -> int:
+    """Append one message to the transcript. `metrics` are the tutor-turn columns."""
+    if unknown := set(metrics) - set(TURN_METRICS):
+        raise TypeError(f"Unknown turn columns: {sorted(unknown)}")
+    columns = ["session_id", "turn_no", "role", "text_es", *metrics]
+    return conn.execute(
+        f"INSERT INTO turns ({', '.join(columns)}) VALUES ({', '.join('?' * len(columns))})",
+        (session_id, turn_no, role, text_es, *metrics.values()),
+    ).lastrowid
 
 
 def rebuild_word_bank(conn: sqlite3.Connection) -> None:
