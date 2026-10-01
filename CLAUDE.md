@@ -225,8 +225,8 @@ Wrapped around all three loops:
 ## Roadmap
 
 ~10–12 weeks, part-time. Full detail (including per-phase checklists with saved progress)
-lives in the published roadmap artifact — ask Jason for the link, or rebuild it from this
-file if it's been lost. Phase structure:
+lives in the roadmap page, committed as `rag-deployment-roadmap.html` (a published
+artifact copy may also exist; ask Jason for its link). Phase structure:
 
 | Phase | Focus |
 |---|---|
@@ -273,7 +273,11 @@ file if it's been lost. Phase structure:
     - ~5 s per turn;
     - Claude stayed fully inside the word bank in 6 of 6 turns.
   - Build log, published (private): https://claude.ai/artifact/NAheU5cpSBdxY7QpoeQbHQ.
-    Republish it after milestones. The roadmap artifact's link is still unknown; ask Jason.
+    Republish it after milestones. The roadmap is `rag-deployment-roadmap.html` in the repo.
+  - Public repo: https://github.com/JasonLaRuez/spanish-tutor (remote `origin`; created
+    2026-10-01; CLAUDE.md and the roadmap are published as-is, Jason's choice). Re-run
+    the history audit before each push: no `data/`, `private/` or `.env`, and no
+    notebook outputs.
 - **Conversation skill design (decided with Jason 2026-10-01):**
   - **The loop:** retrieve 3–5 fully readable Tatoeba sentences on the topic with
     `vectorstore.search_sentences(query, db.known_vocabulary(conn), max_unknown=0)`, falling
@@ -333,9 +337,8 @@ file if it's been lost. Phase structure:
     - Rules 1 and 2 were added after measuring the first version against the word bank:
       2.7% of re-tagged tokens landed on a POS Jason didn't have; now 0.8%. The rest is
       mostly ADJ/NOUN words (*loco*, *azul*), where NOUN is a defensible guess.
-    - The first version left 3 orphan lexemes with stale frequencies and no events:
-      *mi*, *yo*, *cualquiera* as NOUN. They haven't been deleted, because lexicon rows
-      are never deleted; deleting them is Jason's call.
+    - The first version left 3 orphan lexemes (*mi*, *yo*, *cualquiera* as NOUN). They
+      were deleted with Jason's approval, since no events referenced them.
     - Ties are reported in `lemma_corrections.csv`, never guessed. Capitalized PROPN
       stays a name. Only PROPN was affected; measured, no other tag was.
     - Measured outcome on the dropped tokens: ~87% recovered, 8.9% correctly dropped as
@@ -347,18 +350,23 @@ file if it's been lost. Phase structure:
       2026-10-01.
   - A single typed word is a separate case: a lone *perro* is always tagged PROPN, with
     no context. `/q` avoids it with `LexiconIndex.headword`.
-  - **Wiktionary misspelling entries became lexemes (found 2026-10-01; fix proposed, not
-    made).**
-    - Wiktionary lists some typos as entries ("*dia*: misspelling of *día*"). Tatoeba
-      contains them, so the lexicon has 37 such words (513 tokens): *reir*, *rio*,
-      *dia*, *mas* (ADV), *picnic*…
-    - For learner typing, an exact match to one beats the accent fallback, so *dia* is
-      credited to the misspelling, not to *día*.
-    - Only entries tagged "misspelling" are safe to redirect. "Alternative form"
-      (375 words) includes *mi* → *mío* and *buen* → *bueno*, which are separate words.
-      "Obsolete spelling" (41) has odd cases (*ay* → *hay*).
-    - *mas* and *órden* are in Jason's seeded bank, so redirecting needs a decision
-      about those seed events and the never-delete rule.
+  - **Wiktionary misspelling entries: fixed in the pipeline on 2026-10-01.**
+    - The problem: Wiktionary lists common typos as entries ("*dia*: misspelling of
+      *día*"). Tatoeba contains them, so 35 had become lexicon words (*reir*, *rio*,
+      *tambien*, *mas* ADV…). For learner typing, an exact match to one beat the accent
+      fallback.
+    - The fix: `Wiktionary.misspellings()` covers entries whose every sense points to
+      the same word, with at least one tagged "misspelling". `LemmaCorrector` respells
+      them and then corrects the result in turn (*habia* → *había* → *haber*).
+    - It also catches learner typos: *aser* → *hacer*, *haci* → *así*.
+    - "Alternative form" entries are deliberately not redirected: *buen* → *bueno* and
+      *mi* → *mío* are separate words. "Obsolete spelling" is not redirected either,
+      because it has odd cases (*ay* → *hay*).
+    - Approved cleanup: the orphaned misspelling rows and the 3 rows from the first
+      re-tag rule were deleted (no events referenced them; database backed up first).
+    - *mas* ADV is kept: it has seed events, and the log is append-only. It's a
+      harmless duplicate, since Jason already knows *más* ADV in both modes. Its
+      frequency is now stale, because rows outside a build keep their old frequency.
   - `find_example` prefers 4–10-word sentences, the lexicon picker's range. It first
     returned fragments (*¡Disparad!*, *¿Subes?*).
 - **Notebook:** `notebooks/01_data_pipeline.ipynb` is now the source; edit it directly. The

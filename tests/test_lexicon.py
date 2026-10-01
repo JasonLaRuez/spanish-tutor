@@ -97,6 +97,7 @@ DICTIONARY = {
     ("madre", "NOUN"), ("perro", "NOUN"), ("perro", "ADJ"), ("querer", "VERB"),
     ("tuyo", "PRON"), ("tuyo", "DET"), ("nube", "NOUN"),
     ("mi", "DET"), ("mi", "NOUN"), ("contigo", "ADV"),
+    ("dia", "NOUN"), ("día", "NOUN"), ("habia", "VERB"),
 }  # fmt: skip
 FORM_LINKS = {
     "crees": [("crear", "VERB"), ("creer", "VERB")],
@@ -106,7 +107,9 @@ FORM_LINKS = {
     "sales": [("salir", "VERB"), ("salar", "VERB")],
     "serio": [("seriar", "VERB")],
     "quieres": [("querer", "VERB")],
+    "había": [("haber", "VERB")],
 }
+MISSPELLINGS = {("dia", "NOUN"): ("día", "NOUN"), ("habia", "VERB"): ("había", "VERB")}
 PRIOR = {"creer": 10_568, "crear": 1_417, "haber": 60_000, "salir": 900, "salar": 900}
 
 
@@ -117,6 +120,7 @@ def corrector():
         form_links=FORM_LINKS,
         prior=PRIOR,
         parts_of_speech=lambda word: [p for lemma, p in DICTIONARY if lemma == word],
+        misspellings=MISSPELLINGS,
     )
 
 
@@ -208,3 +212,21 @@ def test_model_retags_a_mid_sentence_common_word_it_calls_a_name(corrector):
     tokens = next(analyze(["Juan dice que le gusta la nube."], corrector=corrector))
     assert ("nube", [("nube", "NOUN")]) in tokens
     assert ("juan", []) in tokens
+
+
+# --- Misspellings that Wiktionary lists as entries ---------------------------------------
+
+
+def test_misspelling_entry_is_respelled_and_reported_once(corrector):
+    assert normalize("dia", "dia", "NOUN", corrector) == [("día", "NOUN")]
+    assert corrector.corrected == {("dia", ("dia", "NOUN"), ("día", "NOUN")): 1}
+
+
+def test_respelled_inflected_form_is_corrected_to_its_lemma(corrector):
+    # habia -> había (the correct spelling) -> haber (the dictionary word).
+    assert normalize("habia", "habia", "VERB", corrector) == [("haber", "VERB")]
+    assert corrector.corrected == {("habia", ("habia", "VERB"), ("haber", "VERB")): 1}
+
+
+def test_misspelled_word_tagged_as_a_name_is_respelled(corrector):
+    assert normalize("dia", "dia", "PROPN", corrector) == [("día", "NOUN")]

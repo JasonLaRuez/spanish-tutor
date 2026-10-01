@@ -90,6 +90,28 @@ class Wiktionary:
                         links[form].append((lemma, upos))
         return dict(links)
 
+    def misspellings(self) -> dict[tuple[str, str], tuple[str, str]]:
+        """(misspelling, UPOS) -> the correct word, for entries that are only a misspelling.
+
+        Wiktionary lists common typos as entries ("dia: misspelling of día"), and corpora
+        contain them, so without this they become words of their own. An entry qualifies
+        only when every sense points to the same correct word and at least one is tagged
+        "misspelling" (dia is also an "obsolete spelling" of día). Alternative forms are
+        deliberately excluded: "mi: alternative form of mío" and "buen: of bueno" are
+        separate words a learner has to learn.
+        """
+        redirects = {}
+        for (word, upos), senses in self.senses.items():
+            targets = {s.get("alt_of") for s in senses}
+            if len(targets) != 1 or None in targets:
+                continue
+            if not any("misspelling" in s["tags"] for s in senses):
+                continue
+            target = targets.pop()
+            if target != word and (target, upos) in self:
+                redirects[word, upos] = (target, upos)
+        return redirects
+
     def definition(self, lemma: str, pos: str, *, follow_alt: bool = True) -> str | None:
         senses = self.lookup(lemma, pos)
         if not senses:

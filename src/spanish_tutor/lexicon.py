@@ -94,15 +94,39 @@ class LemmaCorrector:
         form_links: Mapping[str, list[Analysis]],
         prior: Mapping[str, int],
         parts_of_speech: Callable[[str], list[str]] = lambda word: [],
+        misspellings: Mapping[Analysis, Analysis] | None = None,
     ):
         self.is_word = is_word
         self.form_links = form_links
         self.prior = prior
         self.parts_of_speech = parts_of_speech  # the POS a word has its own entries under
+        # Dictionary entries that are only a misspelling of another word (dia -> día).
+        self.misspellings = misspellings or {}
         self.corrected: Counter[tuple[str, Analysis, Analysis]] = Counter()
         self.unresolved: Counter[tuple[str, Analysis]] = Counter()
 
     def correct(self, form: str, analysis: Analysis) -> Analysis:
+        result = self._correct(form, analysis)
+        if (respelled := self._respell(result)) != result:
+            return self._record(form, analysis, respelled)
+        return result
+
+    def _respell(self, analysis: Analysis) -> Analysis:
+        """The word a misspelling-only dictionary entry stands for; anything else unchanged.
+
+        Wiktionary lists common typos as entries (dia, rio, tambien, aser), so they pass
+        the dictionary check and would become words of their own. The correct spelling may
+        itself be an inflected form (habia -> había -> haber), so it is corrected in turn,
+        without adding that internal step to the corrections report.
+        """
+        if (target := self.misspellings.get(analysis)) is None:
+            return analysis
+        corrected, unresolved = self.corrected.copy(), self.unresolved.copy()
+        fixed = self._correct(target[0], target)
+        self.corrected, self.unresolved = corrected, unresolved
+        return self.misspellings.get(fixed, fixed)
+
+    def _correct(self, form: str, analysis: Analysis) -> Analysis:
         lemma, pos = analysis
         if self.is_word(analysis):
             return analysis
@@ -162,7 +186,7 @@ class LemmaCorrector:
         if choice is None:
             self.unresolved[form, before] += 1
             return None
-        return self._record(form, before, choice)
+        return self._record(form, before, self._respell(choice))
 
     def _most_common(self, candidates: list[Analysis]) -> Analysis | None:
         if len(candidates) == 1:
@@ -208,6 +232,7 @@ def load_corrector() -> LemmaCorrector:
         form_links=wiktionary.form_links(forms),
         prior=subtlex.load_counts(counts),
         parts_of_speech=wiktionary.parts_of_speech,
+        misspellings=wiktionary.misspellings(),
     )
 
 

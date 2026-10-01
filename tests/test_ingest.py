@@ -225,3 +225,47 @@ def test_compact_entry_keeps_irregular_comparatives_as_words():
     assert [s["gloss"] for s in compact_entry(entry)["senses"]] == [
         "comparative degree of malo: worse"
     ]
+
+
+# --- Misspelling entries ---------------------------------------------------------------
+
+
+def wiktionary_of(tmp_path, entries):
+    path = tmp_path / "wikt.jsonl"
+    path.write_text("".join(json.dumps(e) + "\n" for e in entries), encoding="utf-8")
+    return Wiktionary(path)
+
+
+def alt(word, pos, target, *tags):
+    return {
+        "word": word,
+        "pos": pos,
+        "senses": [{"gloss": f"x of {target}", "tags": ["alt-of", *tags], "alt_of": target}],
+    }
+
+
+def test_misspelling_only_entries_redirect_to_the_correct_word(tmp_path):
+    wiktionary = wiktionary_of(
+        tmp_path,
+        [
+            {"word": "día", "pos": "noun", "senses": [{"gloss": "day", "tags": []}]},
+            alt("dia", "noun", "día", "misspelling"),
+            alt("dia", "noun", "día", "obsolete"),  # same target: still a redirect
+        ],
+    )
+    assert wiktionary.misspellings() == {("dia", "NOUN"): ("día", "NOUN")}
+
+
+def test_alternative_forms_and_words_with_real_senses_are_not_redirected(tmp_path):
+    wiktionary = wiktionary_of(
+        tmp_path,
+        [
+            {"word": "bueno", "pos": "adj", "senses": [{"gloss": "good", "tags": []}]},
+            alt("buen", "adj", "bueno", "alternative"),  # a separate word to learn
+            {"word": "más", "pos": "adv", "senses": [{"gloss": "more", "tags": []}]},
+            alt("mas", "adv", "más", "misspelling"),
+            {"word": "mas", "pos": "adv", "senses": [{"gloss": "but (literary)", "tags": []}]},
+            alt("ghost", "noun", "missing", "misspelling"),  # target isn't a word
+        ],
+    )
+    assert wiktionary.misspellings() == {}
