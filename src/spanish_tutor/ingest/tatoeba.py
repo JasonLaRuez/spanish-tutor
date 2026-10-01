@@ -16,11 +16,12 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from spanish_tutor.config import DATA_DIR
-from spanish_tutor.lexicon import TokenAnalysis, analyze
+from spanish_tutor.lexicon import LemmaCorrector, TokenAnalysis, analyze, load_corrector
 
 NULL = "\\N"
 RAW_DIR = DATA_DIR / "raw"
 ANALYZED_PATH = DATA_DIR / "processed" / "tatoeba_analyzed.jsonl"
+CORRECTIONS_PATH = DATA_DIR / "processed" / "lemma_corrections.csv"
 
 
 @dataclass(frozen=True)
@@ -99,6 +100,25 @@ def main() -> None:
     ANALYZED_PATH.parent.mkdir(parents=True, exist_ok=True)
     write_analyzed(sentences, ANALYZED_PATH)
     print(f"wrote {ANALYZED_PATH}")
+    report_corrections(load_corrector(), CORRECTIONS_PATH)
+
+
+def report_corrections(corrector: LemmaCorrector, dest: Path) -> None:
+    """Write every lemma correction (and unresolved case) with its count, for review."""
+    corrected, unresolved = corrector.corrected, corrector.unresolved
+    with dest.open("w", encoding="utf-8-sig", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["form", "tagger_lemma", "tagger_pos", "lemma", "pos", "tokens"])
+        for (form, before, after), n in corrected.most_common():
+            writer.writerow([form, *before, *after, n])
+        for (form, before), n in unresolved.most_common():
+            writer.writerow([form, *before, "", "", n])
+    print(
+        f"lemma corrections: {sum(corrected.values()):,} tokens ({len(corrected):,} distinct); "
+        f"unresolved: {sum(unresolved.values()):,} tokens. Details in {dest.name}"
+    )
+    for (form, before, after), n in corrected.most_common(15):
+        print(f"  {n:>6,}  {form:12} {before[0]}|{before[1]} -> {after[0]}|{after[1]}")
 
 
 if __name__ == "__main__":

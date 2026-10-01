@@ -187,3 +187,41 @@ def test_definition_dedupes_pieces_across_senses(tmp_path):
     assert Wiktionary(path).definition("tener", "VERB") == (
         "to have; to possess; to be (a condition)"
     )
+
+
+def test_form_links_keep_only_targets_that_are_dictionary_words(tmp_path):
+    from spanish_tutor.ingest.download import form_links
+
+    entry = {
+        "word": "amiga",
+        "pos": "noun",
+        "senses": [
+            {"glosses": ["female friend"], "form_of": [{"word": "amigo"}, {"word": "friend"}]}
+        ],
+    }
+    links_path = tmp_path / "forms.tsv"
+    links_path.write_text(
+        "".join("\t".join(link) + "\n" for link in form_links(entry)), encoding="utf-8"
+    )
+    wikt_path = tmp_path / "wikt.jsonl"
+    write_wiktionary(
+        wikt_path, [{"word": "amigo", "pos": "noun", "senses": [{"gloss": "friend", "tags": []}]}]
+    )
+
+    assert Wiktionary(wikt_path).form_links(links_path) == {"amiga": [("amigo", "NOUN")]}
+
+
+def test_compact_entry_keeps_irregular_comparatives_as_words():
+    entry = {
+        "word": "peor",
+        "pos": "adj",
+        "senses": [
+            {"glosses": ["comparative degree of malo: worse"], "tags": ["comparative", "form-of"],
+             "form_of": [{"word": "malo"}]},
+            {"glosses": ["superlative degree of malo: worst"], "tags": ["superlative", "form-of"],
+             "form_of": [{"word": "malo"}]},
+        ],
+    }  # fmt: skip
+    assert [s["gloss"] for s in compact_entry(entry)["senses"]] == [
+        "comparative degree of malo: worse"
+    ]

@@ -31,6 +31,9 @@ def is_git_ignored(relative_path: str) -> bool:
         "data/processed/chroma/chroma.sqlite3",
         "data/raw/SUBTLEX-ESP.xlsx",
         "data/raw/wiktionary_es.jsonl",
+        "data/raw/wiktionary_es_forms.tsv",
+        "data/processed/lemma_corrections.csv",
+        "data/processed/word_bank.backup-20261001-120000Z.db",
     ],
 )
 def test_private_and_generated_files_are_ignored(path):

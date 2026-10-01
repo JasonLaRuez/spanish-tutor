@@ -94,3 +94,21 @@ def test_store_refuses_a_different_embedding_model(tmp_path):
     open_store(path, embeddings=fake, model_id="model-a", model_revision="1")  # same: fine
     with pytest.raises(EmbeddingModelMismatch):
         open_store(path, embeddings=fake, model_id="model-b", model_revision="1")
+
+
+def test_update_vocab_refreshes_metadata_without_touching_vectors(store):
+    from spanish_tutor.ingest.index_tatoeba import update_vocab
+
+    index_sentences(store, CORPUS, report=quiet)
+    before = store.get(ids=["tatoeba:2"], include=["embeddings"])["embeddings"][0]
+
+    relemmatized = [
+        *CORPUS[:1],
+        sentence(2, "Un gato raro.", [GATO, ("rarísimo", "ADJ")]),
+        *CORPUS[2:],
+    ]
+    assert update_vocab(store, relemmatized, report=quiet) == (1, 2)
+
+    after = store.get(ids=["tatoeba:2"], include=["embeddings", "metadatas"])
+    assert decode_vocab(after["metadatas"][0]["vocab"]) == {GATO, ("rarísimo", "ADJ")}
+    assert list(after["embeddings"][0]) == list(before)

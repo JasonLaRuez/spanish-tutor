@@ -17,15 +17,18 @@ cp .env.example .env     # then add your ANTHROPIC_API_KEY
 uv run pytest
 ```
 
-## Seeding your word bank
+## Building the lexicon and seeding your word bank
 
-The word bank starts from vocabulary you already know. All data is downloaded and
-generated locally; none of it is committed.
+All data is downloaded and generated locally; none of it is committed. The first three
+steps build a general Spanish lexicon (about 30k words with frequencies, definitions and
+example sentences) that doesn't depend on any learner. The last two record which of
+those words *you* know.
 
 ```sh
-uv run python -m spanish_tutor.ingest.download   # corpora into data/raw/ (the Wiktionary step is slow)
-uv run python -m spanish_tutor.ingest.tatoeba    # lemmatize Tatoeba once (a few minutes)
-uv run python -m spanish_tutor.seed candidates   # ~1,500 frequency-ranked words to review
+uv run python -m spanish_tutor.ingest.download        # corpora into data/raw/ (a few minutes)
+uv run python -m spanish_tutor.ingest.tatoeba         # lemmatize Tatoeba once (~15 min)
+uv run python -m spanish_tutor.ingest.build_lexicon   # the general lexicon (backs up the DB first)
+uv run python -m spanish_tutor.seed candidates        # ~1,500 most frequent words to review
 # Open data/processed/seed_candidates.csv and fill the `known` column:
 #   r = I recognize it, p = I can also use it myself, blank = don't know it
 uv run python -m spanish_tutor.seed build        # load the marked words into the word bank
@@ -38,6 +41,7 @@ real examples by meaning, keeping only ones you can read.
 
 ```sh
 uv run python -m spanish_tutor.ingest.index_tatoeba          # ~35 min on CPU; resumable
+uv run python -m spanish_tutor.ingest.index_tatoeba --update-vocab   # after re-lemmatizing
 uv run python -m spanish_tutor.vectorstore "the weather"     # only words you know
 uv run python -m spanish_tutor.vectorstore "I'm hungry" --max-unknown 1   # one new word (i+1)
 ```

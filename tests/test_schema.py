@@ -188,3 +188,59 @@ def test_known_vocabulary_separates_recognition_and_production(conn):
 
     assert known_vocabulary(conn) == {("casa", "NOUN"), ("gato", "NOUN")}
     assert known_vocabulary(conn, "production") == {("gato", "NOUN")}
+
+
+# --- Migrations ------------------------------------------------------------------------
+
+
+def test_new_database_is_created_at_the_latest_version(conn):
+    from spanish_tutor.db import migrations
+
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == migrations()[-1][0]
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(lexemes)")}
+    assert "frequency_per_million" in columns
+
+
+def test_database_created_before_migration_1_is_upgraded_without_data_loss():
+    from spanish_tutor.db import migrations
+
+    old = connect(":memory:")
+    # The lexemes table as it was before migration 1, holding a word and its event.
+    old.executescript(
+        """
+        CREATE TABLE lexemes (
+            lexeme_id INTEGER PRIMARY KEY, lemma TEXT NOT NULL, pos TEXT NOT NULL,
+            cefr_level TEXT, definition_en TEXT, definition_es TEXT,
+            definition_source TEXT, example_es TEXT, example_en TEXT,
+            example_source TEXT, example_author TEXT, UNIQUE (lemma, pos)
+        );
+        INSERT INTO lexemes (lemma, pos, definition_en) VALUES ('casa', 'NOUN', 'house');
+        """
+    )
+    init_schema(old)
+    init_schema(old)  # re-running applies nothing twice
+
+    assert old.execute("PRAGMA user_version").fetchone()[0] == migrations()[-1][0]
+    row = old.execute("SELECT * FROM lexemes").fetchone()
+    assert (row["lemma"], row["definition_en"], row["frequency_per_million"]) == (
+        "casa",
+        "house",
+        None,
+    )
+    tables = {r["name"] for r in old.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    assert {"lexeme_reviews", "word_events", "word_bank"} <= tables
+
+
+def test_lexeme_reviews_record_verdicts_with_their_reviewer(conn):
+    casa = add_lexeme(conn, "casa")
+    conn.execute(
+        "INSERT INTO lexeme_reviews (lexeme_id, field, verdict, suggestion, reviewer) "
+        "VALUES (?, 'definition_en', 'incorrect', 'house, home', 'claude-opus-5-5')",
+        (casa,),
+    )
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute(
+            "INSERT INTO lexeme_reviews (lexeme_id, field, verdict, reviewer) "
+            "VALUES (?, 'definition_en', 'maybe', 'human')",
+            (casa,),
+        )

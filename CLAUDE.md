@@ -278,25 +278,62 @@ file if it's been lost. Phase structure:
   verbs reduced to the verb, and **personal pronouns keep their own form**, because spaCy
   would otherwise merge *me/nos/conmigo* into *yo* and *se/lo/le* into *él*). Phase 3
   content indexing must reuse it, or the word bank and difficulty index disagree about
-  what's "new". Known weakness: spaCy mis-lemmatizes some inflected verbs (`crees`,
-  `has`, `dámelo` → `dámelir`). The seed's Wiktionary check drops these, but content
-  indexing would count them as new words. A likely fix is correcting lemmas through
-  Wiktionary's form-of data (`crees` → *creer*); do this before Phase 3.
-- **Wiktionary matching** (`ingest/wiktionary.py`): form-of senses are kept only for
-  function words (*ti* = "prepositional of tú"), and function words may match across
-  compatible POS (spaCy's PRON *cómo* ↔ Wiktionary's adverb), always keeping spaCy's POS.
-  Accepted consequence of `(lemma, pos)` keys: tagger-inconsistent function words appear
-  under several POS (*mismo* DET/ADJ/PRON) and are marked separately.
+  what's "new".
+- **Lemma correction** (`lexicon.LemmaCorrector`, added 2026-10-01):
+  - When spaCy's `(lemma, pos)` isn't a Wiktionary word, it's repaired from Wiktionary's
+    form-of table (`data/raw/wiktionary_es_forms.tsv`).
+  - Examples: *has* → *haber*, *deberías* (spaCy: *deberiar*) → *deber*, *dólares* → *dólar*,
+    *déjame* → *dejar*, and a wrongly tagged *serio* NOUN → *serio* ADJ.
+  - Ties between candidate lemmas use SUBTLEX frequency (*crees* → *creer*, not *crear*);
+    remaining ties are never guessed.
+  - Every Tatoeba run writes `data/processed/lemma_corrections.csv` for review. The first run
+    corrected ~88k tokens; ~0.6% of tokens stay unresolved (truly ambiguous: *tal*, *solo*,
+    *siquiera*).
+  - Analyzing text therefore needs the downloaded Wiktionary files. Tests pass
+    `corrector=None` for raw spaCy behavior.
+  - Known tagger limits the corrector can't fix: sentence-initial words are sometimes
+    tagged as proper nouns (*Sales a las ocho*) and dropped.
+- **Wiktionary matching** (`ingest/wiktionary.py`):
+  - Form-of senses are dropped for open-class words (only dictionary forms remain), but kept
+    for function words (*ti* = "prepositional of tú") and irregular comparatives (*peor*,
+    *mejor*, *mayor*, *menor*), which are separate words to learn.
+  - Function words may match across compatible POS (spaCy's PRON *cómo* ↔ Wiktionary's
+    adverb), always keeping spaCy's POS.
+  - Accepted consequence of `(lemma, pos)` keys: tagger-inconsistent function words appear
+    under several POS (*mismo* DET/ADJ/PRON).
+- **General lexicon** (`ingest/build_lexicon.py` + `sql/fill_lexicon.sql`, added 2026-10-01):
+  - Contents: every `(lemma, pos)` in the lemmatized Tatoeba corpus that Wiktionary knows,
+    with `frequency_per_million`, an English definition, and a learner-independent example.
+    The example is the most readable sentence for someone knowing the 2,000 most frequent
+    words; it is re-chosen per learner when a word is taught.
+  - Independent of any learner, and rebuildable by anyone with one command (Jason's reason
+    for choosing an advance fill over on-demand creation).
+  - **Additive only:** rows are never deleted, so `lexeme_id`s and the events referencing
+    them survive rebuilds. Frequencies are overwritten; definitions and examples only fill
+    blanks (examples move as a unit).
+  - The database is backed up before each build (`db.backup`).
+  - `seed candidates` ranks this lexicon; `seed build` only records events.
+- **Planned: LLM accuracy review** of the lexicon (definitions, examples, translations)
+  with a bilingual Spanish–English model, Jason's idea:
+  - Results go in `lexeme_reviews`: append-only, never overwriting `lexemes`, with the
+    reviewer recorded.
+  - Applying accepted fixes is a separate step that updates `definition_source`
+    (e.g. `wiktionary+reviewed`).
+  - Belongs with Phase 4 evaluation (LLM-as-judge). Model choice and budget are Jason's.
+    Rough Batch API cost for ~30k entries: ~$5–10 with Haiku, ~$50 with Opus.
+- **Schema migrations:** `schema.sql` is the latest schema, for new databases. Every change
+  to an existing table also needs a numbered file in `sql/migrations/`; `db.init_schema`
+  applies pending ones, tracked in `PRAGMA user_version`. Never edit an applied migration.
 - **Data licensing rule:** the repo ships code, never data. SUBTLEX-ESP is CC BY-NC-SA 4.0,
   Wiktionary (kaikki.org) CC BY-SA, Tatoeba CC BY 2.0 FR with per-sentence author credit
   (stored in `lexemes.example_source`/`example_author`), and the spaCy model is GPL-3.0.
   Everything downloaded or derived lives in `data/raw/` and `data/processed/` (gitignored,
   enforced by `tests/test_repo_hygiene.py`). Credits are in the README.
-- **Seed pipeline** (`seed.py`, commands in the README): SUBTLEX form counts are split across
-  `(lemma, pos)` by how spaCy analyzed each form in Tatoeba sentences, filtered to pairs with
-  a Wiktionary entry, and the top ~1,500 are written to a CSV. Jason marks each `r`
-  (recognize) or `p` (can produce), and `seed build` loads the marked rows via a
-  re-runnable, set-based SQL script.
+- **Seed pipeline** (`seed.py`, commands in the README): the ~1,500 most frequent lexicon
+  words are written to a CSV. Jason marks each `r` (recognize) or `p` (can produce), and
+  `seed build` records the marks as `seed` events via a re-runnable, set-based SQL script.
+  Frequencies come from SUBTLEX form counts split across `(lemma, pos)` by how each form
+  is used in Tatoeba.
 - **Embeddings** (`embeddings.py`, decided 2026-09-30):
   - Model: `jinaai/jina-embeddings-v2-base-es` (Jina AI, Apache-2.0, Spanish–English, 768-dim,
     8,192-token context), via LangChain's `HuggingFaceEmbeddings`.

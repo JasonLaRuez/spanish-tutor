@@ -11,6 +11,12 @@
 -- view). tests/test_schema.py asserts they agree; change them together.
 --
 -- Connections must run `PRAGMA foreign_keys = ON;` or REFERENCES is not enforced.
+--
+-- This file always describes the LATEST schema, for new databases. Existing databases
+-- are upgraded by the numbered files in sql/migrations/; PRAGMA user_version records
+-- how many have been applied (see db.init_schema). A schema change therefore means
+-- editing this file AND adding a migration that brings an older database to the same
+-- shape.
 
 
 -- Every dictionary form the system knows about: taught words AND (from Phase 3)
@@ -39,8 +45,29 @@ CREATE TABLE IF NOT EXISTS lexemes (
     example_en        TEXT,
     example_source    TEXT,           -- e.g. 'tatoeba:12345' -> tatoeba.org/en/sentences/show/12345
     example_author    TEXT,           -- Tatoeba username
+    -- Estimated occurrences per million words of subtitles (SUBTLEX-ESP form counts
+    -- split across lemmas by Tatoeba usage). General data, independent of any learner.
+    frequency_per_million REAL CHECK (frequency_per_million >= 0),
     UNIQUE (lemma, pos)
 );
+
+
+-- Reviews of lexeme data (by an LLM or a person), for checking definitions,
+-- examples and translations. Append-only like word_events: a new review never
+-- overwrites an old one, so reviewers can be compared and re-run, and the sourced
+-- data in lexemes stays intact. Applying an accepted fix to lexemes is a separate step.
+CREATE TABLE IF NOT EXISTS lexeme_reviews (
+    review_id   INTEGER PRIMARY KEY,
+    lexeme_id   INTEGER NOT NULL REFERENCES lexemes (lexeme_id),
+    field       TEXT NOT NULL CHECK (field IN
+                    ('lemma', 'pos', 'definition_en', 'example_es', 'example_en')),
+    verdict     TEXT NOT NULL CHECK (verdict IN ('correct', 'incorrect', 'unsure')),
+    suggestion  TEXT,                 -- the reviewer's proposed fix, if any
+    reviewer    TEXT NOT NULL,        -- model id and version, or 'human'
+    reviewed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS ix_lexeme_reviews_lexeme ON lexeme_reviews (lexeme_id, field);
 
 
 -- Append-only learning history. Never UPDATE or DELETE rows here.

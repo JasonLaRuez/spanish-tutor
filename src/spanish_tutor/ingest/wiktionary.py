@@ -66,6 +66,30 @@ class Wiktionary:
     def __contains__(self, key: tuple[str, str]) -> bool:
         return bool(self.lookup(*key))
 
+    def parts_of_speech(self, word: str) -> list[str]:
+        """Every UPOS the word has its own entry under (no fallbacks)."""
+        if not hasattr(self, "_pos_index"):
+            self._pos_index: dict[str, list[str]] = defaultdict(list)
+            for lemma, upos in self.senses:
+                self._pos_index[lemma].append(upos)
+        return self._pos_index.get(word, [])
+
+    def form_links(self, path: Path) -> dict[str, list[tuple[str, str]]]:
+        """Inflected form -> the dictionary words it's a form of, as (lemma, UPOS).
+
+        Reads the form-of table written by ingest/download.py. Targets that aren't
+        themselves dictionary entries are dropped (Wiktionary occasionally links a form
+        to an English gloss, e.g. amiga -> "friend").
+        """
+        links: dict[str, list[tuple[str, str]]] = defaultdict(list)
+        with path.open(encoding="utf-8") as f:
+            for line in f:
+                form, wiktionary_pos, lemma = line.rstrip("\n").split("\t")
+                for upos in POS_MAP.get(wiktionary_pos, ()):
+                    if (lemma, upos) in self and (lemma, upos) not in links[form]:
+                        links[form].append((lemma, upos))
+        return dict(links)
+
     def definition(self, lemma: str, pos: str, *, follow_alt: bool = True) -> str | None:
         senses = self.lookup(lemma, pos)
         if not senses:

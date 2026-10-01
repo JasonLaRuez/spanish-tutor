@@ -71,9 +71,45 @@ def index_sentences(
     return added, skipped
 
 
+def update_vocab(
+    store: Chroma,
+    sentences: Iterable[AnalyzedSentence],
+    *,
+    batch_size: int = BATCH_SIZE,
+    report: Callable[[str], None] = print,
+) -> tuple[int, int]:
+    """Refresh stored metadata after re-lemmatization, without re-embedding.
+
+    The sentences (and so their vectors) are unchanged; only the derived vocabulary can
+    differ. Returns (updated, unchanged); sentences not yet stored are ignored.
+    """
+    updated = unchanged = 0
+    translated = (s for s in sentences if s.en)
+    for n, batch in enumerate(itertools.batched(translated, batch_size), 1):
+        stored = store.get(ids=[document_id(s) for s in batch], include=["metadatas"])
+        current = dict(zip(stored["ids"], stored["metadatas"], strict=True))
+        changed = [
+            s for s in batch if document_id(s) in current and current[document_id(s)] != metadata(s)
+        ]
+        unchanged += len(current) - len(changed)
+        if changed:
+            store._collection.update(
+                ids=[document_id(s) for s in changed], metadatas=[metadata(s) for s in changed]
+            )
+            updated += len(changed)
+        if n % 50 == 0:
+            report(f"  {updated + unchanged:,} checked, {updated:,} updated")
+    return updated, unchanged
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Embed Tatoeba sentences into Chroma.")
     parser.add_argument("--limit", type=int, help="only the first N translated sentences")
+    parser.add_argument(
+        "--update-vocab",
+        action="store_true",
+        help="refresh stored word lists after re-lemmatizing, without re-embedding",
+    )
     args = parser.parse_args()
 
     if not ANALYZED_PATH.exists():
@@ -87,6 +123,11 @@ def main() -> None:
 
     print("loading embedding model ...")
     store = open_store()
+    if args.update_vocab:
+        print(f"refreshing word lists for {total:,} translated sentences")
+        updated, unchanged = update_vocab(store, sentences)
+        print(f"done: {updated:,} updated, {unchanged:,} unchanged")
+        return
     print(f"indexing {total:,} translated sentences")
     added, skipped = index_sentences(store, sentences, total=total)
     print(f"done: {added:,} added, {skipped:,} already stored")

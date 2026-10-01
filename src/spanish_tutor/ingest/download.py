@@ -37,6 +37,9 @@ FILES = {
 KAIKKI_SPANISH_URL = "https://kaikki.org/dictionary/Spanish/kaikki.org-dictionary-Spanish.jsonl"
 KAIKKI_ALL_URL = "https://kaikki.org/dictionary/raw-wiktextract-data.jsonl.gz"
 WIKTIONARY_FILE = "wiktionary_es.jsonl"
+# Inflected form -> dictionary form, from Wiktionary's form-of senses (crees -> creer).
+# lexicon.py uses it to repair the tagger's lemma mistakes.
+WIKTIONARY_FORMS_FILE = "wiktionary_es_forms.tsv"
 MAX_SENSES = 5
 
 
@@ -70,7 +73,10 @@ def compact_entry(entry: dict) -> dict | None:
         tags = sense.get("tags", [])
         glosses = sense.get("glosses")
         is_form_of = "form_of" in sense or "form-of" in tags
-        if not glosses or "no-gloss" in tags or (is_form_of and pos not in CLOSED_CLASS_POS):
+        # Irregular comparatives (peor, mejor, mayor, menor) are "forms" of malo, bueno, ...
+        # in Wiktionary, but separate words to learn, so their senses are kept too.
+        keep_form = pos in CLOSED_CLASS_POS or "comparative" in tags
+        if not glosses or "no-gloss" in tags or (is_form_of and not keep_form):
             continue
         # Subsenses list the parent gloss first; the last gloss is the specific one.
         compact = {"gloss": glosses[-1], "tags": tags}
@@ -82,6 +88,17 @@ def compact_entry(entry: dict) -> dict | None:
     if not senses:
         return None
     return {"word": entry["word"], "pos": pos, "senses": senses}
+
+
+def form_links(entry: dict) -> list[tuple[str, str, str]]:
+    """(form, Wiktionary POS, lemma) for each form-of sense: ("crees", "verb", "creer")."""
+    links = []
+    for sense in entry.get("senses", []):
+        for target in sense.get("form_of", []):
+            lemma = target.get("word")
+            if lemma and lemma != entry["word"]:
+                links.append((entry["word"], entry.get("pos", ""), lemma))
+    return list(dict.fromkeys(links))
 
 
 @contextmanager
@@ -97,7 +114,8 @@ def open_lines(url: str) -> Iterator[Iterator[bytes]]:
             yield response
 
 
-def filter_spanish(lines: Iterator[bytes], out) -> int:
+def filter_spanish(lines: Iterator[bytes], out, forms_out) -> int:
+    """Write compact Spanish entries to `out` and form-of links to `forms_out`."""
     kept = 0
     for n, line in enumerate(lines, start=1):
         if n % 1_000_000 == 0:
@@ -112,20 +130,27 @@ def filter_spanish(lines: Iterator[bytes], out) -> int:
         if compact:
             out.write(json.dumps(compact, ensure_ascii=False) + "\n")
             kept += 1
+        for link in form_links(entry):
+            forms_out.write("\t".join(link) + "\n")
     return kept
 
 
-def fetch_wiktionary(dest: Path) -> None:
-    if dest.exists():
-        print(f"skip  {dest.name} (exists)")
+def fetch_wiktionary(dest: Path, forms_dest: Path) -> None:
+    if dest.exists() and forms_dest.exists():
+        print(f"skip  {dest.name}, {forms_dest.name} (exist)")
         return
     partial = dest.with_suffix(dest.suffix + ".part")
+    forms_partial = forms_dest.with_suffix(forms_dest.suffix + ".part")
     kept = 0
     for url in (KAIKKI_SPANISH_URL, KAIKKI_ALL_URL):
-        print(f"fetch {dest.name} from {url}")
+        print(f"fetch {dest.name} + {forms_dest.name} from {url}")
         try:
-            with open_lines(url) as lines, partial.open("w", encoding="utf-8") as out:
-                kept = filter_spanish(lines, out)
+            with (
+                open_lines(url) as lines,
+                partial.open("w", encoding="utf-8") as out,
+                forms_partial.open("w", encoding="utf-8") as forms_out,
+            ):
+                kept = filter_spanish(lines, out, forms_out)
             break
         except urllib.error.HTTPError as error:
             if error.code not in (404, 410):
@@ -133,8 +158,10 @@ def fetch_wiktionary(dest: Path) -> None:
             print(f"  not available ({error.code}); trying the next source")
     if kept == 0:
         partial.unlink(missing_ok=True)
+        forms_partial.unlink(missing_ok=True)
         sys.exit("No Spanish entries found; the kaikki format may have changed.")
     partial.replace(dest)
+    forms_partial.replace(forms_dest)
     print(f"  done: {kept:,} Spanish entries")
 
 
@@ -147,7 +174,7 @@ def main() -> None:
     for name, url in FILES.items():
         fetch(url, RAW_DIR / name)
     if not args.skip_wiktionary:
-        fetch_wiktionary(RAW_DIR / WIKTIONARY_FILE)
+        fetch_wiktionary(RAW_DIR / WIKTIONARY_FILE, RAW_DIR / WIKTIONARY_FORMS_FILE)
 
 
 if __name__ == "__main__":
