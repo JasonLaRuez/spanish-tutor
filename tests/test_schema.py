@@ -175,3 +175,16 @@ def test_lexemes_record_provenance_for_attribution(conn):
     assert row["example_source"] == "tatoeba:12345"
     assert row["example_author"] == "someone"
     assert row["definition_source"] == "wiktionary"
+
+
+def test_known_vocabulary_separates_recognition_and_production(conn):
+    from spanish_tutor.db import known_vocabulary
+
+    casa, gato = add_lexeme(conn, "casa"), add_lexeme(conn, "gato")
+    add_lexeme(conn, "perro")  # in lexemes, never taught
+    add_event(conn, casa, "taught")
+    add_event(conn, gato, "taught")
+    add_event(conn, gato, "used", grade=4)
+
+    assert known_vocabulary(conn) == {("casa", "NOUN"), ("gato", "NOUN")}
+    assert known_vocabulary(conn, "production") == {("gato", "NOUN")}

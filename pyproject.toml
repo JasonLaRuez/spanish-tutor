@@ -12,10 +12,21 @@ dependencies = [
     "langchain>=1.4.3",
     "langchain-anthropic>=1.7.5",
     "langchain-chroma>=1.1.0",
+    "langchain-huggingface>=1.2.2",
     "openpyxl>=3.1.5",
     "python-dotenv>=1.2.3",
     "spacy>=3.8,<3.9",
+    "torch>=2.14.1",
+    # Pinned below 5 / 6: the jina-embeddings-v2-base-es model code imports
+    # transformers.onnx, which transformers 5 removed. See src/spanish_tutor/embeddings.py.
+    "sentence-transformers>=5.7,<6",
+    "transformers>=4.57,<5",
 ]
+
+[tool.pytest.ini_options]
+# Slow tests load the real embedding model; run them with `uv run pytest -m slow`.
+markers = ["slow: loads large models; excluded by default"]
+addopts = "-m 'not slow'"
 
 [project.scripts]
 spanish-tutor = "spanish_tutor:main"

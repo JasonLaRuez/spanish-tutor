@@ -31,6 +31,19 @@ uv run python -m spanish_tutor.seed candidates   # ~1,500 frequency-ranked words
 uv run python -m spanish_tutor.seed build        # load the marked words into the word bank
 ```
 
+## Example-sentence search
+
+Tatoeba sentences are embedded into a local Chroma store so the tutor can retrieve
+real examples by meaning, keeping only ones you can read.
+
+```sh
+uv run python -m spanish_tutor.ingest.index_tatoeba          # ~35 min on CPU; resumable
+uv run python -m spanish_tutor.vectorstore "the weather"     # only words you know
+uv run python -m spanish_tutor.vectorstore "I'm hungry" --max-unknown 1   # one new word (i+1)
+```
+
+`uv run pytest` runs the fast suite; `uv run pytest -m slow` also loads the real embedding model.
+
 ## Layout
 
 | Path | Contents |
@@ -57,6 +70,8 @@ under their own terms:
   CC BY-SA 4.0.
 - **spaCy** `es_core_news_md` for lemmatization and part-of-speech tagging (GPL-3.0;
   installed as a dependency, not bundled).
+- **Jina AI** [`jina-embeddings-v2-base-es`](https://huggingface.co/jinaai/jina-embeddings-v2-base-es)
+  for sentence embeddings (Apache-2.0; downloaded to the Hugging Face cache, not bundled).
 
 Song lyrics and copyrighted books are supported as local input under `private/` and
 never leave your machine.

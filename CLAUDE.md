@@ -297,8 +297,34 @@ file if it's been lost. Phase structure:
   a Wiktionary entry, and the top ~1,500 are written to a CSV. Jason marks each `r`
   (recognize) or `p` (can produce), and `seed build` loads the marked rows via a
   re-runnable, set-based SQL script.
-- **Open design point:** Claude has no embeddings endpoint, so choose a multilingual
-  embedding model for Chroma before ingesting Tatoeba (Chroma's default is English-centric).
+- **Embeddings** (`embeddings.py`, decided 2026-09-30):
+  - Model: `jinaai/jina-embeddings-v2-base-es` (Jina AI, Apache-2.0, Spanish–English, 768-dim,
+    8,192-token context), via LangChain's `HuggingFaceEmbeddings`.
+  - Hardware: PyTorch on CPU, which was Jason's choice. PyTorch is a wanted DS-job skill, and
+    the GTX 1080 is too old for current CUDA wheels.
+  - Why jina over `multilingual-e5-base`: similar speed, far better separation. Related vs.
+    unrelated similarity was 0.895 vs. 0.038, where e5 gave 0.92 vs. 0.84, so jina's scores
+    are usable as thresholds.
+  - Cost of that choice: its remote code (`trust_remote_code`) imports `transformers.onnx`,
+    which transformers 5 removed. **`transformers<5` and `sentence-transformers<6` are pinned
+    for this reason; don't upgrade them without re-checking the model.**
+  - The model repo and its code repo are pinned to exact commit SHAs (`MODEL_REVISION`,
+    `CODE_REVISION`).
+  - Speed: ~130 sentences/s on CPU, so the full Tatoeba index takes ~35 min.
+- **Vector store** (`vectorstore.py`):
+  - Chroma collection `tatoeba` in `data/processed/chroma/`, cosine distance.
+  - One document per translated sentence, id `tatoeba:<id>`. Metadata holds `en`, `author`
+    and `vocab`, the sentence's `(lemma, pos)` set from `lexicon.py`, encoded
+    `"lemma|POS;…"` because Chroma metadata must be scalar.
+  - The collection records its embedding model and revision, and `open_store()` refuses a
+    mismatch; switching models means deleting the store and re-indexing.
+  - `search_sentences(query, known, max_unknown=…)` over-fetches by similarity, then keeps
+    sentences with at most `max_unknown` words outside the word bank (0 = fully
+    comprehensible, 1 = i+1). It reports the unknown words so the skill can pre-teach them.
+  - The vocab filter is a Python post-filter for now; Phase 3's SQL difficulty index is its
+    long-term home.
+- **Tests:** tests marked `slow` load the real embedding model and are excluded by default.
+  Run them with `uv run pytest -m slow` after touching embeddings or their pins.
 - **Schema workflow:** the schema is designed *together with* Jason, not handed to him. He
   needs to be able to defend every line of the SQL in an interview. Propose and explain;
   let him decide.

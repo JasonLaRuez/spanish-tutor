@@ -28,6 +28,7 @@ def is_git_ignored(relative_path: str) -> bool:
         "data/processed/seed_candidates.csv",
         "data/processed/seed_words.sql",
         "data/processed/tatoeba_analyzed.jsonl",
+        "data/processed/chroma/chroma.sqlite3",
         "data/raw/SUBTLEX-ESP.xlsx",
         "data/raw/wiktionary_es.jsonl",
     ],

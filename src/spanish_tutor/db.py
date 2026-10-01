@@ -21,6 +21,20 @@ def init_schema(conn: sqlite3.Connection) -> None:
     conn.executescript((SQL_DIR / "schema.sql").read_text(encoding="utf-8"))
 
 
+def known_vocabulary(conn: sqlite3.Connection, mode: str = "recognition") -> set[tuple[str, str]]:
+    """The learner's (lemma, pos) pairs in one mode: 'recognition' or 'production'."""
+    rows = conn.execute(
+        """
+        SELECT l.lemma, l.pos
+        FROM word_bank AS b
+        JOIN lexemes AS l ON l.lexeme_id = b.lexeme_id
+        WHERE b.mode = ?
+        """,
+        (mode,),
+    )
+    return {(lemma, pos) for lemma, pos in rows}
+
+
 def rebuild_word_bank(conn: sqlite3.Connection) -> None:
     """Recompute word_bank from the full event log (e.g. after a formula change)."""
     conn.executescript((SQL_DIR / "rebuild_word_bank.sql").read_text(encoding="utf-8"))
