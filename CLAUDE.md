@@ -259,8 +259,51 @@ file if it's been lost. Phase structure:
 
 ## Working conventions
 
-- **Status:** Phase 0 (learning sprint) is complete. Project scaffolded 2026-09-29; Phase 1
-  is next.
+- **Status (as of 2026-10-01):** Phase 0 is complete. Phase 1 has 3 of 7 roadmap steps done,
+  plus extra groundwork:
+  - Done: the word bank schema; the seed (987 recognized / 730 produced words); Tatoeba in
+    Chroma (261k sentences).
+  - Extra: lemma correction, and the general lexicon (26k words).
+  - **Next: the conversation skill**, then write-back of taught words, then ~20 real
+    conversations.
+  - The API key is in `.env` (gitignored) and authenticates, but the account had **no
+    credits** on 2026-10-01. Jason needs to add credits (Console → Plans & Billing) before
+    any LLM call.
+  - Build log, published (private): https://claude.ai/artifact/NAheU5cpSBdxY7QpoeQbHQ.
+    Republish it after milestones. The roadmap artifact's link is still unknown; ask Jason.
+- **Open design points for the conversation skill** (settle with Jason before building):
+  - **The loop:** retrieve with `vectorstore.search_sentences(query, db.known_vocabulary(conn),
+    max_unknown=0|1)`; generate with Claude, constrained to known words; detect new words
+    with `lexicon.analyze` + `vocabulary()`; teach them; log events.
+  - **Logging:** a `taught` event teaches a word already in `lexemes`. Words *not* in the
+    lexicon (absent from Tatoeba) still need an on-demand `ensure_lexeme(lemma, pos)`
+    (Wiktionary definition, rejecting non-words), and that isn't built yet.
+  - **Examples at teach time:** re-choose them against the learner's word bank. For rare
+    words with no stored example, use the sentence where the word was met.
+  - **Grading policy is undecided.** What grade does a `seen`, `looked_up` or `used` event
+    get, and who grades production: Claude as judge, or rules?
+  - **Model settings:** `claude-opus-5-5` rejects `temperature` and can't disable thinking;
+    its effort defaults to `medium` (set it explicitly; `low` likely suits chat turns). Use
+    prompt caching for the system prompt and vocabulary. Check how `langchain-anthropic`
+    exposes `output_config.effort` before relying on it.
+  - **Adherence check:** the Spanish output should be checked against the word bank after
+    generation (it's also a Phase 4 metric). Decide whether a violation triggers a retry or
+    gets taught as a new word.
+- **Known data limits:** *ven* resolves to *ver* by frequency (often the imperative of
+  *venir*); sentence-initial words are sometimes tagged as names and dropped; ~100
+  NOUN-tagged *conmigo* tokens became an ADV entry; multi-word expressions (`EXPR`) are
+  allowed in the schema but not yet detected in text.
+- **Notebook:** `notebooks/01_data_pipeline.ipynb` is now the source; edit it directly. The
+  generator script used to create it was temporary and no longer exists.
+  - Verify edits with
+    `uv run jupyter nbconvert --to notebook --execute --inplace notebooks/01_data_pipeline.ipynb`
+    and keep `ruff check` passing; ruff lints notebooks.
+  - Outputs are stripped from commits by an nbstripout git filter. On a fresh clone, run
+    `uv run nbstripout --install --attributes .gitattributes`, because the filter lives in
+    local git config.
+- **Working with Jason:** commit only when he asks (he usually does after each milestone).
+  Use plan mode for multi-step work when he requests a plan. Publish-worthy summaries go to
+  the build log artifact.
 - **Decided stack:** Python 3.12 managed with `uv` (`uv sync`, `uv run pytest`,
   `uv add <pkg>`). LLM is the Claude API via LangChain (`langchain-anthropic`); LangChain was
   chosen deliberately because Jason already knows it and it is frequently named in DS/AI
@@ -313,6 +356,27 @@ file if it's been lost. Phase structure:
     blanks (examples move as a unit).
   - The database is backed up before each build (`db.backup`).
   - `seed candidates` ranks this lexicon; `seed build` only records events.
+  - **Example coverage (measured 2026-10-01): 70% overall, but concentrated where it
+    matters.**
+
+    | Frequency rank | Have an example |
+    |---|---|
+    | Top 2,000 | 100% |
+    | 2,001–5,000 | 99.1% |
+    | 5,001–10,000 | 92.3% |
+    | Beyond 10,000 | 64.5% |
+    | No subtitle frequency | 39.3% |
+
+    Missing examples are words that occur only in untranslated Tatoeba sentences.
+  - **Decided: no Wiktionary usage examples.** Only 461 of the 7,860 example-less words have
+    a translated one (+1.8 points). Over half of those are long literary quotations, some
+    with a book title in place of the translation.
+  - **Decided: for the rare tail, use the sentence where the learner actually met the word**
+    when it is taught. Build this into the conversation skill's teach step.
+  - **Later, with the LLM review pipeline:** translate the untranslated Tatoeba sentences with
+    Claude (~7.9k short sentences, a few dollars with Haiku via the Batch API). This needs
+    a schema decision first: record that the English is model-generated, e.g. an
+    `example_en_source` column.
 - **Planned: LLM accuracy review** of the lexicon (definitions, examples, translations)
   with a bilingual Spanish–English model, Jason's idea:
   - Results go in `lexeme_reviews`: append-only, never overwriting `lexemes`, with the
