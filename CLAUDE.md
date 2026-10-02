@@ -280,8 +280,32 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
   - **Next: more real conversations** by Jason (~19 to go).
   - Measured in session 1: Claude stayed inside the word bank in every reply, and gaps
     between turns were 1–3.5 min, with one 33-minute break.
+  - **Notebook 02** (`notebooks/02_conversation.ipynb`, done 2026-10-02) walks through one
+    real session:
+    - a topic query ("el jardín") with the database's ranked candidates, cross-checked
+      against Claude's unconstrained suggestions, and the final grounded choice;
+    - a 3-message conversation with one "¿cómo se dice?";
+    - the transcript, events, adherence and completeness metrics in SQL, and the cost
+      per turn.
+    - It runs on an **in-memory copy** of the word bank, so the real learning history is
+      untouched. About 10 API calls (~10¢) per run, and Claude's wording varies between
+      runs.
+  - **Open items (as of 2026-10-02), none started:**
+    - **Stale frequencies** (offered, not decided): `sql/fill_lexicon.sql` only updates
+      rows in the current build, so a row the pipeline no longer produces keeps an old
+      frequency (*mas* ADV). The proposal is a one-line UPDATE that sets those rows'
+      frequency to NULL. It's SQL, so design it with Jason.
+    - **Noun/verb homographs:** *riego* in "y riego las plantas" (I water) was tagged as
+      the noun (irrigation) and taught as a new word, although *regar* had been
+      pre-taught.
+    - **After each real session**, review it in SQL (`turns`, `word_events` by turn) like
+      session 1. Its data surfaced every fix made on 2026-10-02.
+    - Then roadmap Phase 3 (difficulty index and recommender). Pre-teaching, the core
+      of Phase 2, is already done.
   - Build log, published (private): https://claude.ai/artifact/NAheU5cpSBdxY7QpoeQbHQ.
-    Republish it after milestones. The roadmap is `rag-deployment-roadmap.html` in the repo.
+    Republish it after milestones. The local copy lived in a session's temp folder, so in
+    a new session `Artifact read` the URL first, edit that HTML, then republish with
+    `url`. The roadmap is `rag-deployment-roadmap.html` in the repo.
   - Public repo: https://github.com/JasonLaRuez/spanish-tutor (remote `origin`; created
     2026-10-01; CLAUDE.md and the roadmap are published as-is, Jason's choice). Re-run
     the history audit before each push: no `data/`, `private/` or `.env`, and no
@@ -315,9 +339,10 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
     accented lemmas. Strip accents only when the unaccented form isn't itself a lexeme and
     exactly one lexeme matches. Only 129 of 26k lexicon keys collide once accents are
     stripped, almost all function words (*el/él*, *si/sí*, *mas/más*).
-  - **`ensure_lexeme(lemma, pos)`** (not built yet) handles words not in `lexemes`. If
-    Wiktionary has the word, insert it with its definition. Otherwise report it and never
-    log it: misspellings like *sabo* are tagged `sabo/NOUN`.
+  - **`words.ensure_lexeme(lemma, pos)`** (built; used by `LexiconIndex.resolve`) handles
+    words not in `lexemes`. If Wiktionary has the word, insert it with its definition.
+    Otherwise report it and never log it (*sabo* as a verb). Accent restoration in the
+    lemmatizer (below) now catches most unaccented words before this fallback is needed.
   - **Examples at teach time:** re-choose them against the learner's word bank. For rare
     words with no stored example, use the sentence where the word was met.
   - **Model settings:** `claude-opus-5-5` rejects `temperature` and can't disable thinking.
@@ -441,6 +466,10 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
       *año*), and a name at a sentence start may be (*Maria* → *María*).
 - **Notebook:** `notebooks/01_data_pipeline.ipynb` is now the source; edit it directly. The
   generator script used to create it was temporary and no longer exists.
+  - Jason's rule: every change to data processing (lemmatization, correction, lexicon,
+    indexing, lookups) is documented in notebook 01 as part of the change. The
+    conversation skill is in `notebooks/02_conversation.ipynb`; verify edits to it the same
+    way (it makes real API calls, so expect a few cents and varying wording).
   - Verify edits with
     `uv run jupyter nbconvert --to notebook --execute --inplace notebooks/01_data_pipeline.ipynb`
     and keep `ruff check` passing; ruff lints notebooks.
