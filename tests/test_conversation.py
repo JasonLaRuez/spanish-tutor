@@ -11,9 +11,17 @@ import pytest
 from langchain_core.embeddings import DeterministicFakeEmbedding
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
-from spanish_tutor.conversation import Generation, Tutor, TutorReply, vocabulary_block
+from spanish_tutor.conversation import (
+    Generation,
+    Tutor,
+    TutorReply,
+    clean_note,
+    parse_translation_request,
+    vocabulary_block,
+)
 from spanish_tutor.ingest.index_tatoeba import index_sentences
 from spanish_tutor.ingest.tatoeba import AnalyzedSentence
+from spanish_tutor.topics import TopicWords
 from spanish_tutor.vectorstore import open_store
 from spanish_tutor.words import GRADE_LOOKED_UP, GRADE_MISUSED, GRADE_USED, LexiconIndex
 
@@ -65,14 +73,16 @@ class Scripted:
         self.requests.append(messages)
         reply = self.replies.pop(0)
         if isinstance(reply, str):
-            reply = TutorReply(reply_es=reply, reply_en="(en)", misused=[], correction_en=None)
+            reply = TutorReply(reply_es=reply, reply_en="(en)", misused=[], note_en=None)
         return Generation(reply, input_tokens=100, cache_read_tokens=1000, output_tokens=50)
+
+    def select_words(self, prompt):
+        self.requests.append(prompt)
+        return self.replies.pop(0)
 
 
 def said(reply_es, misused=(), correction=None):
-    return TutorReply(
-        reply_es=reply_es, reply_en="(en)", misused=list(misused), correction_en=correction
-    )
+    return TutorReply(reply_es=reply_es, reply_en="(en)", misused=list(misused), note_en=correction)
 
 
 @pytest.fixture
@@ -222,8 +232,9 @@ def test_teaching_completeness_holds_in_sql(make_tutor, bank):
         """
         SELECT t.turn_id, t.final_out_of_bank, COUNT(e.event_id) AS taught
         FROM turns AS t
-        LEFT JOIN word_events AS e ON e.turn_id = t.turn_id AND e.event_type = 'taught'
-        WHERE t.role = 'tutor'
+        LEFT JOIN word_events AS e
+               ON e.turn_id = t.turn_id AND e.event_type = 'taught' AND e.source = 'conversation'
+        WHERE t.role = 'tutor' AND t.kind = 'conversation'
         GROUP BY t.turn_id
         HAVING t.final_out_of_bank <> COUNT(e.event_id)
         """
@@ -381,3 +392,178 @@ def test_retrieved_examples_go_in_the_turn_note_not_the_system_prompt(make_tutor
     request = generator.requests[0]
     assert "El gato come en casa." in request[-1].content
     assert "El gato come en casa." not in str(request[0].content)
+
+
+@pytest.mark.parametrize(
+    "raw, clean",
+    [
+        (
+            'Say "Dos al frente y tres detrás de mi casa."}',
+            'Say "Dos al frente y tres detrás de mi casa."',
+        ),
+        (
+            "Use 'le gusta verlo' or 'le gusta mirarlo'.'",
+            "Use 'le gusta verlo' or 'le gusta mirarlo'.",
+        ),
+        ('Say "estoy cansado"', 'Say "estoy cansado"'),  # a closing quote that belongs
+        ("  \n", None),
+        (None, None),
+    ],
+)
+def test_notes_lose_stray_trailing_characters(raw, clean):
+    assert clean_note(raw) == clean
+
+
+# --- "¿Cómo se dice ...?" ---------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text, phrase",
+    [
+        ('Como se dice "I remove weeds and water plants"?', "I remove weeds and water plants"),
+        ('¿Cómo se dice "rake" en español?', "rake"),
+        ("?C'omo se dice «to water» en espa~nol?", "to water"),
+        ("como se dice rake", "rake"),
+        ("Como se dice 'how are you?'", "how are you?"),
+        ("cómo se dice “weeds” en espanol", "weeds"),
+    ],
+)
+def test_translation_requests_are_recognized(text, phrase):
+    assert parse_translation_request(text) == phrase
+
+
+@pytest.mark.parametrize(
+    "text", ["Me gusta el jardín.", "No sé cómo se dice eso.", 'Como se dice ""?', "Cómo estás?"]
+)
+def test_other_messages_are_not_translation_requests(text):
+    assert parse_translation_request(text) is None
+
+
+QUESTION = 'Como se dice "the dog swims in the river"?'
+
+
+def test_translation_teaches_every_new_word_and_credits_nothing(make_tutor, bank):
+    tutor, generator = make_tutor("Hola, ¿comes en casa?", "El perro nada en el río.")
+    tutor.open()
+    turn = tutor.translate(QUESTION, "the dog swims in the river")
+
+    assert turn.spanish == "El perro nada en el río."
+    assert sorted(item.lemma for item in turn.lessons) == ["nadar", "perro", "río"]  # no limit
+    assert turn.pending == "Hola, ¿comes en casa?"
+    assert len(generator.requests) == 2  # no retry for a translation
+    tutor_turn = turns(bank)[-1]["turn_id"]
+    assert sorted(e[0] for e in events(bank, event_type="taught")) == ["nadar", "perro", "río"]
+    assert all(e[4] == tutor_turn for e in events(bank, event_type="taught"))
+    assert events(bank, event_type="used") == []  # the English is never credited
+    assert {"nadar", "perro", "río"} <= recognized(bank)
+
+
+def test_translation_turns_are_marked_and_skip_adherence_metrics(make_tutor, bank):
+    tutor, _ = make_tutor("Hola.", said("El perro nada.", correction="(why)"))
+    tutor.open()
+    tutor.translate(QUESTION, "the dog swims")
+
+    learner, tutor_row = turns(bank)[-2:]
+    assert (learner["role"], learner["kind"], learner["text_es"]) == (
+        "learner",
+        "translation",
+        QUESTION,
+    )
+    assert (tutor_row["kind"], tutor_row["note_en"]) == ("translation", "(why)")
+    assert tutor_row["draft_out_of_bank"] is None and tutor_row["retried"] is None
+
+
+def test_the_translation_note_names_the_phrase_and_the_conversation_resumes(make_tutor):
+    tutor, generator = make_tutor("Hola.", "El perro nada.", "¿Tu perro nada?")
+    tutor.open()
+    tutor.translate(QUESTION, "the dog swims")
+    turn = tutor.respond("El perro nada.")
+
+    translate_request = generator.requests[1]
+    # Same system prefix (and, in ClaudeGenerator, the same output schema) as a
+    # conversation reply, so a translation reads the conversation's prompt cache.
+    assert translate_request[0].content == generator.requests[0][0].content
+    assert isinstance(translate_request[-1], SystemMessage)
+    assert '"the dog swims"' in translate_request[-1].content
+    next_request = generator.requests[2]
+    assert [m.content for m in next_request[-5:-2]][-1] == "El perro nada."  # in the history
+    assert "Words taught this session: perro, nadar." in next_request[-1].content
+    assert turn.lessons == []  # perro and nadar are known now
+
+
+# --- Pre-teaching topic words -------------------------------------------------------------
+
+
+@pytest.fixture
+def topic_store(bank, tmp_path):
+    """Sentences about dogs swimming, with frequencies for the candidate scoring."""
+    bank.executemany(
+        "UPDATE lexemes SET frequency_per_million = ? WHERE lemma = ?",
+        [(30.0, "perro"), (5.0, "nadar"), (20.0, "río"), (5000.0, "el"), (900.0, "casa")],
+    )
+    store = open_store(tmp_path / "chroma", embeddings=DeterministicFakeEmbedding(size=32))
+    vocab = [FORMS[w] for w in ["el", "perro", "nada", "río"]]
+    sentences = [
+        AnalyzedSentence(
+            id=i,
+            es="El perro nada en el río.",
+            en="The dog swims.",
+            author=None,
+            tokens=[(lemma, [(lemma, pos)]) for lemma, pos in vocab],
+        )
+        for i in range(4)
+    ]
+    index_sentences(store, sentences, report=lambda _: None)
+    return store
+
+
+def test_pre_taught_words_are_taught_before_the_conversation_and_logged_with_it(
+    make_tutor, bank, topic_store
+):
+    choice = TopicWords(words=["perro|NOUN", "nadar|VERB"])
+    tutor, generator = make_tutor(choice, "Hola. El perro nada.", store=topic_store)
+    lessons = tutor.pre_teach(2)
+    turn = tutor.open()
+
+    assert [item.lemma for item in lessons] == ["perro", "nadar"]
+    assert "perro|NOUN" in generator.requests[0] and "río|NOUN" in generator.requests[0]
+    assert turn.lessons == []  # the opening uses them without counting them as new
+    opening = turns(bank)[0]
+    pre_taught = [e for e in events(bank) if e[2] == "taught"]
+    assert pre_taught == []  # events() shows source 'conversation' only
+    rows = bank.execute(
+        "SELECT l.lemma, e.turn_id FROM word_events AS e JOIN lexemes AS l USING (lexeme_id) "
+        "WHERE e.source = 'pre_teach'"
+    ).fetchall()
+    assert sorted(tuple(r) for r in rows) == [
+        ("nadar", opening["turn_id"]),
+        ("perro", opening["turn_id"]),
+    ]
+    assert {"perro", "nadar"} <= recognized(bank)
+
+
+def test_pre_taught_words_are_in_the_frozen_vocabulary_and_every_note(make_tutor, topic_store):
+    choice = TopicWords(words=["perro|NOUN", "nadar|VERB"])
+    tutor, generator = make_tutor(choice, "Hola.", "Bien.", store=topic_store)
+    tutor.pre_teach(2)
+    tutor.open()
+    tutor.respond("Hola.")
+
+    opening_request, reply_request = generator.requests[1], generator.requests[2]
+    vocabulary = opening_request[0].content[1]["text"]
+    assert "perro" in vocabulary and "nadar" in vocabulary
+    assert "perro, nadar" in opening_request[-2].content  # the opening message
+    for request in (opening_request, reply_request):
+        assert (
+            "Words taught for today's topic, before the conversation: perro, nadar."
+            in request[-1].content
+        )
+        assert "Words taught this session: none yet." in request[-1].content
+
+
+def test_pre_teaching_needs_a_topic_and_must_come_before_the_opening(make_tutor, topic_store):
+    tutor, _ = make_tutor("Hola.", store=topic_store, topic=None)
+    assert tutor.pre_teach(3) == []
+    tutor, _ = make_tutor("Hola.", store=topic_store)
+    tutor.open()
+    assert tutor.pre_teach(3) == []  # the vocabulary is frozen once the conversation opens

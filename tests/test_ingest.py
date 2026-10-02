@@ -269,3 +269,18 @@ def test_alternative_forms_and_words_with_real_senses_are_not_redirected(tmp_pat
         ],
     )
     assert wiktionary.misspellings() == {}
+
+
+def test_nonstandard_spellings_are_only_misspellings_or_obsolete(tmp_path):
+    wiktionary = wiktionary_of(
+        tmp_path,
+        [
+            alt("jardin", "noun", "jardín", "obsolete"),
+            alt("dia", "noun", "día", "misspelling"),
+            alt("sólo", "adv", "solo", "archaic"),  # archaic: still a word
+            alt("buen", "adj", "bueno", "alternative"),
+            alt("ay", "verb", "hay", "obsolete"),
+            {"word": "ay", "pos": "intj", "senses": [{"gloss": "ouch", "tags": []}]},
+        ],
+    )
+    assert wiktionary.nonstandard_spellings() == {"jardin", "dia"}

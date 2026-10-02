@@ -58,10 +58,28 @@ plus a short note in English.
 uv run python -m spanish_tutor.conversation --topic "el tiempo"
 ```
 
-Commands during a conversation: `/q palabra` (look a word up), `/en` (the last reply in
-English), `/palabras` (words taught this session), `/salir` (quit). Needs
-`ANTHROPIC_API_KEY` in `.env`; a turn costs about a cent. Every turn is logged in the
-`sessions` and `turns` tables, and each word event links to the turn that caused it.
+With a topic (from `--topic`, or asked at the start), the tutor first teaches a few topic
+words (you choose how many, 2–10), then works them into the conversation. The candidates come
+from the Tatoeba sentences closest to the topic, ranked by how strongly each word is
+associated with it; Claude picks the most useful ones from that list and can't add others.
+
+During a conversation:
+
+| Type | To |
+|---|---|
+| `¿Cómo se dice "..."?` | Pause the conversation and ask how to say something in Spanish. Every new word in the answer is taught. |
+| `/q palabra` | Look a word up |
+| `/en` | See the last reply in English |
+| `/palabras` | List the words taught this session |
+| `/salir` | Quit |
+
+On an English keyboard, type accents as markers before the letter: `'a` → á (any vowel),
+`~n` → ñ, `:u` → ü, and `?` or `!` directly before a word → ¿ or ¡. So `?Qu'e tal?`
+becomes `¿Qué tal?`. Words typed without any accents are also recognized (`manana`,
+`detras`) when only one Spanish word fits.
+
+Needs `ANTHROPIC_API_KEY` in `.env`; a turn costs about a cent. Every turn is logged in
+the `sessions` and `turns` tables, and each word event links to the turn that caused it.
 
 ## Tests
 

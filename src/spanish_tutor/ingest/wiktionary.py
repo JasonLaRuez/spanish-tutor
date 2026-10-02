@@ -112,6 +112,26 @@ class Wiktionary:
                 redirects[word, upos] = (target, upos)
         return redirects
 
+    def nonstandard_spellings(self) -> set[str]:
+        """Spellings that are only misspellings or obsolete spellings of other words.
+
+        "jardin: obsolete spelling of jardín", "dia: misspelling of día". These aren't
+        words a learner (or a modern writer) means, so accent restoration may replace
+        them. Plain alternative forms (mi of mío, buen of bueno) and archaic ones (sólo)
+        are real words and are not included.
+        """
+        by_word: dict[str, list[dict]] = defaultdict(list)
+        for (word, _), senses in self.senses.items():
+            by_word[word].extend(senses)
+        return {
+            word
+            for word, senses in by_word.items()
+            if all(
+                s.get("alt_of") and ("misspelling" in s["tags"] or "obsolete" in s["tags"])
+                for s in senses
+            )
+        }
+
     def definition(self, lemma: str, pos: str, *, follow_alt: bool = True) -> str | None:
         senses = self.lookup(lemma, pos)
         if not senses:

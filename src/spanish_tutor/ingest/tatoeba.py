@@ -22,6 +22,7 @@ NULL = "\\N"
 RAW_DIR = DATA_DIR / "raw"
 ANALYZED_PATH = DATA_DIR / "processed" / "tatoeba_analyzed.jsonl"
 CORRECTIONS_PATH = DATA_DIR / "processed" / "lemma_corrections.csv"
+RESTORATIONS_PATH = DATA_DIR / "processed" / "accent_restorations.csv"
 
 
 @dataclass(frozen=True)
@@ -101,6 +102,7 @@ def main() -> None:
     write_analyzed(sentences, ANALYZED_PATH)
     print(f"wrote {ANALYZED_PATH}")
     report_corrections(load_corrector(), CORRECTIONS_PATH)
+    report_restorations(load_corrector(), RESTORATIONS_PATH)
 
 
 def report_corrections(corrector: LemmaCorrector, dest: Path) -> None:
@@ -119,6 +121,24 @@ def report_corrections(corrector: LemmaCorrector, dest: Path) -> None:
     )
     for (form, before, after), n in corrected.most_common(15):
         print(f"  {n:>6,}  {form:12} {before[0]}|{before[1]} -> {after[0]}|{after[1]}")
+
+
+def report_restorations(corrector: LemmaCorrector, dest: Path) -> None:
+    """Write every accent restoration (as typed -> restored) with its count, for review."""
+    if corrector.restorer is None:
+        return
+    restored = corrector.restorer.restored
+    with dest.open("w", encoding="utf-8-sig", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["typed", "restored", "tokens"])
+        for (typed, word), n in restored.most_common():
+            writer.writerow([typed, word, n])
+    print(
+        f"accent restorations: {sum(restored.values()):,} tokens ({len(restored):,} distinct). "
+        f"Details in {dest.name}"
+    )
+    for (typed, word), n in restored.most_common(15):
+        print(f"  {n:>6,}  {typed} -> {word}")
 
 
 if __name__ == "__main__":

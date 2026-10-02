@@ -349,4 +349,32 @@ def test_pending_migrations_lists_only_what_an_old_database_needs(conn):
     old = connect(":memory:")
     old.executescript((FIXTURES / "schema_v1.sql").read_text(encoding="utf-8"))
     old.execute("PRAGMA user_version = 1")
-    assert pending_migrations(old) == [2]
+    assert pending_migrations(old) == [2, 3]
+
+
+def test_version_2_database_upgrades_to_version_3_keeping_notes(conn):
+    old = connect(":memory:")
+    old.executescript((FIXTURES / "schema_v2.sql").read_text(encoding="utf-8"))
+    old.execute("PRAGMA user_version = 2")
+    session = add_session(old)
+    old.execute(
+        "INSERT INTO turns (session_id, turn_no, role, text_es, correction_en) "
+        "VALUES (?, 1, 'tutor', 'Hola.', 'Use estar.')",
+        (session,),
+    )
+
+    init_schema(old)
+
+    assert table_shapes(old) == table_shapes(conn)
+    row = old.execute("SELECT note_en, kind FROM turns").fetchone()
+    assert (row["note_en"], row["kind"]) == ("Use estar.", "conversation")
+
+
+def test_turn_kind_is_checked(conn):
+    session = add_session(conn)
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute(
+            "INSERT INTO turns (session_id, turn_no, role, text_es, kind) "
+            "VALUES (?, 1, 'tutor', 'Hola.', 'chat')",
+            (session,),
+        )

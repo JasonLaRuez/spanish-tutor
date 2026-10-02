@@ -259,19 +259,27 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
 
 ## Working conventions
 
-- **Status (as of 2026-10-01):** Phase 0 is complete. Phase 1 has 5 of 7 roadmap steps done,
+- **Status (as of 2026-10-02):** Phase 0 is complete. Phase 1 has 5 of 7 roadmap steps done,
   plus extra groundwork:
   - Done: the word bank schema; the seed (987 recognized / 730 produced words); Tatoeba in
     Chroma (261k sentences); **the conversation skill with write-back**
     (`conversation.py`, `words.py`, `teaching.py`, migration 002: `sessions`, `turns`,
     `word_events.turn_id`).
   - Extra: lemma correction, and the general lexicon (26k words).
-  - **Next: ~20 real conversations** by Jason. The real database is migrated (with a
-    backup) on the first CLI run.
-  - Measured in end-to-end runs on a copy of the database:
-    - prompt cache hits from turn 2 (~4.9k tokens read; ~300–460 uncached input tokens);
-    - ~5 s per turn;
-    - Claude stayed fully inside the word bank in 6 of 6 turns.
+  - **Session 1 (2026-10-02, "el jardin", 15 turns)** led to four changes, made the same
+    day:
+    - **Topic pre-teaching** (`topics.py`). This is the core of Phase 2, pulled forward.
+    - **"¿Cómo se dice …?"** translation turns.
+    - **Typed accent markers** (`keyboard.py`).
+    - **Accent restoration in the pipeline** (`lexicon.AccentRestorer`).
+    - Also: migration 003 (`turns.kind`, `correction_en` → `note_en`), a 1-hour cache
+      TTL, and cleanup of stray characters in notes.
+    - Known artifact: session 1 logged *wáter* as taught and used. It came from the
+      English inside a "como se dice" quote, before translation turns existed. It stays,
+      because the log is append-only.
+  - **Next: more real conversations** by Jason (~19 to go).
+  - Measured in session 1: Claude stayed inside the word bank in every reply, and gaps
+    between turns were 1–3.5 min, with one 33-minute break.
   - Build log, published (private): https://claude.ai/artifact/NAheU5cpSBdxY7QpoeQbHQ.
     Republish it after milestones. The roadmap is `rag-deployment-roadmap.html` in the repo.
   - Public repo: https://github.com/JasonLaRuez/spanish-tutor (remote `origin`; created
@@ -316,6 +324,51 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
     `langchain-anthropic` 1.7.5 exposes effort as `ChatAnthropic(effort="low")`, which maps
     to `output_config.effort`; use `low` for chat turns. Prompt-cache the system prompt
     and the known-word list. The ~987 lemmas are stable within a session.
+- **Conversation additions (requested by Jason 2026-10-02, after session 1):**
+  - **Topic pre-teaching:**
+    - Before `open()`, `Tutor.pre_teach(n)` teaches n topic words. The CLI asks for the
+      topic and n (2–10, Enter = 5).
+    - Candidates are grounded: the 300 Tatoeba sentences nearest the topic give the
+      unknown content words seen at least 3 times. They're ranked by topic association,
+      count × log(count / expected count from overall frequency).
+    - Claude chooses n from that list and can't add words; invalid picks are dropped,
+      with a fallback to the top scores.
+    - The words join the frozen prompt vocabulary and are named in every turn's note.
+      Their events are logged as `taught`, `source='pre_teach'`, on the opening turn.
+  - **Translation turns:**
+    - The CLI detects `¿Cómo se dice "…"?` on the raw input, which is lenient about
+      accents, quotes and "en español".
+    - `Tutor.translate` pauses the conversation for one turn. Every new word in the
+      answer is taught. The question gets no `used` events, because it's English.
+    - Both turns are stored with `kind='translation'`, and the adherence and
+      completeness SQL counts only `kind='conversation'` and `source='conversation'`.
+  - **Typed markers** (`keyboard.expand_markers`, Jason's spec): `'a` → á, `~n` → ñ, `:u`
+    → ü, and `?`/`!` directly before a word → ¿/¡. The CLI echoes the converted text, and
+    the quoted English in a "cómo se dice" request is never converted.
+  - **Cost-saving decisions on the prompt cache (2026-10-02, measured):**
+    - **Lifetime: 1 hour.**
+      - The API offers 5 minutes (the default) or 1 hour; there's no "until the
+        conversation ends". Every read resets the timer for free, so the cache lasts the
+        whole conversation as long as no gap exceeds the lifetime.
+      - The only extra cost is the write: 2× instead of 1.25× base input for the ~5k
+        prefix, so 4¢ instead of 2.5¢ once per session. Reads are 0.05× either way
+        (~0.1¢ a turn).
+      - In session 1, the 5-minute cache would have survived every gap except a
+        33-minute break, which re-sent the prefix at full price. 1 hour is about 1.5¢ of
+        insurance per session against that.
+    - **One output schema for all conversation requests.**
+      - The structured-output schema is part of the cached prompt, so each schema gets its
+        own cache entry. Measured: with the same prefix, a `TutorReply` and a separate
+        `Translation` schema each wrote ~5k tokens.
+      - Translations therefore use `TutorReply` too (Spanish in `reply_es`, explanation in
+        `note_en`, as the turn's note instructs).
+      - A "cómo se dice" turn went from ~5,470 uncached tokens to ~650 uncached + 5,290
+        cached (~2.7¢ → ~0.4¢). Jason expects to use it often.
+      - The topic-word selection keeps its own schema: it's one call per session, with a
+        different prompt and nothing to share.
+  - **Known tagger limit seen in testing:** *riego* in "y riego las plantas" (I water) was
+    tagged as the noun *riego* (irrigation) and taught as a new word, although *regar* had
+    been pre-taught.
 - **Known data limits:** *ven* resolves to *ver* by frequency (often the imperative of
   *venir*); sentence-initial words are sometimes tagged as names and dropped; ~100
   NOUN-tagged *conmigo* tokens became an ADV entry; multi-word expressions (`EXPR`) are
@@ -369,6 +422,23 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
       frequency is now stale, because rows outside a build keep their old frequency.
   - `find_example` prefers 4–10-word sentences, the lexicon picker's range. It first
     returned fragments (*¡Disparad!*, *¿Subes?*).
+  - **Missing accents: restored in the text, before tagging (2026-10-02).**
+    - The problem, from session 1: spaCy lemmatized *detras* as an invented *detra*, and
+      ñ-folding was deliberately absent, so *manana* couldn't match.
+    - `lexicon.AccentRestorer` runs in `analyze()` whenever a corrector is given.
+    - It replaces a word only when all of these hold:
+      1. it was typed with no marks;
+      2. it isn't a word as typed (spellings that are only misspellings or obsolete
+         entries, from `Wiktionary.nonstandard_spellings()`, don't count as words);
+      3. exactly one candidate matches when accents and ñ are folded, or one is clearly
+         most frequent;
+      4. the candidate occurs at least 20 times in SUBTLEX;
+      5. if capitalized, it starts a sentence.
+    - Rules 1 and 5 came from the first rebuild's review file (*sudán* → *sudan*,
+      *Gales* → *Galés*).
+    - Tatoeba: 579 tokens restored (`data/processed/accent_restorations.csv`).
+    - Accepted limits: a spelling that is also a word is never restored (*ano* for
+      *año*), and a name at a sentence start may be (*Maria* → *María*).
 - **Notebook:** `notebooks/01_data_pipeline.ipynb` is now the source; edit it directly. The
   generator script used to create it was temporary and no longer exists.
   - Verify edits with

@@ -22,6 +22,7 @@ system note after each learner message, so it never invalidates the cached prefi
 """
 
 import argparse
+import re
 import sqlite3
 import sys
 import time
@@ -29,7 +30,7 @@ from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 from langchain_chroma import Chroma
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
@@ -37,8 +38,10 @@ from pydantic import BaseModel, Field
 
 from spanish_tutor import db
 from spanish_tutor.config import MODEL
+from spanish_tutor.keyboard import expand_markers
 from spanish_tutor.lexicon import Analysis, TokenAnalysis, normalize_text
 from spanish_tutor.teaching import Lesson, lesson
+from spanish_tutor.topics import TopicWords, choose_words, topic_candidates, word_count
 from spanish_tutor.vectorstore import search_sentences
 from spanish_tutor.words import (
     GRADE_LOOKED_UP,
@@ -74,34 +77,49 @@ POS_NAMES = {
 
 
 class TutorReply(BaseModel):
-    """The structured reply Claude returns each turn."""
+    """The structured output of every conversation request: replies and translations.
 
-    reply_es: str = Field(description="Your reply to the learner, in Spanish only.")
+    One schema on purpose. The output schema is part of the cached prompt, so a second
+    schema gets a cache entry of its own (measured 2026-10-02: the same ~5k-token prefix
+    was written once per schema). Translation turns therefore use this schema too, with
+    the Spanish in reply_es and the explanation in note_en, and they read the cache the
+    conversation already wrote.
+    """
+
+    reply_es: str = Field(
+        description="Your reply to the learner, in Spanish only. For a translation request: "
+        "only the Spanish the learner asked for."
+    )
     reply_en: str = Field(description="A natural English translation of reply_es.")
     misused: list[str] = Field(
         description="Words from the learner's last message that were used wrongly, "
-        "exactly as the learner wrote them. Empty if none."
+        "exactly as the learner wrote them. Empty if none, and for a translation request."
     )
-    correction_en: str | None = Field(
-        description="A short English note on the most important mistake, with the "
-        "corrected Spanish; null if there were no mistakes."
+    note_en: str | None = Field(
+        description="A short English note: the most important mistake with the corrected "
+        "Spanish, or for a translation request, the word choices or grammar to notice. "
+        "Null if there is nothing to say."
     )
 
 
 @dataclass(frozen=True)
 class Generation:
-    reply: TutorReply
+    reply: Any  # the structured output: TutorReply or TopicWords
     input_tokens: int = 0  # not read from the cache (includes cache writes)
     cache_read_tokens: int = 0
     output_tokens: int = 0  # includes thinking
 
 
 class ReplyGenerator(Protocol):
-    def __call__(self, messages: list[BaseMessage]) -> Generation: ...
+    def __call__(self, messages: list[BaseMessage]) -> Generation:
+        """A conversation reply or a translation (TutorReply)."""
+
+    def select_words(self, prompt: str) -> TopicWords:
+        """Topic words chosen from a candidate list (see topics.choose_words)."""
 
 
 class ClaudeGenerator:
-    """Claude via LangChain, returning a TutorReply.
+    """Claude via LangChain, returning structured output (TutorReply, TopicWords).
 
     Opus 5.5 rejects sampling parameters and forced tool calls, so: no temperature, and
     structured output via `json_schema` (output_config.format) rather than LangChain's
@@ -115,17 +133,27 @@ class ClaudeGenerator:
     def __init__(self, model: str = MODEL, effort: str = "low", max_tokens: int = 4000):
         from langchain_anthropic import ChatAnthropic
 
-        llm = ChatAnthropic(
+        self.llm = ChatAnthropic(
             model=model,
             effort=effort,
             max_tokens=max_tokens,
             betas=["server-side-fallback-2026-07-01"],
             model_kwargs={"fallbacks": "default"},
         )
-        self.chain = llm.with_structured_output(TutorReply, method="json_schema", include_raw=True)
+        self.chains: dict[type[BaseModel], Any] = {}
 
     def __call__(self, messages: list[BaseMessage]) -> Generation:
-        result = self.chain.invoke(messages)
+        return self._invoke(TutorReply, messages)
+
+    def select_words(self, prompt: str) -> TopicWords:
+        return self._invoke(TopicWords, [HumanMessage(prompt)]).reply
+
+    def _invoke(self, schema: type[BaseModel], messages: list[BaseMessage]) -> Generation:
+        if schema not in self.chains:
+            self.chains[schema] = self.llm.with_structured_output(
+                schema, method="json_schema", include_raw=True
+            )
+        result = self.chains[schema].invoke(messages)
         if result["parsing_error"] is not None:
             raise result["parsing_error"]
         usage = result["raw"].usage_metadata or {}
@@ -136,6 +164,26 @@ class ClaudeGenerator:
             cache_read_tokens=cache_read,
             output_tokens=usage.get("output_tokens", 0),
         )
+
+
+def clean_note(note: str | None) -> str | None:
+    """Claude's English note without stray characters it occasionally leaves at the end.
+
+    Seen in session 1: `...detrás de mi casa."}` and `...'le gusta mirarlo'.'`. Only an
+    unbalanced trailing brace or quote is removed; a note that legitimately ends in a
+    quotation keeps it.
+    """
+    if note is None:
+        return None
+    note = note.strip()
+    while note:
+        last = note[-1]
+        stray_brace = last == "}" and note.count("}") > note.count("{")
+        stray_quote = last in "\"'" and note.count(last) % 2 == 1
+        if not (stray_brace or stray_quote):
+            break
+        note = note[:-1].rstrip()
+    return note or None
 
 
 # --- Prompt ----------------------------------------------------------------------------
@@ -156,20 +204,29 @@ def system_message(known: set[Analysis]) -> SystemMessage:
     return SystemMessage(
         content=[
             {"type": "text", "text": INSTRUCTIONS},
-            # The breakpoint caches instructions + vocabulary: the whole stable prefix.
+            # The breakpoint caches instructions + vocabulary: the whole stable prefix. One
+            # hour, not the default five minutes: learners pause to think (session 1 had a
+            # 33-minute gap, after which ~5k tokens were re-sent at full price).
             {
                 "type": "text",
                 "text": vocabulary_block(known),
-                "cache_control": {"type": "ephemeral"},
+                "cache_control": {"type": "ephemeral", "ttl": "1h"},
             },
         ]
     )
 
 
-def turn_note(examples: list[str], taught: list[str], avoid: list[str] | None = None) -> str:
+def turn_note(
+    examples: list[str],
+    taught: list[str],
+    avoid: list[str] | None = None,
+    focus: list[str] | None = None,
+) -> str:
     parts = []
     if examples:
         parts.append("Sentences the learner can read:\n" + "\n".join(f"- {s}" for s in examples))
+    if focus:
+        parts.append(focus_line(focus))
     parts.append(
         "Words taught this session: " + (", ".join(taught) if taught else "none yet") + "."
     )
@@ -182,10 +239,52 @@ def turn_note(examples: list[str], taught: list[str], avoid: list[str] | None = 
     return "\n\n".join(parts)
 
 
-def opening_message(topic: str | None) -> str:
-    if topic:
-        return f"[The learner has started a conversation about: {topic}. Greet them and begin.]"
-    return "[The learner has started a conversation. Greet them and ask what they'd like to talk about.]"
+# "¿Cómo se dice ...?": tolerant of missing accents, typed markers (c'omo), a missing ¿,
+# quotes or none, and an optional "en español".
+_HOW_TO_SAY = re.compile(
+    r"^\s*[¿?]?\s*c(?:o|ó|'o)mo\s+se\s+dice\s+(?P<phrase>.+?)"
+    r"\s*(?:en\s+espa(?:ñ|~n|n)ol)?\s*[?.!]*\s*$",
+    re.IGNORECASE | re.DOTALL,
+)
+_QUOTES = {'"': '"', "“": "”", "«": "»", "'": "'", "‘": "’"}
+
+
+def parse_translation_request(text: str) -> str | None:
+    """The phrase in "¿Cómo se dice "<phrase>" en español?", or None for anything else."""
+    if (match := _HOW_TO_SAY.match(text)) is None:
+        return None
+    phrase = match.group("phrase").strip()
+    if len(phrase) > 1 and phrase[0] in _QUOTES and phrase.endswith(_QUOTES[phrase[0]]):
+        phrase = phrase[1:-1].strip()
+    return phrase or None
+
+
+def translation_note(phrase: str) -> str:
+    return (
+        f'The learner paused the conversation to ask how to say this in Spanish: "{phrase}". '
+        "Give the most natural Spanish a native speaker would use in this conversation. "
+        "Use words from the learner's vocabulary where they sound natural, but never at the "
+        "cost of naturalness: the app teaches any new words. Answer only this; don't "
+        "continue the conversation. In your reply, reply_es is only that Spanish, misused "
+        "is empty, and note_en explains in one to three short sentences the word choices "
+        "or grammar the learner should notice."
+    )
+
+
+def focus_line(focus: list[str]) -> str:
+    return (
+        "Words taught for today's topic, before the conversation: " + ", ".join(focus) + ". "
+        "Use them naturally, and try to use each at least once."
+    )
+
+
+def opening_message(topic: str | None, focus: list[str] | None = None) -> str:
+    if not topic:
+        return "[The learner has started a conversation. Greet them and ask what they'd like to talk about.]"
+    opening = f"The learner has started a conversation about: {topic}. Greet them and begin."
+    if focus:
+        opening += " " + focus_line(focus)
+    return f"[{opening}]"
 
 
 # --- The skill -------------------------------------------------------------------------
@@ -197,11 +296,21 @@ class TutorTurn:
 
     reply_es: str
     reply_en: str
-    correction_en: str | None
+    note_en: str | None
     lessons: list[Lesson]
     retried: bool
     draft_out_of_bank: int
     not_words: list[str] = field(default_factory=list)  # learner tokens that aren't words
+
+
+@dataclass
+class TranslationTurn:
+    """The answer to "¿cómo se dice ...?", which pauses the conversation for a turn."""
+
+    spanish: str
+    explanation_en: str | None
+    lessons: list[Lesson]
+    pending: str | None  # the tutor's last message, which the learner still has to answer
 
 
 class Tutor:
@@ -225,21 +334,50 @@ class Tutor:
         self.topic = topic
         # Live recognition set: grows as words are taught or used during the session.
         self.known = db.known_vocabulary(conn)
-        # Frozen at session start, so the cached prompt prefix never changes.
-        self.system = system_message(self.known)
+        # Frozen when the conversation opens (after any pre-teaching), so the cached
+        # prompt prefix never changes during the session.
+        self._frozen_system: SystemMessage | None = None
         self.history: list[BaseMessage] = []
         self.taught: list[Lexeme] = []
+        self.focus: list[Lexeme] = []  # pre-taught topic words
+        self._pre_taught_unlogged: list[Lexeme] = []
         self.turn_no = 0
         self.last_tutor_turn_id: int | None = None
         self.last: TutorTurn | None = None
         with conn:
             self.session_id = db.start_session(conn, "conversation", model, topic)
 
+    @property
+    def system(self) -> SystemMessage:
+        if self._frozen_system is None:
+            self._frozen_system = system_message(self.known)
+        return self._frozen_system
+
     # --- Turns ---
+
+    def pre_teach(self, n: int) -> list[Lesson]:
+        """Teach n topic words before the conversation opens (call before `open`).
+
+        Candidates come from the Tatoeba sentences nearest the topic, and Claude picks the
+        most useful (topics.py). The words join the vocabulary the prompt is frozen with,
+        so the tutor can use them, and every turn's note asks it to. Their `taught`
+        events (source 'pre_teach') are logged with the opening turn.
+        """
+        if not self.topic or self.store is None or self._frozen_system is not None:
+            return []
+        candidates = topic_candidates(self.conn, self.store, self.topic, self.known)
+        chosen = choose_words(self.generate.select_words, self.topic, candidates, n)
+        lexemes = [lex for c in chosen if (lex := self.index.lookup(c.analysis)) is not None]
+        self.known |= {lex.analysis for lex in lexemes}
+        self.focus = lexemes
+        self.taught += lexemes
+        self._pre_taught_unlogged = lexemes
+        return [self._lesson(lex, met_in=None) for lex in lexemes]
 
     def open(self) -> TutorTurn:
         """The tutor's first message."""
-        return self._turn(opening_message(self.topic), learner_text=None)
+        focus = [lex.lemma for lex in self.focus]
+        return self._turn(opening_message(self.topic, focus), learner_text=None)
 
     def respond(self, text: str) -> TutorTurn:
         return self._turn(text, learner_text=text)
@@ -252,14 +390,16 @@ class Tutor:
 
         known = self.known | newly_known
         examples = self._examples(f"{self.topic or ''} {learner_text or ''}".strip(), known)
-        taught_names = [lex.lemma for lex in self.taught]
-        note = turn_note(examples, taught_names)
+        taught_names = [lex.lemma for lex in self.taught if lex not in self.focus]
+        focus = [lex.lemma for lex in self.focus]
+        note = turn_note(examples, taught_names, focus=focus)
         messages = [self.system, *self.history, HumanMessage(message), SystemMessage(note)]
         first = self.generate(messages)
         draft_new = self._new_words(first.reply.reply_es, known)
         final, final_new, generations = first, draft_new, [first]
         if len(draft_new) > MAX_NEW_WORDS:
-            note = turn_note(examples, taught_names, avoid=[lex.lemma for lex in draft_new])
+            avoid = [lex.lemma for lex in draft_new]
+            note = turn_note(examples, taught_names, avoid=avoid, focus=focus)
             final = self.generate([*messages[:-1], SystemMessage(note)])
             final_new = self._new_words(final.reply.reply_es, known)
             generations.append(final)
@@ -281,7 +421,7 @@ class Tutor:
                 self.turn_no,
                 "tutor",
                 reply.reply_es,
-                correction_en=reply.correction_en,
+                note_en=clean_note(reply.note_en),
                 draft_out_of_bank=len(draft_new),
                 final_out_of_bank=len(final_new),
                 retried=int(len(generations) > 1),
@@ -296,6 +436,12 @@ class Tutor:
                     events.append(Event(lex.lexeme_id, "taught", SOURCE, turn_id=tutor_turn))
                 else:
                     events.append(Event(lex.lexeme_id, "seen", SOURCE, turn_id=tutor_turn))
+            # Pre-taught topic words: taught before the opening, logged with it.
+            events += [
+                Event(lex.lexeme_id, "taught", "pre_teach", turn_id=tutor_turn)
+                for lex in self._pre_taught_unlogged
+            ]
+            self._pre_taught_unlogged = []
             log_events(self.conn, events)
             self.known |= {lex.analysis for lex in final_new}
             self.taught += final_new
@@ -305,13 +451,73 @@ class Tutor:
         self.last = TutorTurn(
             reply_es=reply.reply_es,
             reply_en=reply.reply_en,
-            correction_en=reply.correction_en,
+            note_en=clean_note(reply.note_en),
             lessons=[self._lesson(lex, met_in=reply.reply_es) for lex in final_new],
             retried=len(generations) > 1,
             draft_out_of_bank=len(draft_new),
             not_words=not_words,
         )
         return self.last
+
+    def translate(self, question: str, phrase: str) -> TranslationTurn:
+        """Answer "¿cómo se dice <phrase>?", pausing the conversation for one turn.
+
+        Every new word in the answer is taught: the learner asked for it, so the one-new-
+        word limit doesn't apply. The question's own words get no `used` events, because
+        the phrase is English. Both turns are marked kind='translation', so adherence
+        metrics leave them out.
+        """
+        started = time.perf_counter()
+        note = translation_note(phrase)
+        # The same schema and prefix as a conversation reply, so the cache is shared.
+        generation = self.generate(
+            [self.system, *self.history, HumanMessage(question), SystemMessage(note)]
+        )
+        answer: TutorReply = generation.reply
+        spanish = answer.reply_es
+        new = self._new_words(spanish, self.known)
+        explanation = clean_note(answer.note_en)
+        with self.conn:
+            self.turn_no += 1
+            db.add_turn(
+                self.conn, self.session_id, self.turn_no, "learner", question, kind="translation"
+            )
+            self.turn_no += 1
+            tutor_turn = db.add_turn(
+                self.conn,
+                self.session_id,
+                self.turn_no,
+                "tutor",
+                spanish,
+                kind="translation",
+                note_en=explanation,
+                input_tokens=generation.input_tokens,
+                cache_read_tokens=generation.cache_read_tokens,
+                output_tokens=generation.output_tokens,
+                latency_ms=round((time.perf_counter() - started) * 1000),
+            )
+            log_events(
+                self.conn,
+                [
+                    Event(
+                        lex.lexeme_id,
+                        "taught" if lex in new else "seen",
+                        SOURCE,
+                        turn_id=tutor_turn,
+                    )
+                    for lex in self._reply_words(spanish)
+                ],
+            )
+            self.known |= {lex.analysis for lex in new}
+            self.taught += new
+        self.last_tutor_turn_id = tutor_turn
+        self.history += [HumanMessage(question), SystemMessage(note), AIMessage(spanish)]
+        return TranslationTurn(
+            spanish=spanish,
+            explanation_en=explanation,
+            lessons=[self._lesson(lex, met_in=spanish) for lex in new],
+            pending=self.last.reply_es if self.last else None,
+        )
 
     def look_up(self, word: str) -> Lesson | None:
         """The learner asks what a word means: `looked_up` if it's known, else `taught`.
@@ -406,7 +612,9 @@ HELP = """Comandos:
   /q palabra   what does this word mean?
   /en          the last reply in English
   /palabras    words taught this session
-  /salir       quit"""
+  /salir       quit
+  ¿Cómo se dice "..."?   how to say something in Spanish (pauses the conversation)
+Accents: 'a -> á, ~n -> ñ, :u -> ü, ?palabra -> ¿palabra, !palabra -> ¡palabra"""
 
 
 def format_lesson(item: Lesson) -> str:
@@ -426,14 +634,34 @@ def format_lesson(item: Lesson) -> str:
 
 def show(turn: TutorTurn) -> None:
     print(f"\nTutor: {turn.reply_es}")
-    if turn.correction_en:
-        print(f"  Note: {turn.correction_en}")
+    if turn.note_en:
+        print(f"  Note: {turn.note_en}")
     if turn.not_words:
         print(f"  (Not recognized as Spanish words: {', '.join(turn.not_words)})")
     if turn.lessons:
         print("  New words:")
         for item in turn.lessons:
             print(format_lesson(item))
+
+
+def show_translation(turn: TranslationTurn) -> None:
+    print(f"\nTutor: {turn.spanish}")
+    if turn.explanation_en:
+        print(f"  {turn.explanation_en}")
+    if turn.lessons:
+        print("  New words:")
+        for item in turn.lessons:
+            print(format_lesson(item))
+    if turn.pending:
+        print(f"\n  (Seguimos: {turn.pending})")
+
+
+def written(text: str) -> str:
+    """The learner's text with typed accent markers expanded, echoed when they changed it."""
+    expanded = expand_markers(text)
+    if expanded != text:
+        print(f"  (escrito: {expanded})")
+    return expanded
 
 
 def build_tutor(topic: str | None) -> Tutor:
@@ -467,9 +695,19 @@ def main() -> None:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
 
+    # Asked before loading, so the ~20 s load happens once the learner has answered.
+    topic = args.topic or written(input("¿De qué quieres hablar? (Enter: de lo que quieras) "))
+    topic = topic.strip() or None
+    new_words = 0
+    if topic:
+        new_words = word_count(input("¿Cuántas palabras nuevas? (2-10, Enter = 5) "))
     print("Cargando…")
-    tutor = build_tutor(args.topic)
+    tutor = build_tutor(topic)
     print(HELP)
+    if new_words and (lessons := tutor.pre_teach(new_words)):
+        print("\nPalabras para hoy:")
+        for item in lessons:
+            print(format_lesson(item))
     show(tutor.open())
     while True:
         try:
@@ -485,12 +723,15 @@ def main() -> None:
         elif text == "/palabras":
             print("  " + (", ".join(lex.lemma for lex in tutor.taught) or "none yet"))
         elif text.startswith("/q "):
-            found = tutor.look_up(text[3:].strip())
+            found = tutor.look_up(written(text[3:].strip()))
             print(format_lesson(found) if found else "  Not a word I know.")
         elif text.startswith("/"):
             print(HELP)
+        elif (phrase := parse_translation_request(text)) is not None:
+            # Checked before markers are expanded: the quoted phrase is English.
+            show_translation(tutor.translate(text, phrase))
         else:
-            show(tutor.respond(text))
+            show(tutor.respond(written(text)))
     print("¡Hasta luego!")
 
 

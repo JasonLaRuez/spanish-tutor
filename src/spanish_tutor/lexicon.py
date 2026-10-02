@@ -8,6 +8,7 @@ spaCy's lemmas are corrected against Wiktionary (LemmaCorrector), so analyzing t
 the downloaded Wiktionary files: `uv run python -m spanish_tutor.ingest.download`.
 """
 
+import re
 import unicodedata
 from collections import Counter
 from collections.abc import Callable, Iterable, Iterator, Mapping
@@ -69,6 +70,88 @@ def normalize_text(text: str) -> str:
     return unicodedata.normalize("NFC", text).lower().strip()
 
 
+# Accents, the diaeresis, and the tilde of ñ: what an English keyboard leaves out.
+_FOLD = str.maketrans("áéíóúüñ", "aeiouun")
+
+
+_WORD = re.compile(r"[^\W\d_]+")
+# What may precede a sentence's first word: nothing, or the end of a sentence, plus
+# opening punctuation and spaces.
+_SENTENCE_START = re.compile(r"(?:^|[.!?…:]\s)[\s¿¡\"'«“(\-—]*$")
+
+
+class AccentRestorer:
+    """Puts back the accents a learner (or a corpus author) typed without.
+
+    "detras", "manana" and "comi" aren't Spanish words, but exactly one word or inflected
+    form is spelled that way once accents (and ñ) are ignored: detrás, mañana, comí. The
+    restorer only touches spellings that aren't words already, so "esta", "ano" and
+    "hable" stay as typed: they are real words, and guessing would be wrong as often as
+    right. (A spelling that is only a misspelling or obsolete spelling, like "jardin",
+    doesn't count as a word.)
+
+    Restoration runs on the text, before tagging, so spaCy sees "detrás" in its sentence
+    and tags it correctly. Run on the bare token afterwards, "detras" had already been
+    lemmatized as the plural of an invented noun "detra", and a capitalized "Despues"
+    tagged as a name and dropped.
+
+    Several candidates are decided by subtitle frequency (niño over the rare ñiño), and a
+    tie is never guessed. A restored word must also occur at least `min_count` times in
+    the subtitles: measured on Tatoeba (2026-10-02), rarer restorations were mostly junk
+    (ana -> aña, canadá -> cañada), while common ones were right (traeme -> tráeme).
+    """
+
+    MIN_COUNT = 20  # SUBTLEX-ESP occurrences, about 0.5 per million words
+
+    def __init__(self, words: Iterable[str], counts: Mapping[str, int], min_count: int = MIN_COUNT):
+        self.words = set(words)
+        self.counts = counts
+        self.min_count = min_count
+        self.by_fold: dict[str, list[str]] = {}
+        for word in self.words:
+            if word.isalpha():
+                self.by_fold.setdefault(word.translate(_FOLD), []).append(word)
+        self.restored: Counter[tuple[str, str]] = Counter()  # (as typed, restored), for review
+
+    def restore(self, form: str) -> str | None:
+        """The accented word a lowercase `form` stands for, or None.
+
+        Only forms typed without any marks are restored: the restorer adds missing
+        accents, it never changes ones that were typed (sudán must not become sudan).
+        """
+        if form in self.words or not form.isalpha() or form != form.translate(_FOLD):
+            return None
+        candidates = sorted(
+            self.by_fold.get(form.translate(_FOLD), []), key=lambda w: -self.counts.get(w, 0)
+        )
+        if not candidates:
+            return None
+        best = self.counts.get(candidates[0], 0)
+        if len(candidates) > 1 and best <= self.counts.get(candidates[1], 0):
+            return None  # a tie: don't guess
+        return candidates[0] if best >= self.min_count else None
+
+    def restore_text(self, text: str) -> str:
+        """`text` with each accentless word restored, keeping its capitalization.
+
+        A capitalized word is restored only at the start of a sentence ("Despues, ...").
+        Elsewhere a capital marks a name: "País de Gales" must not become "galés".
+        """
+
+        def replace(match: re.Match[str]) -> str:
+            typed = match.group()
+            if typed[0].isupper() and not _SENTENCE_START.search(text[: match.start()]):
+                return typed
+            if (word := self.restore(normalize_text(typed))) is None:
+                return typed
+            self.restored[typed.lower(), word] += 1
+            if typed.isupper() and len(typed) > 1:
+                return word.upper()
+            return word[0].upper() + word[1:] if typed[0].isupper() else word
+
+        return _WORD.sub(replace, unicodedata.normalize("NFC", text))
+
+
 class LemmaCorrector:
     """Repairs tagger lemmas that aren't dictionary words, using Wiktionary.
 
@@ -85,6 +168,9 @@ class LemmaCorrector:
     5. Anything still unresolved is left as is; downstream Wiktionary checks reject it.
        Ties are never guessed.
 
+    Words typed without their accents are fixed earlier, in the text itself, by the
+    corrector's `restorer` (see AccentRestorer and `analyze`).
+
     Corrections and unresolved cases are counted for review.
     """
 
@@ -95,6 +181,7 @@ class LemmaCorrector:
         prior: Mapping[str, int],
         parts_of_speech: Callable[[str], list[str]] = lambda word: [],
         misspellings: Mapping[Analysis, Analysis] | None = None,
+        restorer: AccentRestorer | None = None,
     ):
         self.is_word = is_word
         self.form_links = form_links
@@ -102,6 +189,7 @@ class LemmaCorrector:
         self.parts_of_speech = parts_of_speech  # the POS a word has its own entries under
         # Dictionary entries that are only a misspelling of another word (dia -> día).
         self.misspellings = misspellings or {}
+        self.restorer = restorer  # applied to text before tagging, by `analyze`
         self.corrected: Counter[tuple[str, Analysis, Analysis]] = Counter()
         self.unresolved: Counter[tuple[str, Analysis]] = Counter()
 
@@ -227,12 +315,19 @@ def load_corrector() -> LemmaCorrector:
     forms, counts = RAW_DIR / WIKTIONARY_FORMS_FILE, RAW_DIR / "SUBTLEX-ESP.xlsx"
     _require(forms, counts)
     wiktionary = load_wiktionary()
+    form_links = wiktionary.form_links(forms)
+    misspellings = wiktionary.misspellings()
+    prior = subtlex.load_counts(counts)
+    # Every spelling that is a real word: headwords and inflected forms, except spellings
+    # that are only misspellings or obsolete spellings (dia, jardin), which get restored.
+    words = {lemma for lemma, _ in wiktionary.senses} - wiktionary.nonstandard_spellings()
     return LemmaCorrector(
         is_word=lambda analysis: analysis in wiktionary,
-        form_links=wiktionary.form_links(forms),
-        prior=subtlex.load_counts(counts),
+        form_links=form_links,
+        prior=prior,
         parts_of_speech=wiktionary.parts_of_speech,
-        misspellings=wiktionary.misspellings(),
+        misspellings=misspellings,
+        restorer=AccentRestorer(words | set(form_links), prior),
     )
 
 
@@ -290,10 +385,15 @@ def analyze(
     Punctuation and whitespace are skipped. Other tokens that aren't vocabulary (names,
     digits) are kept with an empty analyses list, so callers can count how often a
     surface form is *not* vocabulary. A contraction yields one token with two analyses.
-    Lemmas are corrected against Wiktionary unless `corrector=None` is passed.
+    Lemmas are corrected against Wiktionary unless `corrector=None` is passed; with a
+    corrector, words typed without their accents are restored before tagging, so the
+    surface forms are the restored ones ("detras" -> "detrás").
     """
     if corrector is DEFAULT:
         corrector = load_corrector()
+    restorer = getattr(corrector, "restorer", None)
+    if restorer is not None:
+        texts = (restorer.restore_text(text) for text in texts)
     for doc in load_nlp().pipe(texts, batch_size=batch_size):
         yield [
             (normalize_text(token.text), token_analyses(token, corrector))  # type: ignore[arg-type]

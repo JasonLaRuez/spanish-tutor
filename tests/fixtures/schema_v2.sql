@@ -1,3 +1,5 @@
+-- Snapshot of sql/schema.sql at schema version 2 (commit 9ff6e90), for migration tests.
+-- Never edit: it records what real version-2 databases look like.
 -- Word bank schema (SQLite; kept close to ANSI SQL for the Phase 5 platform migration).
 --
 -- Design: word_events is an append-only log and the single source of truth.
@@ -82,19 +84,14 @@ CREATE TABLE IF NOT EXISTS sessions (
 
 -- The transcript, one row per message, with per-turn metrics. Append-only.
 -- The adherence columns are the raw data for the Phase 4 vocabulary-adherence metric;
--- the token and latency columns are basic observability. All are NULL on learner turns,
--- and the adherence columns are NULL on translation turns (new words are their point).
+-- the token and latency columns are basic observability. All are NULL on learner turns.
 CREATE TABLE IF NOT EXISTS turns (
     turn_id           INTEGER PRIMARY KEY,
     session_id        INTEGER NOT NULL REFERENCES sessions (session_id),
     turn_no           INTEGER NOT NULL CHECK (turn_no >= 1),
     role              TEXT NOT NULL CHECK (role IN ('learner', 'tutor')),
-    -- conversation: an ordinary exchange.
-    -- translation:  the learner asked "¿cómo se dice ...?", pausing the conversation.
-    kind              TEXT NOT NULL DEFAULT 'conversation'
-                      CHECK (kind IN ('conversation', 'translation')),
     text_es           TEXT NOT NULL,
-    note_en           TEXT,              -- a correction, or a translation's explanation
+    correction_en     TEXT,              -- note on the learner's previous message
     draft_out_of_bank INTEGER CHECK (draft_out_of_bank >= 0),  -- words outside the bank, first draft
     final_out_of_bank INTEGER CHECK (final_out_of_bank >= 0),  -- ... in the reply shown (all taught)
     retried           INTEGER CHECK (retried IN (0, 1)),

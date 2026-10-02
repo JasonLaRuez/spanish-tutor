@@ -2,7 +2,14 @@
 
 import pytest
 
-from spanish_tutor.lexicon import LemmaCorrector, analyze, normalize, normalize_text, vocabulary
+from spanish_tutor.lexicon import (
+    AccentRestorer,
+    LemmaCorrector,
+    analyze,
+    normalize,
+    normalize_text,
+    vocabulary,
+)
 
 
 def test_accents_are_kept_so_minimal_pairs_stay_distinct():
@@ -98,6 +105,7 @@ DICTIONARY = {
     ("tuyo", "PRON"), ("tuyo", "DET"), ("nube", "NOUN"),
     ("mi", "DET"), ("mi", "NOUN"), ("contigo", "ADV"),
     ("dia", "NOUN"), ("día", "NOUN"), ("habia", "VERB"),
+    ("detrás", "ADV"), ("mañana", "NOUN"), ("mañana", "ADV"), ("después", "ADV"),
 }  # fmt: skip
 FORM_LINKS = {
     "crees": [("crear", "VERB"), ("creer", "VERB")],
@@ -230,3 +238,80 @@ def test_respelled_inflected_form_is_corrected_to_its_lemma(corrector):
 
 def test_misspelled_word_tagged_as_a_name_is_respelled(corrector):
     assert normalize("dia", "dia", "PROPN", corrector) == [("día", "NOUN")]
+
+
+# --- Words typed without their accents ----------------------------------------------------
+
+WORDS = {"detrás", "mañana", "comí", "ano", "año", "esta", "está", "niño", "ñiño", "día"}
+SUBTITLE_COUNTS = {"detrás": 5386, "mañana": 26537, "comí": 500, "año": 9000, "niño": 11185}
+
+
+@pytest.fixture
+def restorer():
+    return AccentRestorer(WORDS, SUBTITLE_COUNTS)
+
+
+@pytest.mark.parametrize(
+    "typed, restored",
+    [("detras", "detrás"), ("manana", "mañana"), ("comi", "comí"), ("nino", "niño")],
+)
+def test_accentless_spelling_is_restored_to_the_one_word_it_can_be(restorer, typed, restored):
+    assert restorer.restore(typed) == restored
+
+
+def test_a_spelling_that_is_already_a_word_is_never_restored(restorer):
+    assert restorer.restore("ano") is None  # año was probably meant, but ano is a word
+    assert restorer.restore("esta") is None
+
+
+def test_ties_are_never_guessed_and_rare_words_are_ignored():
+    restorer = AccentRestorer({"pína", "piná", "remové"}, {"pína": 50, "piná": 50, "remové": 0})
+    assert restorer.restore("pina") is None  # a tie
+    assert restorer.restore("remove") is None  # below the subtitle-frequency floor
+
+
+def test_a_misspelling_left_out_of_the_word_list_is_restored():
+    # Wiktionary's "dia: misspelling of día" is excluded from the words by load_corrector.
+    assert AccentRestorer({"día"}, {"día": 30000}).restore("dia") == "día"
+
+
+def test_text_is_restored_keeping_capitalization_and_counted(restorer):
+    text = "Despues: tres detras de casa. MANANA, y manana."
+    restorer.words.add("después")
+    restorer.counts = {**SUBTITLE_COUNTS, "después": 20000}
+    restorer.by_fold.setdefault("despues", []).append("después")
+    assert restorer.restore_text(text) == "Después: tres detrás de casa. MAÑANA, y mañana."
+    assert restorer.restored[("manana", "mañana")] == 2
+
+
+def test_model_restores_accents_before_tagging(corrector):
+    # Tagged after restoration, "detrás" gets its real POS in context (not an invented
+    # noun "detra"), and a capitalized sentence-initial word isn't mistaken for a name.
+    corrector.restorer = AccentRestorer(
+        {"detrás", "mañana", "después"}, {"detrás": 5386, "mañana": 26537, "después": 20000}
+    )
+    tokens = next(
+        analyze(["Despues trabajo detras de mi casa por la manana."], corrector=corrector)
+    )
+    assert ("detrás", [("detrás", "ADV")]) in tokens
+    assert ("mañana", [("mañana", "NOUN")]) in tokens
+    assert tokens[0][0] == "después" and tokens[0][1]
+
+
+def test_typed_accents_are_never_changed():
+    restorer = AccentRestorer({"sudan"}, {"sudan": 300})
+    assert restorer.restore("sudán") is None  # only missing marks are added
+
+
+@pytest.mark.parametrize(
+    "text, restored",
+    [
+        ("Vivo en el País de Gales.", "Vivo en el País de Gales."),  # a name mid-sentence
+        ("Hola. Despues vamos.", "Hola. Después vamos."),  # a new sentence
+        ("¿Despues?", "¿Después?"),
+        ("Le dije: Despues.", "Le dije: Después."),
+    ],
+)
+def test_capitalized_words_are_restored_only_at_a_sentence_start(text, restored):
+    restorer = AccentRestorer({"después", "galés"}, {"después": 20000, "galés": 500})
+    assert restorer.restore_text(text) == restored

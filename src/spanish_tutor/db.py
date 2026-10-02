@@ -98,8 +98,9 @@ def start_session(
     ).lastrowid
 
 
-TURN_METRICS = (
-    "correction_en",
+TURN_COLUMNS = (
+    "kind",
+    "note_en",
     "draft_out_of_bank",
     "final_out_of_bank",
     "retried",
@@ -116,15 +117,15 @@ def add_turn(
     turn_no: int,
     role: str,
     text_es: str,
-    **metrics: object,
+    **columns: object,
 ) -> int:
-    """Append one message to the transcript. `metrics` are the tutor-turn columns."""
-    if unknown := set(metrics) - set(TURN_METRICS):
+    """Append one message to the transcript. `columns` are the optional TURN_COLUMNS."""
+    if unknown := set(columns) - set(TURN_COLUMNS):
         raise TypeError(f"Unknown turn columns: {sorted(unknown)}")
-    columns = ["session_id", "turn_no", "role", "text_es", *metrics]
+    names = ["session_id", "turn_no", "role", "text_es", *columns]
     return conn.execute(
-        f"INSERT INTO turns ({', '.join(columns)}) VALUES ({', '.join('?' * len(columns))})",
-        (session_id, turn_no, role, text_es, *metrics.values()),
+        f"INSERT INTO turns ({', '.join(names)}) VALUES ({', '.join('?' * len(names))})",
+        (session_id, turn_no, role, text_es, *columns.values()),
     ).lastrowid
 
 
