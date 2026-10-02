@@ -291,11 +291,13 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
       untouched. About 10 API calls (~10¢) per run, and Claude's wording varies between
       runs.
   - **Open items (as of 2026-10-02), none started:**
-    - **Stale frequencies** (offered, not decided): `sql/fill_lexicon.sql` only updates
-      rows in the current build, so a row the pipeline no longer produces keeps an old
-      frequency (*mas* ADV). The proposal is a one-line UPDATE that sets those rows'
-      frequency to NULL. It's SQL, so design it with Jason.
-    - **Noun/verb homographs:** *riego* in "y riego las plantas" (I water) was tagged as
+    - ~~Stale frequencies~~: done 2026-10-02, see "General lexicon" below.
+    - **Noun/verb homographs (next):**
+      - Measured on Tatoeba: 801 NOUN tokens (229 forms) right after *yo*, *no* or a
+        clitic are almost surely verbs (*No toques*, *Yo trabajo*, *Te odio*).
+      - Options offered: a context re-tag rule in `LemmaCorrector` (check precision on a
+        sample first; it misses *y riego las plantas*), and/or measure
+        `es_core_news_lg` / `es_dep_news_trf` on the same sentences. *riego* in "y riego las plantas" (I water) was tagged as
       the noun (irrigation) and taught as a new word, although *regar* had been
       pre-taught.
     - **After each real session**, review it in SQL (`turns`, `word_events` by turn) like
@@ -444,7 +446,8 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
       re-tag rule were deleted (no events referenced them; database backed up first).
     - *mas* ADV is kept: it has seed events, and the log is append-only. It's a
       harmless duplicate, since Jason already knows *más* ADV in both modes. Its
-      frequency is now stale, because rows outside a build keep their old frequency.
+      frequency was cleared to NULL by the 2026-10-02 rebuild, because the build no
+      longer produces it.
   - `find_example` prefers 4–10-word sentences, the lexicon picker's range. It first
     returned fragments (*¡Disparad!*, *¿Subes?*).
   - **Missing accents: restored in the text, before tagging (2026-10-02).**
@@ -526,9 +529,21 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
     words; it is re-chosen per learner when a word is taught.
   - Independent of any learner, and rebuildable by anyone with one command (Jason's reason
     for choosing an advance fill over on-demand creation).
-  - **Additive only:** rows are never deleted, so `lexeme_id`s and the events referencing
+  - **Referenced rows are never deleted,** so `lexeme_id`s and the events referencing
     them survive rebuilds. Frequencies are overwritten; definitions and examples only fill
     blanks (examples move as a unit).
+  - **Rows a rebuild no longer produces (Jason's choice, 2026-10-02):** deleted if no
+    `word_events` or `lexeme_reviews` row references them. Otherwise they're kept with
+    the frequency set to NULL.
+    - The first run removed 8 leftovers (*tambien* PRON, *razon*, *había* VERB…) and
+      cleared *mas* ADV.
+    - A new table referencing `lexemes` must be added to the DELETE. If it isn't, the
+      foreign key fails the build and rolls it back (tested).
+    - `fill_lexicon` runs the file statement by statement (`db.statements`) to keep one
+      transaction and report counts.
+    - Consequence to remember: rows inserted by anything other than the build (a future
+      PCIC/`cefr_level` import, an `ensure_lexeme` word with no event yet) are deleted by
+      the next build unless something references them.
   - The database is backed up before each build (`db.backup`).
   - `seed candidates` ranks this lexicon; `seed build` only records events.
   - **Example coverage (measured 2026-10-01): 70% overall, but concentrated where it

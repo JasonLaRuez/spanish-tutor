@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from spanish_tutor.db import connect, init_schema, rebuild_word_bank
+from spanish_tutor.db import connect, init_schema, rebuild_word_bank, statements
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -378,3 +378,13 @@ def test_turn_kind_is_checked(conn):
             "VALUES (?, 1, 'tutor', 'Hola.', 'chat')",
             (session,),
         )
+
+
+def test_statements_splits_a_script_keeping_comments_and_quoted_semicolons():
+    script = "-- first\nSELECT 'a;\nb';\n\n-- second\nSELECT 2;\n-- trailing comment\n"
+    assert statements(script) == ["-- first\nSELECT 'a;\nb';", "-- second\nSELECT 2;"]
+
+
+def test_statements_rejects_an_unfinished_statement():
+    with pytest.raises(ValueError, match="incomplete"):
+        statements("SELECT 1;\nSELECT 2\n")

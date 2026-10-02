@@ -1,6 +1,7 @@
-"""The general lexicon: frequency estimation, example choice, and the additive fill."""
+"""The general lexicon: frequency estimation, example choice, and the fill."""
 
 import json
+import sqlite3
 from collections import Counter
 
 import pytest
@@ -150,7 +151,7 @@ def lexeme(conn, lemma):
 
 
 def test_fill_adds_entries_with_provenance(conn):
-    assert fill_lexicon(conn, ENTRIES) == (3, 0)
+    assert fill_lexicon(conn, ENTRIES) == (3, 0, 0, 0)
     casa = lexeme(conn, "casa")
     assert casa["frequency_per_million"] == 900.0
     assert (casa["definition_en"], casa["definition_source"]) == ("house", "wiktionary")
@@ -161,7 +162,7 @@ def test_fill_adds_entries_with_provenance(conn):
 def test_refill_keeps_ids_stable_and_adds_nothing(conn):
     fill_lexicon(conn, ENTRIES)
     ids = dict(conn.execute("SELECT lemma, lexeme_id FROM lexemes").fetchall())
-    assert fill_lexicon(conn, ENTRIES) == (0, 3)
+    assert fill_lexicon(conn, ENTRIES) == (0, 3, 0, 0)
     assert dict(conn.execute("SELECT lemma, lexeme_id FROM lexemes").fetchall()) == ids
 
 
@@ -187,3 +188,73 @@ def test_fill_keeps_existing_data_and_learner_events(conn):
     )
     assert casa["frequency_per_million"] == 900.0  # derived data is refreshed
     assert conn.execute("SELECT COUNT(*) FROM word_bank").fetchone()[0] == 1
+
+
+# --- Rows a rebuild no longer produces ------------------------------------------------
+
+
+def add_old_row(conn, lemma, frequency=5.0):
+    """A row from an earlier build that the current build (ENTRIES) doesn't produce."""
+    return conn.execute(
+        "INSERT INTO lexemes (lemma, pos, frequency_per_million, definition_en) "
+        "VALUES (?, 'NOUN', ?, 'old')",
+        (lemma, frequency),
+    ).lastrowid
+
+
+def test_unreferenced_rows_no_longer_built_are_removed(conn):
+    add_old_row(conn, "tambien")
+    counts = fill_lexicon(conn, ENTRIES)
+    assert (counts.added, counts.removed, counts.cleared) == (3, 1, 0)
+    assert lexeme(conn, "tambien") is None
+
+
+def test_rows_with_history_are_kept_with_their_frequency_cleared(conn):
+    mas = add_old_row(conn, "mas", frequency=94.5)
+    conn.execute(
+        "INSERT INTO word_events (lexeme_id, mode, event_type, source) "
+        "VALUES (?, 'recognition', 'taught', 'seed')",
+        (mas,),
+    )
+    counts = fill_lexicon(conn, ENTRIES)
+    assert (counts.removed, counts.cleared) == (0, 1)
+    row = lexeme(conn, "mas")
+    assert row["lexeme_id"] == mas
+    assert row["frequency_per_million"] is None
+    assert row["definition_en"] == "old"  # only the build-derived frequency is cleared
+    assert conn.execute("SELECT COUNT(*) FROM word_bank").fetchone()[0] == 1
+
+
+def test_reviewed_rows_are_kept(conn):
+    reviewed = add_old_row(conn, "razon")
+    conn.execute(
+        "INSERT INTO lexeme_reviews (lexeme_id, field, verdict, reviewer) "
+        "VALUES (?, 'definition_en', 'correct', 'human')",
+        (reviewed,),
+    )
+    assert fill_lexicon(conn, ENTRIES).removed == 0
+    assert lexeme(conn, "razon")["lexeme_id"] == reviewed
+
+
+def test_cleared_counts_only_frequencies_that_changed(conn):
+    add_old_row(conn, "mas", frequency=94.5)
+    conn.execute(
+        "INSERT INTO word_events (lexeme_id, mode, event_type, source) "
+        "SELECT lexeme_id, 'recognition', 'taught', 'seed' FROM lexemes WHERE lemma = 'mas'"
+    )
+    assert fill_lexicon(conn, ENTRIES).cleared == 1
+    # A second build finds the frequency already cleared, and l'o (built, no frequency)
+    # never counts.
+    assert fill_lexicon(conn, ENTRIES) == (0, 3, 0, 0)
+
+
+def test_unlisted_reference_rolls_the_whole_fill_back(conn):
+    """A table referencing lexemes that fill_lexicon.sql doesn't know about must not
+    lose its parent row: the foreign key fails the DELETE and nothing is changed."""
+    conn.execute("CREATE TABLE notes (lexeme_id INTEGER REFERENCES lexemes (lexeme_id))")
+    old = add_old_row(conn, "tambien")
+    conn.execute("INSERT INTO notes VALUES (?)", (old,))
+    conn.commit()
+    with pytest.raises(sqlite3.IntegrityError):
+        fill_lexicon(conn, ENTRIES)
+    assert [r["lemma"] for r in conn.execute("SELECT lemma FROM lexemes")] == ["tambien"]

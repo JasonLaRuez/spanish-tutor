@@ -57,6 +57,25 @@ def init_schema(conn: sqlite3.Connection) -> None:
         conn.execute(f"PRAGMA user_version = {all_migrations[-1][0]}")
 
 
+def statements(script: str) -> list[str]:
+    """Split a SQL script into its statements.
+
+    For running a script inside the caller's transaction, one statement at a time
+    (executescript commits any open transaction first).
+    """
+    result, current = [], ""
+    for line in script.splitlines(keepends=True):
+        current += line
+        if sqlite3.complete_statement(current):
+            result.append(current.strip())
+            current = ""
+    if current.strip() and not all(
+        line.strip().startswith("--") or not line.strip() for line in current.splitlines()
+    ):
+        raise ValueError(f"incomplete SQL statement at the end of the script: {current!r}")
+    return result
+
+
 def backup(path: Path = DB_PATH) -> Path | None:
     """Copy the database next to itself with a timestamp; None if there is nothing to copy.
 

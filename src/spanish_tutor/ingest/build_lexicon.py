@@ -18,6 +18,7 @@ import sys
 from collections import Counter, defaultdict
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+from typing import NamedTuple
 
 from spanish_tutor import db
 from spanish_tutor.config import DB_PATH, SQL_DIR
@@ -195,10 +196,18 @@ CREATE TEMP TABLE lexicon_staging (
 """
 
 
-def fill_lexicon(conn: sqlite3.Connection, entries: Iterable[LexiconEntry]) -> tuple[int, int]:
+class FillCounts(NamedTuple):
+    added: int  # new words
+    updated: int  # words already in lexemes, refreshed
+    removed: int  # words the build no longer produces, with nothing referencing them
+    cleared: int  # words the build no longer produces, kept for their history; frequency cleared
+
+
+def fill_lexicon(conn: sqlite3.Connection, entries: Iterable[LexiconEntry]) -> FillCounts:
     """Stage the entries and merge them into lexemes with sql/fill_lexicon.sql.
 
-    Returns (added, updated). Runs in one transaction: all or nothing.
+    Runs in one transaction: all or nothing. The file's statements run one at a time
+    (executescript would commit first) so each can report how many rows it changed.
     """
     before = conn.execute("SELECT COUNT(*) FROM lexemes").fetchone()[0]
     with conn:
@@ -209,10 +218,15 @@ def fill_lexicon(conn: sqlite3.Connection, entries: Iterable[LexiconEntry]) -> t
             (entry.row() for entry in entries),
         )
         staged = conn.execute("SELECT COUNT(*) FROM lexicon_staging").fetchone()[0]
-        conn.execute((SQL_DIR / "fill_lexicon.sql").read_text(encoding="utf-8"))
+        merge, delete, clear = db.statements(
+            (SQL_DIR / "fill_lexicon.sql").read_text(encoding="utf-8")
+        )
+        conn.execute(merge)
+        added = conn.execute("SELECT COUNT(*) FROM lexemes").fetchone()[0] - before
+        removed = conn.execute(delete).rowcount
+        cleared = conn.execute(clear).rowcount
         conn.execute("DROP TABLE lexicon_staging")
-    added = conn.execute("SELECT COUNT(*) FROM lexemes").fetchone()[0] - before
-    return added, staged - added
+    return FillCounts(added, staged - added, removed, cleared)
 
 
 def main() -> None:
@@ -237,9 +251,14 @@ def main() -> None:
     conn = db.connect(DB_PATH)
     try:
         db.init_schema(conn)
-        added, updated = fill_lexicon(conn, entries)
+        counts = fill_lexicon(conn, entries)
         total = conn.execute("SELECT COUNT(*) FROM lexemes").fetchone()[0]
-        print(f"lexemes: {added:,} added, {updated:,} updated, {total:,} in total")
+        print(
+            f"lexemes: {counts.added:,} added, {counts.updated:,} updated, "
+            f"{counts.removed:,} removed (no longer built, unreferenced), "
+            f"{counts.cleared:,} with frequency cleared (no longer built, kept for history); "
+            f"{total:,} in total"
+        )
     finally:
         conn.close()
 
