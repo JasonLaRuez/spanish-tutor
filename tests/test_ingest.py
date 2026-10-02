@@ -4,10 +4,17 @@ import bz2
 import json
 
 import openpyxl
+import pytest
 
 from spanish_tutor.ingest import subtlex
 from spanish_tutor.ingest.download import compact_entry
-from spanish_tutor.ingest.tatoeba import load_sentences
+from spanish_tutor.ingest.tatoeba import (
+    TaggerMismatch,
+    load_sentences,
+    meta_path,
+    record_tagger,
+    require_current,
+)
 from spanish_tutor.ingest.wiktionary import Wiktionary
 
 # --- SUBTLEX-ESP -----------------------------------------------------------------------
@@ -284,3 +291,19 @@ def test_nonstandard_spellings_are_only_misspellings_or_obsolete(tmp_path):
         ],
     )
     assert wiktionary.nonstandard_spellings() == {"jardin", "dia"}
+
+
+def test_cached_corpus_from_the_current_tagger_is_accepted(tmp_path):
+    analyzed = tmp_path / "tatoeba_analyzed.jsonl"
+    record_tagger(analyzed)
+    assert meta_path(analyzed).name == "tatoeba_analyzed.meta.json"
+    require_current(analyzed)
+
+
+@pytest.mark.parametrize("recorded", [None, "es_core_news_md 3.8.0"])
+def test_cached_corpus_from_another_or_unrecorded_tagger_is_refused(tmp_path, recorded):
+    analyzed = tmp_path / "tatoeba_analyzed.jsonl"
+    if recorded:
+        meta_path(analyzed).write_text(json.dumps({"tagger": recorded}), encoding="utf-8")
+    with pytest.raises(TaggerMismatch, match=recorded or "unrecorded"):
+        require_current(analyzed)

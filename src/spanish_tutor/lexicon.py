@@ -4,8 +4,12 @@ The word bank, the seed pipeline, and (from Phase 3) the content-difficulty inde
 lemmatize text the same way, or "is this word new?" gives wrong answers. Everything that
 turns text into vocabulary goes through this module.
 
-spaCy's lemmas are corrected against Wiktionary (LemmaCorrector), so analyzing text needs
-the downloaded Wiktionary files: `uv run python -m spanish_tutor.ingest.download`.
+Tagging and lemmatization use spaCy's transformer pipeline (MODEL). Its lemmas are
+corrected against Wiktionary (LemmaCorrector), so analyzing text needs the downloaded
+Wiktionary files: `uv run python -m spanish_tutor.ingest.download`.
+
+Changing MODEL changes every analysis: re-run `ingest.tatoeba` (the cached corpus records
+the tagger that made it, and the steps that read it refuse a different one).
 """
 
 import re
@@ -23,7 +27,11 @@ from spacy.tokens import Token
 if TYPE_CHECKING:
     from spanish_tutor.ingest.wiktionary import Wiktionary
 
-MODEL = "es_core_news_md"
+# A transformer pipeline (BETO, a Spanish BERT), chosen over es_core_news_md on 2026-10-02.
+# On hand-labeled Tatoeba samples of verb forms md had tagged as nouns ("Yo trabajo",
+# "No toques", "Cuando compras algo") it found 50 of 51 verbs (md: 0), without tagging
+# any of 52 real nouns as verbs. About 10 ms a sentence on CPU; ~6 s to load.
+MODEL = "es_dep_news_trf"
 
 # Must match the CHECK constraint on lexemes.pos in sql/schema.sql (minus EXPR, which
 # comes from multi-word-expression matching, not single tokens).
@@ -56,13 +64,23 @@ PERSONAL_PRONOUN_FORMS = PERSONAL_PRONOUN_LEMMAS | {"mí", "ti", "conmigo", "con
 # Closed-class parts of speech: a word's function-word reading wins over a noun sense.
 FUNCTION_POS = frozenset(["ADP", "CCONJ", "DET", "PRON", "SCONJ"])
 
+# Where a tagger lemma that is a real word, but not one the form belongs to, is replaced
+# by the word the form is listed under (LemmaCorrector._relink).
+RELINK_POS = frozenset(["VERB", "ADJ", "DET"])
+
 Analysis = tuple[str, str]  # (lemma, pos)
 
 
 @cache
 def load_nlp() -> Language:
-    # The lemmatizer needs the morphologizer's POS and morphology, not the parse or NER.
+    # The lemmatizer needs the morphologizer's POS and morphology, not the parse. (The
+    # transformer model has no NER; "ner" is excluded in case a model with one is used.)
     return spacy.load(MODEL, exclude=["parser", "ner"])
+
+
+def tagger() -> str:
+    """The tagger model and version, as recorded with cached analyses ("es_dep_news_trf 3.8.0")."""
+    return f"{MODEL} {spacy.util.get_package_version(MODEL)}"
 
 
 def normalize_text(text: str) -> str:
@@ -153,7 +171,11 @@ class AccentRestorer:
 
 
 class LemmaCorrector:
-    """Repairs tagger lemmas that aren't dictionary words, using Wiktionary.
+    """Repairs tagger lemmas against Wiktionary.
+
+    When the tagger's (lemma, pos) is a dictionary word, it is kept unless the form is
+    listed under a different word with that POS ("riego" VERB: regir -> regar; see
+    `_relink` for where this applies).
 
     spaCy sometimes leaves an inflected form as the lemma ("crees", "dólares") or invents
     one ("debería" -> "deberiar"). When the tagger's (lemma, pos) isn't a dictionary word:
@@ -217,7 +239,7 @@ class LemmaCorrector:
     def _correct(self, form: str, analysis: Analysis) -> Analysis:
         lemma, pos = analysis
         if self.is_word(analysis):
-            return analysis
+            return self._relink(form, analysis)
         if self.is_word((form, pos)):
             return self._record(form, analysis, (form, pos))
         candidates = list(
@@ -232,6 +254,40 @@ class LemmaCorrector:
                 return self._record(form, analysis, (form, other_pos[0]))
             choice = self._most_common(candidates)
         if choice is None:
+            self.unresolved[form, analysis] += 1
+            return analysis
+        return self._record(form, analysis, choice)
+
+    def _relink(self, form: str, analysis: Analysis) -> Analysis:
+        """The lemma the dictionary says `form` belongs to, when the tagger picked another word.
+
+        The tagger's lemma can be a real word that the form simply isn't a form of: "riego"
+        tagged VERB gets regir, though it is listed only under regar; "verte" gets verter
+        instead of ver, and "buena" the separate word buen instead of bueno. If the form is
+        listed under other lemmas with the same POS, the most common of those wins (ties
+        are reported, not guessed). Measured on Tatoeba (2026-10-02), this applies to:
+
+        - VERB, ADJ and DET. Not PRON: Wiktionary files eso and esto under the old
+          accented spellings ése and éste. Not NOUN: its hits were mostly spelling
+          variants (zombie, zombi).
+        - For VERB, only infinitives count, so a participle stays with its verb (hechos
+          is listed under the participle entry "hecho", but its verb is hacer). A pronominal
+          entry of the tagger's own verb doesn't count either: quejó stays quejar rather
+          than splitting into quejarse.
+        """
+        lemma, pos = analysis
+        if pos not in RELINK_POS or form == lemma:
+            return analysis
+        linked = [c for c in self.form_links.get(form, []) if c[1] == pos]
+        if not linked or analysis in linked:
+            return analysis
+        if pos == "VERB":
+            if (lemma + "se", pos) in linked:
+                return analysis
+            linked = [c for c in linked if c[0].endswith(("r", "rse"))]
+            if not linked:
+                return analysis
+        if (choice := self._most_common(linked)) is None:
             self.unresolved[form, analysis] += 1
             return analysis
         return self._record(form, analysis, choice)
@@ -347,7 +403,8 @@ def normalize(
         return []
     lemma = normalize_text(lemma)
     pos = POS_FOLDS.get(pos, pos)
-    if pos == "PRON" and lemma in PERSONAL_PRONOUN_LEMMAS:
+    # Checked on the form too: the transformer lemmatizes "vos" as "vo" (2026-10-02).
+    if pos == "PRON" and (lemma in PERSONAL_PRONOUN_LEMMAS or form in PERSONAL_PRONOUN_FORMS):
         lemma = form
     # Expanded whatever the tag: the tagger sometimes calls "del" a DET.
     if lemma in CONTRACTIONS:
@@ -377,7 +434,7 @@ TokenAnalysis = tuple[str, list[Analysis]]  # (surface form, analyses)
 
 def analyze(
     texts: Iterable[str],
-    batch_size: int = 1000,
+    batch_size: int = 64,  # fastest for the transformer on CPU (measured: 121/s vs 94 at 1000)
     corrector: LemmaCorrector | None | object = DEFAULT,
 ) -> Iterator[list[TokenAnalysis]]:
     """For each text, yield one (surface form, analyses) entry per word token.

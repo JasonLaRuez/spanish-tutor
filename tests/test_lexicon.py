@@ -43,7 +43,7 @@ def test_lemma_is_lowercased():
 
 @pytest.mark.parametrize(
     ("form", "lemma"),
-    [("se", "él"), ("lo", "él"), ("Me", "yo"), ("conmigo", "yo"), ("ustedes", "tú")],
+    [("se", "él"), ("lo", "él"), ("Me", "yo"), ("conmigo", "yo"), ("ustedes", "tú"), ("vos", "vo")],
 )
 def test_personal_pronouns_keep_their_own_form(form, lemma):
     assert normalize(form, lemma, "PRON") == [(form.lower(), "PRON")]
@@ -106,6 +106,10 @@ DICTIONARY = {
     ("mi", "DET"), ("mi", "NOUN"), ("contigo", "ADV"),
     ("dia", "NOUN"), ("día", "NOUN"), ("habia", "VERB"),
     ("detrás", "ADV"), ("mañana", "NOUN"), ("mañana", "ADV"), ("después", "ADV"),
+    ("regir", "VERB"), ("regar", "VERB"), ("riego", "NOUN"), ("hacer", "VERB"),
+    ("hecho", "VERB"), ("quejar", "VERB"), ("quejarse", "VERB"), ("ese", "PRON"),
+    ("ése", "PRON"), ("buen", "ADJ"), ("bueno", "ADJ"), ("saltar", "VERB"),
+    ("zombie", "NOUN"), ("zombi", "NOUN"), ("gobierno", "NOUN"),
 }  # fmt: skip
 FORM_LINKS = {
     "crees": [("crear", "VERB"), ("creer", "VERB")],
@@ -116,6 +120,12 @@ FORM_LINKS = {
     "serio": [("seriar", "VERB")],
     "quieres": [("querer", "VERB")],
     "había": [("haber", "VERB")],
+    "riego": [("regar", "VERB")],
+    "hechos": [("hecho", "VERB")],
+    "quejó": [("quejarse", "VERB")],
+    "eso": [("ése", "PRON")],
+    "buena": [("bueno", "ADJ")],
+    "zombies": [("zombi", "NOUN")],
 }
 MISSPELLINGS = {("dia", "NOUN"): ("día", "NOUN"), ("habia", "VERB"): ("había", "VERB")}
 PRIOR = {"creer": 10_568, "crear": 1_417, "haber": 60_000, "salir": 900, "salar": 900}
@@ -171,6 +181,46 @@ def test_wrong_tag_on_a_dictionary_word_is_fixed_before_following_form_links(cor
     assert normalize("vosotros", "vosotro", "NOUN", corrector) == [("vosotros", "PRON")]
 
 
+# --- A real word, but not the one the form belongs to -----------------------------------
+
+
+def test_lemma_the_form_is_not_listed_under_is_relinked(corrector):
+    # Both spaCy models lemmatize the verb "riego" as regir; it is a form of regar.
+    assert normalize("riego", "regir", "VERB", corrector) == [("regar", "VERB")]
+    assert normalize("buena", "buen", "ADJ", corrector) == [("bueno", "ADJ")]
+    assert corrector.corrected == {
+        ("riego", ("regir", "VERB"), ("regar", "VERB")): 1,
+        ("buena", ("buen", "ADJ"), ("bueno", "ADJ")): 1,
+    }
+
+
+def test_a_participle_entry_does_not_replace_its_verb(corrector):
+    assert normalize("hechos", "hacer", "VERB", corrector) == [("hacer", "VERB")]
+
+
+def test_a_pronominal_entry_does_not_split_the_verb(corrector):
+    assert normalize("quejó", "quejar", "VERB", corrector) == [("quejar", "VERB")]
+
+
+@pytest.mark.parametrize(
+    ("form", "analysis"),
+    [("eso", ("ese", "PRON")), ("zombies", ("zombie", "NOUN"))],  # old spelling; variant
+)
+def test_pronouns_and_nouns_are_not_relinked(corrector, form, analysis):
+    assert normalize(form, *analysis, corrector) == [analysis]
+    assert not corrector.corrected
+
+
+def test_relinking_ties_are_reported_not_guessed(corrector):
+    assert normalize("sales", "saltar", "VERB", corrector) == [("saltar", "VERB")]
+    assert corrector.unresolved == {("sales", ("saltar", "VERB")): 1}
+
+
+def test_a_form_listed_under_its_tagger_lemma_is_left_alone(corrector):
+    assert normalize("crees", "crear", "VERB", corrector) == [("crear", "VERB")]
+    assert not corrector.corrected and not corrector.unresolved
+
+
 # --- Common words mis-tagged as proper nouns ------------------------------------------
 
 
@@ -216,9 +266,9 @@ def test_without_a_corrector_proper_nouns_are_dropped():
 
 
 def test_model_retags_a_mid_sentence_common_word_it_calls_a_name(corrector):
-    # es_core_news_md tags "nube" PROPN here, and "Juan" correctly so.
-    tokens = next(analyze(["Juan dice que le gusta la nube."], corrector=corrector))
-    assert ("nube", [("nube", "NOUN")]) in tokens
+    # es_dep_news_trf tags "gobierno" PROPN here, and "Juan" correctly so.
+    tokens = next(analyze(["Juan dice que el gobierno miente."], corrector=corrector))
+    assert ("gobierno", [("gobierno", "NOUN")]) in tokens
     assert ("juan", []) in tokens
 
 

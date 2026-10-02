@@ -16,7 +16,13 @@ from collections.abc import Callable, Iterable
 
 from langchain_chroma import Chroma
 
-from spanish_tutor.ingest.tatoeba import ANALYZED_PATH, AnalyzedSentence, read_analyzed
+from spanish_tutor.ingest.tatoeba import (
+    ANALYZED_PATH,
+    AnalyzedSentence,
+    TaggerMismatch,
+    read_analyzed,
+    require_current,
+)
 from spanish_tutor.lexicon import vocabulary
 from spanish_tutor.vectorstore import encode_vocab, open_store
 
@@ -116,6 +122,10 @@ def main() -> None:
         sys.exit(
             "Missing the lemmatized corpus. Run `uv run python -m spanish_tutor.ingest.tatoeba`."
         )
+    try:
+        require_current(ANALYZED_PATH)
+    except TaggerMismatch as error:
+        sys.exit(str(error))
     total = sum(1 for s in read_analyzed(ANALYZED_PATH) if s.en)
     if args.limit:
         total = min(total, args.limit)

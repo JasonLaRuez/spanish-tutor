@@ -24,7 +24,13 @@ from spanish_tutor import db
 from spanish_tutor.config import DB_PATH, SQL_DIR
 from spanish_tutor.ingest import subtlex
 from spanish_tutor.ingest.download import RAW_DIR, WIKTIONARY_FILE
-from spanish_tutor.ingest.tatoeba import ANALYZED_PATH, AnalyzedSentence, read_analyzed
+from spanish_tutor.ingest.tatoeba import (
+    ANALYZED_PATH,
+    AnalyzedSentence,
+    TaggerMismatch,
+    read_analyzed,
+    require_current,
+)
 from spanish_tutor.ingest.wiktionary import Wiktionary
 from spanish_tutor.lexicon import Analysis
 
@@ -237,6 +243,10 @@ def main() -> None:
             "and `uv run python -m spanish_tutor.ingest.tatoeba` first."
         )
 
+    try:
+        require_current(ANALYZED_PATH)
+    except TaggerMismatch as error:
+        sys.exit(str(error))
     print("building entries ...")
     entries = build_entries(
         lambda: read_analyzed(ANALYZED_PATH),

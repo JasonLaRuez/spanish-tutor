@@ -292,14 +292,8 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
       runs.
   - **Open items (as of 2026-10-02), none started:**
     - ~~Stale frequencies~~: done 2026-10-02, see "General lexicon" below.
-    - **Noun/verb homographs (next):**
-      - Measured on Tatoeba: 801 NOUN tokens (229 forms) right after *yo*, *no* or a
-        clitic are almost surely verbs (*No toques*, *Yo trabajo*, *Te odio*).
-      - Options offered: a context re-tag rule in `LemmaCorrector` (check precision on a
-        sample first; it misses *y riego las plantas*), and/or measure
-        `es_core_news_lg` / `es_dep_news_trf` on the same sentences. *riego* in "y riego las plantas" (I water) was tagged as
-      the noun (irrigation) and taught as a new word, although *regar* had been
-      pre-taught.
+    - ~~Noun/verb homographs~~: fixed 2026-10-02 by switching the tagger to
+      `es_dep_news_trf` and adding the form-of lemma check. See "Tagger" below.
     - **After each real session**, review it in SQL (`turns`, `word_events` by turn) like
       session 1. Its data surfaced every fix made on 2026-10-02.
     - Then roadmap Phase 3 (difficulty index and recommender). Pre-teaching, the core
@@ -393,11 +387,12 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
         cached (~2.7¢ → ~0.4¢). Jason expects to use it often.
       - The topic-word selection keeps its own schema: it's one call per session, with a
         different prompt and nothing to share.
-  - **Known tagger limit seen in testing:** *riego* in "y riego las plantas" (I water) was
-    tagged as the noun *riego* (irrigation) and taught as a new word, although *regar* had
-    been pre-taught.
-- **Known data limits:** *ven* resolves to *ver* by frequency (often the imperative of
-  *venir*); sentence-initial words are sometimes tagged as names and dropped; ~100
+  - **Tagger limit seen in testing (fixed 2026-10-02, see "Tagger"):** *riego* in "y riego
+    las plantas" (I water) was tagged as the noun *riego* (irrigation) and taught as a new
+    word, although *regar* had been pre-taught.
+- **Known data limits:** sentence-initial *Sé* is tagged as the imperative of *ser* both
+  in *Sé amable* (right) and *Sé que…* (wrong, it's *saber*), about half each across 537
+  tokens; sentence-initial words are sometimes tagged as names and dropped; ~100
   NOUN-tagged *conmigo* tokens became an ADV entry; multi-word expressions (`EXPR`) are
   allowed in the schema but not yet detected in text.
   - **Lowercase words tagged PROPN: fixed in the pipeline on 2026-10-01.**
@@ -495,11 +490,36 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
   that `private/` and `.env` stay gitignored. Keep it passing. `src/spanish_tutor/db.py`
   opens connections (always with `PRAGMA foreign_keys = ON`) and applies `sql/schema.sql`.
 - **All text → `(lemma, pos)` goes through `src/spanish_tutor/lexicon.py`** (spaCy
-  `es_core_news_md`: NFC, lowercase, accents kept, AUX→VERB, `del`/`al` expanded, clitic
+  `es_dep_news_trf`: NFC, lowercase, accents kept, AUX→VERB, `del`/`al` expanded, clitic
   verbs reduced to the verb, and **personal pronouns keep their own form**, because spaCy
   would otherwise merge *me/nos/conmigo* into *yo* and *se/lo/le* into *él*). Phase 3
   content indexing must reuse it, or the word bank and difficulty index disagree about
   what's "new".
+- **Tagger: `es_dep_news_trf` (switched from `es_core_news_md` 2026-10-02, Jason's choice;
+  also a portfolio point: a measured model upgrade).**
+  - Why: on hand-labeled Tatoeba samples of verb forms md had tagged NOUN (*Yo trabajo*,
+    *No toques*, *Cuando compras algo*), md found 0/51 verbs, `es_core_news_lg` 11, the
+    transformer 50, with 0 of 52 real nouns made verbs. Learner-style sentences: 3, 4, 6
+    of 8.
+  - Whole corpus: 2.0% of 3.2M tokens changed. Hand check of 50 random changes: new right
+    39, old right 5, 5 ties, 1 both wrong. 14.6k dropped tokens recovered (mostly
+    sentence-initial verbs); lowercase-PROPN re-tags 10,168 → 1,536; lemma corrections
+    95k → 54k; *ven* now *venir* (was *ver*).
+  - Regression found and fixed: the transformer lemmatizes *vos* as *vo* (a Wiktionary
+    word), so personal pronouns now keep their own form by the *form*, not only by the
+    tagger's lemma.
+  - Cost: ~10 ms/sentence on CPU (batch size 64 is fastest), a 6 s model load, a full
+    Tatoeba analysis takes ~90 min (was 15).
+  - The cached corpus records its tagger in `tatoeba_analyzed.meta.json`;
+    `build_lexicon` and `index_tatoeba` refuse a cache from another tagger. It doesn't
+    record corrector changes: delete the cache to re-analyze after changing `lexicon.py`.
+  - Rebuild results (2026-10-02): lexicon 663 added, 741 removed (unreferenced junk such
+    as *empecer*, the noun *miente*), 0 frequencies cleared; 31k Chroma vocab entries
+    updated; word bank unchanged (999 recognized / 745 produced).
+  - **Seed gap:** 78 words entered the top 1,500 that Jason never reviewed (*hola*,
+    *callar*, *nadar*, *vamos*, *perdón*; 9 are known words under a new POS, e.g.
+    *francés* NOUN). They're appended to `seed_candidates.csv` (new ranks, blank `known`).
+    **Pending: Jason marks them, then `seed build`.**
 - **Lemma correction** (`lexicon.LemmaCorrector`, added 2026-10-01):
   - When spaCy's `(lemma, pos)` isn't a Wiktionary word, it's repaired from Wiktionary's
     form-of table (`data/raw/wiktionary_es_forms.tsv`).
@@ -513,7 +533,21 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
   - Analyzing text therefore needs the downloaded Wiktionary files. Tests pass
     `corrector=None` for raw spaCy behavior.
   - Known tagger limits the corrector can't fix: sentence-initial words are sometimes
-    tagged as proper nouns (*Sales a las ocho*) and dropped.
+    tagged as proper nouns (*Sales a las ocho*, *Juego al fútbol*) and dropped.
+  - **Form-of check (`_relink`, added 2026-10-02):** a tagger lemma that *is* a real word
+    is replaced when the form is listed only under other words with that POS.
+    - Example: the verb *riego* was lemmatized *regir* by both spaCy models; it's a form
+      of *regar*. Other cases: *verte* → *ver*, *buena* → *bueno* (not *buen*),
+      *cuántas* → *cuánto*.
+    - Scope, from measurement on the md build: VERB, ADJ, DET. Not PRON: Wiktionary
+      files *eso* under the old spelling *ése*, so 13k tokens would all go wrong. Not
+      NOUN: its hits were mostly spelling variants.
+    - VERB guards: only infinitive candidates (participle entries like *hecho* don't
+      replace *hacer*). A pronominal entry of the same verb (*quejarse* for *quejar*)
+      doesn't split it.
+    - Measured on the transformer build: ~3,800 tokens; a token-weighted hand check of 50
+      hits found 46 right (misses: rare regional/archaic forms *podes*, *plega*, *retiñe*).
+      Scope kept as is.
 - **Wiktionary matching** (`ingest/wiktionary.py`):
   - Form-of senses are dropped for open-class words (only dictionary forms remain), but kept
     for function words (*ti* = "prepositional of tú") and irregular comparatives (*peor*,
@@ -599,6 +633,9 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
   - Cost of that choice: its remote code (`trust_remote_code`) imports `transformers.onnx`,
     which transformers 5 removed. **`transformers<5` and `sentence-transformers<6` are pinned
     for this reason; don't upgrade them without re-checking the model.**
+  - The tagger's `spacy-transformers` 1.4 further caps `transformers` below 4.53.3 (locked
+    at 4.53.2). Checked 2026-10-02: 2,000 stored vectors re-embedded on 4.53.2 have cosine
+    1.00000000 to the originals, and the slow tests pass, so no re-index was needed.
   - The model repo and its code repo are pinned to exact commit SHAs (`MODEL_REVISION`,
     `CODE_REVISION`).
   - Speed: ~130 sentences/s on CPU, so the full Tatoeba index takes ~35 min.

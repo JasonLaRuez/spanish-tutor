@@ -8,7 +8,7 @@ authors = [
 ]
 requires-python = ">=3.12"
 dependencies = [
-    "es-core-news-md",
+    "es-dep-news-trf",
     "langchain>=1.4.3",
     "langchain-anthropic>=1.7.5",
     "langchain-chroma>=1.1.0",
@@ -16,11 +16,15 @@ dependencies = [
     "openpyxl>=3.1.5",
     "python-dotenv>=1.2.3",
     "spacy>=3.8,<3.9",
+    "spacy-transformers>=1.4,<1.5",
     "torch>=2.14.1",
     # Pinned below 5 / 6: the jina-embeddings-v2-base-es model code imports
     # transformers.onnx, which transformers 5 removed. See src/spanish_tutor/embeddings.py.
+    # spacy-transformers 1.4 (the es_dep_news_trf tagger) further caps transformers below
+    # 4.53.3. Jina's vectors were re-checked on 4.53.2 (2026-10-02): identical to the
+    # stored ones, and the slow tests pass.
     "sentence-transformers>=5.7,<6",
-    "transformers>=4.57,<5",
+    "transformers>=4.53,<5",
 ]
 
 [tool.pytest.ini_options]
@@ -52,7 +56,7 @@ dev = [
 ]
 
 [tool.uv.sources]
-es-core-news-md = { url = "https://github.com/explosion/spacy-models/releases/download/es_core_news_md-3.8.0/es_core_news_md-3.8.0-py3-none-any.whl" }
+es-dep-news-trf = { url = "https://github.com/explosion/spacy-models/releases/download/es_dep_news_trf-3.8.0/es_dep_news_trf-3.8.0-py3-none-any.whl" }
 
 [tool.ruff]
 line-length = 100

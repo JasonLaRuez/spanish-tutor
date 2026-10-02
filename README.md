@@ -26,7 +26,7 @@ those words *you* know.
 
 ```sh
 uv run python -m spanish_tutor.ingest.download        # corpora into data/raw/ (a few minutes)
-uv run python -m spanish_tutor.ingest.tatoeba         # lemmatize Tatoeba once (~15 min)
+uv run python -m spanish_tutor.ingest.tatoeba         # lemmatize Tatoeba once (~1 h on CPU)
 uv run python -m spanish_tutor.ingest.build_lexicon   # the general lexicon (backs up the DB first)
 uv run python -m spanish_tutor.seed candidates        # ~1,500 most frequent words to review
 # Open data/processed/seed_candidates.csv and fill the `known` column:
@@ -110,8 +110,11 @@ under their own terms:
 - **Wiktionary**: English definitions via [kaikki.org](https://kaikki.org) (Ylonen, T.
   (2022). Wiktextract: Wiktionary as Machine-Readable Structured Data. *LREC 2022*).
   CC BY-SA 4.0.
-- **spaCy** `es_core_news_md` for lemmatization and part-of-speech tagging (GPL-3.0;
-  installed as a dependency, not bundled).
+- **spaCy** `es_dep_news_trf` for lemmatization and part-of-speech tagging (GPL-3.0;
+  installed as a dependency, not bundled). It is built on BETO,
+  [`dccuchile/bert-base-spanish-wwm-cased`](https://huggingface.co/dccuchile/bert-base-spanish-wwm-cased)
+  (Cañete et al. (2020). Spanish Pre-Trained BERT Model and Evaluation Data.
+  *PML4DC at ICLR 2020*). CC BY 4.0.
 - **Jina AI** [`jina-embeddings-v2-base-es`](https://huggingface.co/jinaai/jina-embeddings-v2-base-es)
   for sentence embeddings (Apache-2.0; downloaded to the Hugging Face cache, not bundled).
 

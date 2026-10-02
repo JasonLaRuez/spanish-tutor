@@ -1,7 +1,8 @@
 """Tatoeba Spanish sentences with English translations (CC BY 2.0 FR).
 
     uv run python -m spanish_tutor.ingest.tatoeba
-        Lemmatize every Spanish sentence once and cache the result (a few minutes).
+        Lemmatize every Spanish sentence once and cache the result (about an hour on CPU).
+        Re-analyzes automatically when the cache was made by a different tagger.
 
 Tatoeba requires crediting each sentence's author, so the author travels with every
 sentence. Export files are tab-separated with no header row and `\\N` for null, and
@@ -16,7 +17,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from spanish_tutor.config import DATA_DIR
-from spanish_tutor.lexicon import LemmaCorrector, TokenAnalysis, analyze, load_corrector
+from spanish_tutor.lexicon import LemmaCorrector, TokenAnalysis, analyze, load_corrector, tagger
 
 NULL = "\\N"
 RAW_DIR = DATA_DIR / "raw"
@@ -63,8 +64,47 @@ def load_sentences(spa_detailed: Path, eng_sentences: Path, links: Path) -> list
     ]
 
 
+class TaggerMismatch(Exception):
+    """The cached corpus was analyzed by a different tagger than the one in use."""
+
+
+def meta_path(analyzed: Path) -> Path:
+    """Where the tagger that made `analyzed` is recorded: tatoeba_analyzed.meta.json."""
+    return analyzed.with_name(analyzed.stem + ".meta.json")
+
+
+def record_tagger(analyzed: Path) -> None:
+    meta_path(analyzed).write_text(json.dumps({"tagger": tagger()}), encoding="utf-8")
+
+
+def analyzed_by(analyzed: Path) -> str | None:
+    """The tagger recorded for a cached corpus; None if unrecorded (made before 2026-10-02)."""
+    try:
+        return json.loads(meta_path(analyzed).read_text(encoding="utf-8"))["tagger"]
+    except FileNotFoundError:
+        return None
+
+
+def require_current(analyzed: Path = ANALYZED_PATH) -> None:
+    """Refuse a cached corpus made by another tagger.
+
+    Its (lemma, pos) pairs would silently disagree with how live text (a learner's turn)
+    is analyzed, so a word could count as both known and new.
+    """
+    found, expected = analyzed_by(analyzed), tagger()
+    if found != expected:
+        raise TaggerMismatch(
+            f"{analyzed.name} was analyzed by {found or 'an unrecorded tagger'}, not "
+            f"{expected}. Re-analyze it: `uv run python -m spanish_tutor.ingest.tatoeba` "
+            "(about an hour on CPU)."
+        )
+
+
 def write_analyzed(sentences: list[Sentence], dest: Path) -> None:
-    """Run the shared lemmatizer over every sentence once and cache the result as JSONL."""
+    """Run the shared lemmatizer over every sentence once and cache the result as JSONL.
+
+    The tagger is recorded next to it (see `require_current`).
+    """
     partial = dest.with_suffix(dest.suffix + ".part")
     with partial.open("w", encoding="utf-8") as out:
         analyses = analyze(s.es for s in sentences)
@@ -73,7 +113,9 @@ def write_analyzed(sentences: list[Sentence], dest: Path) -> None:
             out.write(json.dumps(record, ensure_ascii=False) + "\n")
             if n % 50_000 == 0:
                 print(f"  {n:,} / {len(sentences):,} sentences analyzed", flush=True)
+    meta_path(dest).unlink(missing_ok=True)
     partial.replace(dest)
+    record_tagger(dest)
 
 
 def read_analyzed(path: Path) -> Iterator[AnalyzedSentence]:
@@ -88,8 +130,10 @@ def read_analyzed(path: Path) -> Iterator[AnalyzedSentence]:
 
 def main() -> None:
     if ANALYZED_PATH.exists():
-        print(f"skip  {ANALYZED_PATH.name} (exists; delete it to re-analyze)")
-        return
+        if (found := analyzed_by(ANALYZED_PATH)) == tagger():
+            print(f"skip  {ANALYZED_PATH.name} (exists; delete it to re-analyze)")
+            return
+        print(f"re-analyzing: {ANALYZED_PATH.name} was made by {found or 'an unrecorded tagger'}")
     print("loading Tatoeba sentences ...")
     sentences = load_sentences(
         RAW_DIR / "spa_sentences_detailed.tsv.bz2",
