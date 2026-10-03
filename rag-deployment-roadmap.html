@@ -150,7 +150,7 @@ footer{margin-top:3rem;padding-top:1.5rem;border-top:0.5px solid var(--line);fon
   <div class="stats">
     <div class="stat"><div class="n">4</div><div class="l">gaps closed by one build</div></div>
     <div class="stat"><div class="n">5/5</div><div class="l">title families touched</div></div>
-    <div class="stat"><div class="n">10&ndash;12</div><div class="l">weeks, part-time</div></div>
+    <div class="stat"><div class="n">11&ndash;13</div><div class="l">weeks, part-time</div></div>
     <div class="stat"><div class="n">9</div><div class="l">phases</div></div>
   </div>
 
@@ -227,7 +227,7 @@ footer{margin-top:3rem;padding-top:1.5rem;border-top:0.5px solid var(--line);fon
     </div>
     <p class="flow-note">The dashed boxes are the same two tables &mdash; word bank and difficulty index &mdash; read and written throughout, not separate stores per stage. A book's chapters are just difficulty-indexed content items like any song or story, with one added constraint: the recommender can rank <em>which</em> book to start or continue, but never suggests chapter 7 before chapter 6 of the same book.</p>
 
-    <p class="flow-note" style="margin-top:1.2rem"><strong style="color:var(--ink);font-weight:500">Two things wrap around all three loops:</strong> an <strong style="color:var(--ink);font-weight:500">orchestrator</strong> (dbt or Airflow) runs the spaced-repetition recalculation against the word bank, and separately re-indexes content difficulty whenever new corpus items are added. A <strong style="color:var(--ink);font-weight:500">deployment layer</strong> (Docker + FastAPI, hosted on the cloud platform) puts all three skills behind a real endpoint instead of a notebook cell.</p>
+    <p class="flow-note" style="margin-top:1.2rem"><strong style="color:var(--ink);font-weight:500">Two things wrap around all three loops:</strong> an <strong style="color:var(--ink);font-weight:500">orchestrator</strong> (dbt or Airflow) runs the spaced-repetition recalculation against the word bank, and separately re-indexes content difficulty whenever new corpus items are added. A <strong style="color:var(--ink);font-weight:500">deployment layer</strong> (Docker + FastAPI, hosted on the cloud platform) puts all three skills behind a real endpoint instead of a notebook cell, with a React web UI on top of it (built from Phase 2.5 onward).</p>
   </section>
 
   <section id="data">
@@ -319,7 +319,7 @@ footer{margin-top:3rem;padding-top:1.5rem;border-top:0.5px solid var(--line);fon
 
   <section id="phases">
     <h2>Phased plan</h2>
-    <p>~10&ndash;12 weeks, part-time &mdash; longer than a single-skill RAG demo, since there are three skills, a recommender, and a state layer. Check items off as you go &mdash; progress is saved in this browser.</p>
+    <p>~11&ndash;13 weeks, part-time &mdash; longer than a single-skill RAG demo, since there are three skills, a recommender, and a state layer. Check items off as you go &mdash; progress is saved in this browser.</p>
 
     <div class="phase" data-phase="0">
       <div class="head"><div class="name"><span class="idx">Phase 0</span><strong>Learning sprint</strong></div><span class="when">Week 1</span></div>
@@ -357,8 +357,22 @@ footer{margin-top:3rem;padding-top:1.5rem;border-top:0.5px solid var(--line);fon
       </ul>
     </div>
 
+    <div class="phase" data-phase="2.5">
+      <div class="head"><div class="name"><span class="idx">Phase 2.5</span><strong>Web UI foundation</strong></div><span class="when">Weeks 4&ndash;5</span></div>
+      <p class="goal">Move the tutor out of the terminal before the remaining real conversations: a FastAPI JSON API and a React + TypeScript front end that each later phase adds a screen to.</p>
+      <ul class="tasks">
+        <li><input type="checkbox" id="p25-1"><label for="p25-1">FastAPI app around the existing <code class="mono">Tutor</code>: sessions, messages (incl. &ldquo;&iquest;c&oacute;mo se dice?&rdquo;), word lookup, history, progress; models loaded once at startup</label></li>
+        <li><input type="checkbox" id="p25-2"><label for="p25-2">Hand-written progress SQL (known words by mode, frequency-band coverage, growth over time), designed together</label></li>
+        <li><input type="checkbox" id="p25-3"><label for="p25-3">React + TypeScript app (Vite) with types generated from the API's OpenAPI schema</label></li>
+        <li><input type="checkbox" id="p25-4"><label for="p25-4">Chat screen: lesson cards for new words, correction notes, English toggle, typing indicator, click-a-word lookup</label></li>
+        <li><input type="checkbox" id="p25-5"><label for="p25-5">Spanish-characters keyboard (&aacute; &eacute; &iacute; &oacute; &uacute; &uuml; &ntilde; &iquest; &iexcl;) that inserts at the cursor</label></li>
+        <li><input type="checkbox" id="p25-6"><label for="p25-6">Past conversations (read-only transcripts) and a progress page</label></li>
+        <li><input type="checkbox" id="p25-7"><label for="p25-7">API tests (pytest) and component tests (Vitest); hold the remaining real conversations in the UI</label></li>
+      </ul>
+    </div>
+
     <div class="phase" data-phase="3">
-      <div class="head"><div class="name"><span class="idx">Phase 3</span><strong>Content-difficulty index + recommender</strong></div><span class="when">Weeks 4&ndash;6</span></div>
+      <div class="head"><div class="name"><span class="idx">Phase 3</span><strong>Content-difficulty index + recommender</strong></div><span class="when">Weeks 5&ndash;7</span></div>
       <p class="goal">The novel subsystem: rank any candidate content by how many new words it costs against the live word bank, and default to the minimum.</p>
       <ul class="tasks">
         <li><input type="checkbox" id="p3-1"><label for="p3-1">Design the difficulty-index schema: content id, type, full vocabulary set, book id + chapter sequence where relevant</label></li>
@@ -367,11 +381,12 @@ footer{margin-top:3rem;padding-top:1.5rem;border-top:0.5px solid var(--line);fon
         <li><input type="checkbox" id="p3-4"><label for="p3-4">Add the book-sequence constraint: only the next unread chapter of a started book is eligible</label></li>
         <li><input type="checkbox" id="p3-5"><label for="p3-5">Add the explicit-request override for a specific song/story/topic</label></li>
         <li><input type="checkbox" id="p3-6"><label for="p3-6">Confirm the recommender's default suggestion actually has the lowest new-word count among candidates</label></li>
+        <li><input type="checkbox" id="p3-ui"><label for="p3-ui">UI: a &ldquo;what next?&rdquo; screen &mdash; ranked items with their new-word counts, a surprise-me pick, and the explicit-request override</label></li>
       </ul>
     </div>
 
     <div class="phase" data-phase="4">
-      <div class="head"><div class="name"><span class="idx">Phase 4</span><strong>Lyrics + reading skills, and evaluation</strong></div><span class="when">Weeks 6&ndash;8</span></div>
+      <div class="head"><div class="name"><span class="idx">Phase 4</span><strong>Lyrics + reading skills, and evaluation</strong></div><span class="when">Weeks 7&ndash;9</span></div>
       <p class="goal">Add the two content-based skills on top of the recommender, then build the eval framework this project actually needs.</p>
       <ul class="tasks">
         <li><input type="checkbox" id="p4-1"><label for="p4-1">Set up the lyrics skill against your own (private, gitignored) song lyrics</label></li>
@@ -382,11 +397,13 @@ footer{margin-top:3rem;padding-top:1.5rem;border-top:0.5px solid var(--line);fon
         <li><input type="checkbox" id="p4-6"><label for="p4-6">Run RAGAS as a baseline grounding check on the grammar/idiom retrieval</label></li>
         <li><input type="checkbox" id="p4-7"><label for="p4-7">Implement custom metrics: vocabulary-constraint adherence, new-word teaching completeness, translation naturalness (LLM-as-judge), recommendation quality</label></li>
         <li><input type="checkbox" id="p4-8"><label for="p4-8">Write up the eval results &mdash; this becomes the future cover-letter evidence block</label></li>
+        <li><input type="checkbox" id="p4-ui1"><label for="p4-ui1">UI: song view (natural and literal translations side by side), chapter reader, libraries of learned songs and read books, adherence metrics on the progress page</label></li>
+        <li><input type="checkbox" id="p4-ui2"><label for="p4-ui2">UI: vocabulary-readiness rings per level (A1&ndash;C2, recognize vs. produce) &mdash; after checking the PCIC license and filling <code class="mono">lexemes.cefr_level</code>; never labeled as a CEFR level</label></li>
       </ul>
     </div>
 
     <div class="phase" data-phase="5">
-      <div class="head"><div class="name"><span class="idx">Phase 5</span><strong>Cloud platform</strong></div><span class="when">Weeks 8&ndash;9</span></div>
+      <div class="head"><div class="name"><span class="idx">Phase 5</span><strong>Cloud platform</strong></div><span class="when">Weeks 9&ndash;10</span></div>
       <p class="goal">Move the vector store, word bank, and difficulty index onto Databricks (or AWS) while working through the platform course in parallel.</p>
       <ul class="tasks">
         <li><input type="checkbox" id="p5-1"><label for="p5-1">Set up Databricks Community Edition (or an AWS free-tier account)</label></li>
@@ -396,7 +413,7 @@ footer{margin-top:3rem;padding-top:1.5rem;border-top:0.5px solid var(--line);fon
     </div>
 
     <div class="phase" data-phase="6">
-      <div class="head"><div class="name"><span class="idx">Phase 6</span><strong>Orchestration &mdash; two real jobs</strong></div><span class="when">Weeks 9&ndash;10</span></div>
+      <div class="head"><div class="name"><span class="idx">Phase 6</span><strong>Orchestration &mdash; two real jobs</strong></div><span class="when">Weeks 10&ndash;11</span></div>
       <p class="goal">Spaced-repetition recalculation and content-difficulty re-indexing, both on a schedule.</p>
       <ul class="tasks">
         <li><input type="checkbox" id="p6-1"><label for="p6-1">Complete dbt Fundamentals (or Airflow Quick Start)</label></li>
@@ -407,11 +424,11 @@ footer{margin-top:3rem;padding-top:1.5rem;border-top:0.5px solid var(--line);fon
     </div>
 
     <div class="phase" data-phase="7">
-      <div class="head"><div class="name"><span class="idx">Phase 7</span><strong>Deployment</strong></div><span class="when">Weeks 10&ndash;11</span></div>
+      <div class="head"><div class="name"><span class="idx">Phase 7</span><strong>Deployment</strong></div><span class="when">Weeks 11&ndash;12</span></div>
       <p class="goal">Put all three skills and the recommender behind a real, containerized endpoint with basic observability.</p>
       <ul class="tasks">
-        <li><input type="checkbox" id="p7-1"><label for="p7-1">Wrap all three skills + the recommender in a FastAPI app</label></li>
-        <li><input type="checkbox" id="p7-2"><label for="p7-2">Containerize it with Docker</label></li>
+        <li><input type="checkbox" id="p7-1"><label for="p7-1">Containerize the FastAPI app and web UI (multi-stage build: Node for the front end, then the Python image)</label></li>
+        <li><input type="checkbox" id="p7-2"><label for="p7-2">Public-deployment rules: lyrics and copyrighted books only in a local instance, a demo on a sandbox copy of the word bank, and authentication</label></li>
         <li><input type="checkbox" id="p7-3"><label for="p7-3">Deploy behind a real endpoint (Databricks Model Serving, AWS, or a low-cost host)</label></li>
         <li><input type="checkbox" id="p7-4"><label for="p7-4">Add basic logging: latency, request count, error rate, word-bank growth rate</label></li>
         <li><input type="checkbox" id="p7-5"><label for="p7-5">Write a handful of analytics queries over that log data &mdash; window functions for growth-over-time and review-compliance rate, not just single-row lookups</label></li>
@@ -419,7 +436,7 @@ footer{margin-top:3rem;padding-top:1.5rem;border-top:0.5px solid var(--line);fon
     </div>
 
     <div class="phase" data-phase="8">
-      <div class="head"><div class="name"><span class="idx">Phase 8</span><strong>Polish &amp; publish</strong></div><span class="when">Weeks 11&ndash;12</span></div>
+      <div class="head"><div class="name"><span class="idx">Phase 8</span><strong>Polish &amp; publish</strong></div><span class="when">Weeks 12&ndash;13</span></div>
       <p class="goal">Turn the working system into a portfolio artifact someone else can actually evaluate &mdash; and keep using it yourself.</p>
       <ul class="tasks">
         <li><input type="checkbox" id="p8-1"><label for="p8-1">Public GitHub repo with a real README &mdash; lyrics and any copyrighted books gitignored</label></li>

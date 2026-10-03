@@ -277,7 +277,8 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
     - Known artifact: session 1 logged *wáter* as taught and used. It came from the
       English inside a "como se dice" quote, before translation turns existed. It stays,
       because the log is append-only.
-  - **Next: more real conversations** by Jason (~19 to go).
+  - **Next: more real conversations** by Jason (~19 to go), now in the web UI
+    (`uv run spanish-tutor serve`). First, Jason marks the 78 seed-gap words (see "Tagger").
   - Measured in session 1: Claude stayed inside the word bank in every reply, and gaps
     between turns were 1–3.5 min, with one 33-minute break.
   - **Notebook 02** (`notebooks/02_conversation.ipynb`, done 2026-10-02) walks through one
@@ -296,6 +297,12 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
       `es_dep_news_trf` and adding the form-of lemma check. See "Tagger" below.
     - **After each real session**, review it in SQL (`turns`, `word_events` by turn) like
       session 1. Its data surfaced every fix made on 2026-10-02.
+    - **Context-dependent unresolved words:** in a garbled test message, *tal* in *¿Qué
+      tal?* came back as "not recognized" (an unresolved corrector tie, *tal* is listed
+      among them); in a clean message it resolved. Measure how often learner turns hit
+      this before deciding anything.
+    - **Resuming a conversation after a server restart** isn't built: the transcript is
+      shown read-only. It would mean rebuilding `Tutor.history` from `turns`.
     - Then roadmap Phase 3 (difficulty index and recommender). Pre-teaching, the core
       of Phase 2, is already done.
   - Build log, published (private): https://claude.ai/artifact/NAheU5cpSBdxY7QpoeQbHQ.
@@ -489,6 +496,32 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
   (gitignored copyrighted lyrics/books), `tests/`. `tests/test_repo_hygiene.py` asserts
   that `private/` and `.env` stay gitignored. Keep it passing. `src/spanish_tutor/db.py`
   opens connections (always with `PRAGMA foreign_keys = ON`) and applies `sql/schema.sql`.
+  The web API is `src/spanish_tutor/api/`, the web UI `web/` (its own `README.md`), and the
+  progress/history SQL `sql/queries/` (loaded by `progress.py`).
+- **Web UI (roadmap Phase 2.5, slice U1 built 2026-10-02; Jason's choices):**
+  - Stack: a FastAPI JSON API plus React + TypeScript (Vite, Tailwind v4, React Router).
+    Built now, before Phase 3, so the remaining real conversations happen in it. Each
+    later phase adds its screen: U2 recommend (Phase 3), U3 songs/books and U4
+    level-readiness rings (Phase 4). Phase 7 only containerizes and deploys it.
+  - `spanish-tutor serve` loads the slow resources once (`conversation.load_resources`)
+    and serves `web/dist` when it's built. One learner, one process: open conversations
+    live in memory; a restart closes them (their transcripts stay viewable).
+  - Threads: conversations share one connection (`check_same_thread=False`) and the
+    lexicon index, so every use holds one lock. Read endpoints open their own connection
+    per request, so progress and history never wait for a ~6 s reply.
+  - Routing of learner messages ("¿cómo se dice?" on the raw text, else markers expanded)
+    is `conversation.reply_to`, shared with the CLI's behavior.
+  - The UI's types are generated from the API's OpenAPI schema (`npm run gen:api`;
+    `openapi-typescript` runs via `npx` because it doesn't accept TypeScript 6 yet).
+    Regenerate after any API change.
+  - Progress SQL decisions (Jason): keep the frequency bands (100 / 500 / 1k / 2k / 5k);
+    growth per session, not per day; "try using these" ordered by frequency; history
+    shows "¿cómo se dice?" turns and corrections (tutor replies with a note).
+  - Charts follow the dataviz palette check: blue = recognize, orange = can produce, both
+    validated in light and dark; each chart has a table view.
+  - Verified end to end in headless Edge (Playwright, scratch folder) against a **copy**
+    of the word bank (`TUTOR_DB_PATH`), which found and fixed two cursor races (accent
+    keyboard, "¿cómo se dice?" template). Never test the UI against the real database.
 - **All text → `(lemma, pos)` goes through `src/spanish_tutor/lexicon.py`** (spaCy
   `es_dep_news_trf`: NFC, lowercase, accents kept, AUX→VERB, `del`/`al` expanded, clitic
   verbs reduced to the verb, and **personal pronouns keep their own form**, because spaCy

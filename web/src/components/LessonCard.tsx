@@ -1,0 +1,54 @@
+import type { Lesson } from '../api/client'
+import { posName } from '../lib/text'
+
+/** A taught word: its definition and a readable example, with Tatoeba's author credit. */
+export function LessonCard({ lesson }: { lesson: Lesson }) {
+  const example = lesson.example
+  const tatoebaId = example?.source?.startsWith('tatoeba:') ? example.source.slice(8) : null
+  return (
+    <div className="rounded-lg border border-line bg-surface px-3 py-2.5">
+      <div className="flex items-baseline gap-2">
+        <span className="es font-semibold text-ink">{lesson.lemma}</span>
+        <span className="text-xs text-muted">{posName(lesson.pos)}</span>
+      </div>
+      <p className="mt-0.5 text-sm text-ink-2">{lesson.definition_en ?? '(no definition)'}</p>
+      {example && (
+        <div className="mt-2 border-l-2 border-line pl-2.5">
+          <p className="es text-ink">{example.es}</p>
+          {example.en && <p className="text-sm text-ink-2">{example.en}</p>}
+          {example.glosses.length > 0 && (
+            <p className="mt-1 text-xs text-muted">
+              {example.glosses.map(([word, gloss]) => `${word}: ${gloss}`).join(' · ')}
+            </p>
+          )}
+          {tatoebaId && (
+            <p className="mt-1 text-xs text-muted">
+              <a
+                className="underline decoration-line underline-offset-2 hover:text-accent-text"
+                href={`https://tatoeba.org/en/sentences/show/${tatoebaId}`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Tatoeba #{tatoebaId}
+              </a>
+              {example.author ? `, ${example.author}` : ''}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+export function LessonList({ lessons, title }: { lessons: Lesson[]; title: string }) {
+  return (
+    <section aria-label={title} className="space-y-2">
+      <h3 className="text-xs font-medium uppercase tracking-wide text-muted">{title}</h3>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {lessons.map((lesson) => (
+          <LessonCard key={lesson.lexeme_id} lesson={lesson} />
+        ))}
+      </div>
+    </section>
+  )
+}

@@ -1,0 +1,329 @@
+"""The tutor as a JSON API, plus the built web UI (web/dist) when it exists.
+
+    uv run spanish-tutor serve        # http://127.0.0.1:8000, API docs at /docs
+
+One learner, one process. The slow resources (tagger, Wiktionary, embeddings) load once
+at startup. Active conversations live in memory, keyed by session id: a restart ends
+them, though their transcripts stay in the database and are shown read-only.
+
+Threads: FastAPI runs these (sync) endpoints on worker threads. The conversations share
+one database connection and the lexicon index, so every use of them holds `lock`. The
+read-only endpoints (progress, history) open their own connection per request instead,
+so they answer immediately even while a reply (~6 s of model time) is being generated.
+"""
+
+import sqlite3
+import threading
+from collections.abc import AsyncIterator, Callable
+from contextlib import AbstractContextManager, asynccontextmanager, closing
+from dataclasses import asdict
+from pathlib import Path
+from typing import Literal
+
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
+from pydantic import BaseModel, Field
+
+from spanish_tutor import db, progress
+from spanish_tutor.config import DB_PATH
+from spanish_tutor.conversation import (
+    Resources,
+    TranslationTurn,
+    Tutor,
+    TutorTurn,
+    clean_note,
+    load_resources,
+    new_tutor,
+    reply_to,
+)
+from spanish_tutor.keyboard import expand_markers
+from spanish_tutor.teaching import Lesson
+from spanish_tutor.topics import MAX_WORDS, MIN_WORDS
+
+WEB_DIST = Path(__file__).resolve().parents[3] / "web" / "dist"
+
+
+# --- Response and request models (they define the OpenAPI schema the UI's types use) --
+
+
+class ExampleOut(BaseModel):
+    es: str
+    en: str | None
+    source: str | None
+    author: str | None
+    glosses: list[tuple[str, str]]
+
+
+class LessonOut(BaseModel):
+    lexeme_id: int
+    lemma: str
+    pos: str
+    definition_en: str | None
+    example: ExampleOut | None
+
+    @classmethod
+    def of(cls, item: Lesson) -> "LessonOut":
+        return cls.model_validate(asdict(item))
+
+
+class TurnOut(BaseModel):
+    """A tutor reply. For a "¿cómo se dice?" answer, kind is "translation", reply_es is
+    the Spanish asked for, note_en its explanation, and pending the question the learner
+    still has to answer."""
+
+    kind: Literal["conversation", "translation"]
+    reply_es: str
+    reply_en: str | None
+    note_en: str | None
+    lessons: list[LessonOut]
+    not_words: list[str] = []
+    pending: str | None = None
+
+    @classmethod
+    def of(cls, turn: TutorTurn | TranslationTurn) -> "TurnOut":
+        if isinstance(turn, TranslationTurn):
+            return cls(
+                kind="translation",
+                reply_es=turn.spanish,
+                reply_en=None,
+                note_en=turn.explanation_en,
+                lessons=[LessonOut.of(item) for item in turn.lessons],
+                pending=turn.pending,
+            )
+        return cls(
+            kind="conversation",
+            reply_es=turn.reply_es,
+            reply_en=turn.reply_en,
+            note_en=turn.note_en,
+            lessons=[LessonOut.of(item) for item in turn.lessons],
+            not_words=turn.not_words,
+        )
+
+
+class NewSession(BaseModel):
+    topic: str | None = Field(None, description="What to talk about; none for open chat.")
+    new_words: int = Field(
+        0,
+        ge=0,
+        le=MAX_WORDS,
+        description=f"Topic words to teach first: 0, or {MIN_WORDS}-{MAX_WORDS}.",
+    )
+
+
+class SessionStarted(BaseModel):
+    session_id: int
+    topic: str | None
+    lessons: list[LessonOut]  # the topic words taught before the conversation
+    opening: TurnOut
+
+
+class Message(BaseModel):
+    text: str = Field(min_length=1)
+
+
+class MessageReply(BaseModel):
+    written: str  # the learner's text as sent, with accent markers expanded ('a -> á)
+    turn: TurnOut
+    taught: list[str]  # every word taught this session so far
+
+
+class LookUp(BaseModel):
+    word: str = Field(min_length=1)
+
+
+class Band(BaseModel):
+    band: int
+    label: str
+    words: int
+    recognized: int
+    produced: int
+
+
+class Growth(BaseModel):
+    session_id: int | None  # None: the seed
+    topic: str | None
+    started_at: str | None
+    mode: Literal["recognition", "production"]
+    words_added: int
+    running_total: int
+
+
+class GapWord(BaseModel):
+    lemma: str
+    pos: str
+    definition_en: str | None
+    frequency_per_million: float | None
+
+
+class Progress(BaseModel):
+    recognition: int
+    production: int
+    bands: list[Band]
+    growth: list[Growth]
+    try_using: list[GapWord]
+
+
+class SessionSummary(BaseModel):
+    session_id: int
+    skill: str
+    topic: str | None
+    started_at: str
+    last_at: str | None
+    messages: int
+    how_to_say: int
+    corrections: int
+    words_taught: int
+    words_used: int
+    active: bool  # still open in this server, so it can be continued
+
+
+class TranscriptTurn(BaseModel):
+    turn_no: int
+    role: Literal["learner", "tutor"]
+    kind: Literal["conversation", "translation"]
+    text_es: str
+    note_en: str | None
+    created_at: str
+    taught: list[str]
+    used: list[str]
+
+
+class Transcript(BaseModel):
+    session: SessionSummary
+    turns: list[TranscriptTurn]
+
+
+# --- The app ----------------------------------------------------------------------------
+
+
+def create_app(
+    load: Callable[[], Resources] = lambda: load_resources(check_same_thread=False),
+    db_path: Path | str = DB_PATH,
+    web_dist: Path = WEB_DIST,
+) -> FastAPI:
+    """The app. Tests pass their own `load` (a scripted model, a temporary database)."""
+    tutors: dict[int, Tutor] = {}
+    lock = threading.Lock()
+    state: dict[str, Resources] = {}
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        state["resources"] = load()
+        yield
+        state["resources"].conn.close()
+
+    app = FastAPI(title="Spanish tutor", lifespan=lifespan)
+
+    def reader() -> AbstractContextManager[sqlite3.Connection]:
+        return closing(db.connect(db_path))
+
+    def tutor_for(session_id: int) -> Tutor:
+        if (tutor := tutors.get(session_id)) is None:
+            raise HTTPException(
+                404, "This conversation isn't open (the server may have restarted)."
+            )
+        return tutor
+
+    @app.get("/api/health")
+    def health() -> dict:
+        return {"ok": True}
+
+    @app.post("/api/sessions")
+    def start_session(request: NewSession) -> SessionStarted:
+        topic = expand_markers((request.topic or "").strip()) or None
+        if request.new_words and not MIN_WORDS <= request.new_words <= MAX_WORDS:
+            raise HTTPException(422, f"new_words must be 0 or {MIN_WORDS}-{MAX_WORDS}.")
+        with lock:
+            tutor = new_tutor(state["resources"], topic)
+            lessons = tutor.pre_teach(request.new_words) if topic and request.new_words else []
+            opening = tutor.open()
+            tutors[tutor.session_id] = tutor
+        return SessionStarted(
+            session_id=tutor.session_id,
+            topic=topic,
+            lessons=[LessonOut.of(item) for item in lessons],
+            opening=TurnOut.of(opening),
+        )
+
+    @app.post("/api/sessions/{session_id}/messages")
+    def send_message(session_id: int, message: Message) -> MessageReply:
+        tutor = tutor_for(session_id)
+        with lock:
+            written, turn = reply_to(tutor, message.text.strip())
+            taught = [lex.lemma for lex in tutor.taught]
+        return MessageReply(written=written, turn=TurnOut.of(turn), taught=taught)
+
+    @app.post("/api/sessions/{session_id}/lookup")
+    def look_up(session_id: int, request: LookUp) -> LessonOut:
+        tutor = tutor_for(session_id)
+        with lock:
+            found = tutor.look_up(request.word.strip())
+        if found is None:
+            raise HTTPException(404, f"{request.word!r} isn't a word I know.")
+        return LessonOut.of(found)
+
+    @app.get("/api/sessions")
+    def list_sessions() -> list[SessionSummary]:
+        with reader() as conn:
+            return [
+                SessionSummary(**row, active=row["session_id"] in tutors)
+                for row in progress.sessions(conn)
+            ]
+
+    @app.get("/api/sessions/{session_id}")
+    def get_transcript(session_id: int) -> Transcript:
+        with reader() as conn:
+            summary = next(
+                (row for row in progress.sessions(conn) if row["session_id"] == session_id), None
+            )
+            if summary is None:
+                raise HTTPException(404, "No such session.")
+            turns = progress.transcript(conn, session_id)
+        return Transcript(
+            session=SessionSummary(**summary, active=session_id in tutors),
+            turns=[
+                TranscriptTurn(
+                    turn_no=t["turn_no"],
+                    role=t["role"],
+                    kind=t["kind"],
+                    text_es=t["text_es"],
+                    note_en=clean_note(t["note_en"]),
+                    created_at=t["created_at"],
+                    taught=t["taught"].split(", ") if t["taught"] else [],
+                    used=t["used"].split(", ") if t["used"] else [],
+                )
+                for t in turns
+            ],
+        )
+
+    @app.get("/api/progress")
+    def get_progress(try_using: int = 20) -> Progress:
+        with reader() as conn:
+            counts = progress.words_by_mode(conn)
+            return Progress(
+                recognition=counts["recognition"],
+                production=counts["production"],
+                bands=progress.coverage_by_band(conn),
+                growth=progress.growth_by_session(conn),
+                try_using=progress.try_using(conn, try_using),
+            )
+
+    # The built web UI. Any other path gets index.html, so the UI's own routes
+    # (/history/3) work on reload.
+    if (web_dist / "index.html").exists():
+
+        @app.get("/{path:path}", include_in_schema=False)
+        def web(path: str) -> FileResponse:
+            file = (web_dist / path).resolve()
+            if path and file.is_file() and file.is_relative_to(web_dist.resolve()):
+                return FileResponse(file)
+            return FileResponse(web_dist / "index.html")
+
+    return app
+
+
+def serve(host: str = "127.0.0.1", port: int = 8000) -> None:
+    import uvicorn
+
+    print("Loading the tutor (about 20 s) ...")
+    uvicorn.run(create_app(), host=host, port=port)

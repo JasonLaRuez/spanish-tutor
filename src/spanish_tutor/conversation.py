@@ -664,12 +664,27 @@ def written(text: str) -> str:
     return expanded
 
 
-def build_tutor(topic: str | None) -> Tutor:
-    """Load everything the session needs (~20 s: spaCy, Wiktionary, embeddings)."""
+@dataclass
+class Resources:
+    """What every session shares: slow to load, so loaded once (by the CLI or the server)."""
+
+    conn: sqlite3.Connection
+    generate: ReplyGenerator
+    index: LexiconIndex
+    analyze: Callable[[str], list[TokenAnalysis]]
+    store: Chroma | None
+
+
+def load_resources(check_same_thread: bool = True) -> Resources:
+    """Load the database, tagger, Wiktionary and embeddings (~20 s).
+
+    The web server passes check_same_thread=False: its requests run on worker threads,
+    and it serializes every use of the connection with a lock.
+    """
     from spanish_tutor import lexicon
     from spanish_tutor.vectorstore import open_store
 
-    conn = db.connect()
+    conn = db.connect(check_same_thread=check_same_thread)
     if pending := db.pending_migrations(conn):
         print(f"Upgrading the database (migrations {pending}); backup: {db.backup()}")
     db.init_schema(conn)
@@ -678,14 +693,37 @@ def build_tutor(topic: str | None) -> Tutor:
     def analyze(text: str) -> list[TokenAnalysis]:
         return next(lexicon.analyze([text], corrector=corrector))
 
-    return Tutor(
+    return Resources(
         conn,
         ClaudeGenerator(),
         LexiconIndex(conn, lexicon.load_wiktionary()),
         analyze,
         store=open_store(),
+    )
+
+
+def new_tutor(resources: Resources, topic: str | None) -> Tutor:
+    return Tutor(
+        resources.conn,
+        resources.generate,
+        resources.index,
+        resources.analyze,
+        store=resources.store,
         topic=topic,
     )
+
+
+def reply_to(tutor: Tutor, text: str) -> tuple[str, TutorTurn | TranslationTurn]:
+    """Route one learner message: (the text as written, the tutor's turn).
+
+    "¿Cómo se dice ...?" is checked on the raw text, because its quoted phrase is English
+    and must not have accent markers expanded. Anything else is a conversation turn,
+    with the markers expanded ('a -> á).
+    """
+    if (phrase := parse_translation_request(text)) is not None:
+        return text, tutor.translate(text, phrase)
+    written = expand_markers(text)
+    return written, tutor.respond(written)
 
 
 def main() -> None:
@@ -702,7 +740,7 @@ def main() -> None:
     if topic:
         new_words = word_count(input("¿Cuántas palabras nuevas? (2-10, Enter = 5) "))
     print("Cargando…")
-    tutor = build_tutor(topic)
+    tutor = new_tutor(load_resources(), topic)
     print(HELP)
     if new_words and (lessons := tutor.pre_teach(new_words)):
         print("\nPalabras para hoy:")

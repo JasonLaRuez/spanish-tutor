@@ -46,6 +46,26 @@ uv run python -m spanish_tutor.vectorstore "the weather"     # only words you kn
 uv run python -m spanish_tutor.vectorstore "I'm hungry" --max-unknown 1   # one new word (i+1)
 ```
 
+## The web app
+
+```sh
+uv run spanish-tutor serve        # http://127.0.0.1:8000 (API docs at /docs)
+```
+
+The browser UI: start a conversation (with a topic and how many words to learn first), chat
+in a chat box with clickable words, an accent keyboard and a "¿Cómo se dice…?" button,
+browse past conversations, and see your progress (words you recognize and can produce,
+coverage by word frequency, growth per conversation, and words to try using). It serves the
+built UI from `web/dist`; build it once with Node.js installed:
+
+```sh
+cd web && npm install && npm run build
+```
+
+For UI development, run `npm run dev` in `web/` alongside `serve` (hot reload on
+http://localhost:5173). The app listens on this machine only by default. Everything below
+also works from the terminal.
+
 ## Conversation
 
 Chat with Claude in Spanish, inside the vocabulary you know. Each reply may use at most
@@ -84,7 +104,8 @@ the `sessions` and `turns` tables, and each word event links to the turn that ca
 ## Tests
 
 `uv run pytest` runs the fast suite. `uv run pytest -m slow` also loads the real embedding
-model, and `uv run pytest -m live` calls the Claude API (two turns, about a cent).
+model, and `uv run pytest -m live` calls the Claude API (two turns, about a cent). The web
+UI's component tests run with `npm test` in `web/`.
 
 ## Layout
 
@@ -92,6 +113,8 @@ model, and `uv run pytest -m live` calls the Claude API (two turns, about a cent
 |---|---|
 | `sql/` | Schema (`CREATE TABLE`), and hand-written queries |
 | `src/spanish_tutor/` | Python package: word bank access, ingestion, skills, recommender |
+| `src/spanish_tutor/api/` | The web API (FastAPI) |
+| `web/` | The web UI (React + TypeScript, Vite) |
 | `data/raw/` | Downloaded corpora (Tatoeba, SUBTLEX-ESP, Wiktionary). Gitignored. |
 | `data/processed/` | Local SQLite database, analyzed corpora, seed files. Gitignored. |
 | `private/` | Song lyrics and copyrighted books. **Gitignored; never committed.** |

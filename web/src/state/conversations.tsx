@@ -1,0 +1,121 @@
+// Open conversations, kept above the routes so a reply that arrives while the learner is
+// on another page (Progress, History) isn't lost, and the chat is still there on return.
+import { useCallback, useMemo, useState, type ReactNode } from 'react'
+import { api, ApiError, type Transcript } from '../api/client'
+import { Context, type Chat, type ChatItem } from './context'
+
+let nextId = 1
+const id = () => nextId++
+
+export function ConversationsProvider({ children }: { children: ReactNode }) {
+  const [chats, setChats] = useState<Record<number, Chat>>({})
+
+  const update = useCallback((sessionId: number, change: (chat: Chat) => Chat) => {
+    setChats((all) => (all[sessionId] ? { ...all, [sessionId]: change(all[sessionId]) } : all))
+  }, [])
+
+  const start = useCallback(async (topic: string | null, newWords: number) => {
+    const started = await api.start(topic, newWords)
+    const items: ChatItem[] = []
+    if (started.lessons.length) items.push({ kind: 'lessons', id: id(), lessons: started.lessons })
+    items.push({ kind: 'tutor', id: id(), turn: started.opening })
+    setChats((all) => ({
+      ...all,
+      [started.session_id]: {
+        sessionId: started.session_id,
+        topic: started.topic,
+        items,
+        taught: [
+          ...started.lessons.map((lesson) => lesson.lemma),
+          ...started.opening.lessons.map((lesson) => lesson.lemma),
+        ],
+        pending: false,
+        closed: false,
+      },
+    }))
+    return started.session_id
+  }, [])
+
+  const send = useCallback(
+    async (sessionId: number, text: string) => {
+      const learnerId = id()
+      update(sessionId, (chat) => ({
+        ...chat,
+        pending: true,
+        items: [...chat.items, { kind: 'learner', id: learnerId, text }],
+      }))
+      try {
+        const reply = await api.send(sessionId, text)
+        update(sessionId, (chat) => ({
+          ...chat,
+          pending: false,
+          taught: reply.taught,
+          items: [
+            // Show the text as the server read it (accent markers expanded).
+            ...chat.items.map((item) =>
+              item.id === learnerId ? { ...item, text: reply.written } : item,
+            ),
+            { kind: 'tutor', id: id(), turn: reply.turn },
+          ],
+        }))
+      } catch (error) {
+        const closed = error instanceof ApiError && error.status === 404
+        const message = error instanceof Error ? error.message : String(error)
+        update(sessionId, (chat) => ({
+          ...chat,
+          pending: false,
+          closed: chat.closed || closed,
+          items: [...chat.items, { kind: 'error', id: id(), text: message }],
+        }))
+      }
+    },
+    [update],
+  )
+
+  // A looked-up word the learner didn't know is taught on the server; the session's
+  // taught list catches up with the next reply.
+  const lookUp = useCallback(
+    (sessionId: number, word: string) => api.lookUp(sessionId, word),
+    [],
+  )
+
+  const adopt = useCallback((transcript: Transcript) => {
+    const { session, turns } = transcript
+    const items: ChatItem[] = turns.map((turn) =>
+      turn.role === 'learner'
+        ? { kind: 'learner', id: id(), text: turn.text_es }
+        : {
+            kind: 'tutor',
+            id: id(),
+            // The transcript keeps the Spanish and the note; translations and lessons
+            // were shown when the turn happened.
+            turn: {
+              kind: turn.kind,
+              reply_es: turn.text_es,
+              reply_en: null,
+              note_en: turn.note_en,
+              lessons: [],
+              not_words: [],
+              pending: null,
+            },
+          },
+    )
+    setChats((all) => ({
+      ...all,
+      [session.session_id]: {
+        sessionId: session.session_id,
+        topic: session.topic,
+        items,
+        taught: turns.flatMap((turn) => turn.taught),
+        pending: false,
+        closed: !session.active,
+      },
+    }))
+  }, [])
+
+  const value = useMemo(
+    () => ({ chats, start, send, lookUp, adopt }),
+    [chats, start, send, lookUp, adopt],
+  )
+  return <Context.Provider value={value}>{children}</Context.Provider>
+}

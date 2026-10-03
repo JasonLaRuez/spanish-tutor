@@ -34,12 +34,24 @@ def is_git_ignored(relative_path: str) -> bool:
         "data/raw/wiktionary_es_forms.tsv",
         "data/processed/lemma_corrections.csv",
         "data/processed/word_bank.backup-20261001-120000Z.db",
+        # The web UI's installed packages and build output, and the schema it's typed from.
+        "web/node_modules/react/index.js",
+        "web/dist/index.html",
+        "web/openapi.json",
     ],
 )
 def test_private_and_generated_files_are_ignored(path):
     assert is_git_ignored(path), f"{path} would be committable"
 
 
-@pytest.mark.parametrize("path", ["sql/schema.sql", "src/spanish_tutor/config.py"])
+@pytest.mark.parametrize(
+    "path",
+    [
+        "sql/schema.sql",
+        "src/spanish_tutor/config.py",
+        "web/src/api/schema.d.ts",  # generated, but the build needs it
+        "web/package-lock.json",
+    ],
+)
 def test_source_files_are_not_ignored(path):
     assert not is_git_ignored(path), f"{path} is unexpectedly gitignored"

@@ -7,11 +7,15 @@ from pathlib import Path
 from spanish_tutor.config import DB_PATH, SQL_DIR
 
 
-def connect(path: Path | str = DB_PATH) -> sqlite3.Connection:
-    """Open the database with foreign keys enforced (SQLite leaves them off by default)."""
+def connect(path: Path | str = DB_PATH, check_same_thread: bool = True) -> sqlite3.Connection:
+    """Open the database with foreign keys enforced (SQLite leaves them off by default).
+
+    check_same_thread=False lets a connection move between threads (the web server's
+    workers); the caller must then make sure only one thread uses it at a time.
+    """
     if str(path) != ":memory:":
         Path(path).parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path)
+    conn = sqlite3.connect(path, check_same_thread=check_same_thread)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     return conn

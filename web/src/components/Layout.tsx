@@ -1,0 +1,145 @@
+import { useEffect, useState } from 'react'
+import { NavLink, Outlet, useLocation } from 'react-router'
+import { api, type Progress, type SessionSummary } from '../api/client'
+import { formatNumber, when } from '../lib/text'
+
+type Theme = 'system' | 'light' | 'dark'
+const THEME_KEY = 'spanish-tutor-theme'
+
+function readTheme(): Theme {
+  try {
+    const saved = localStorage.getItem(THEME_KEY)
+    return saved === 'light' || saved === 'dark' ? saved : 'system'
+  } catch {
+    return 'system'
+  }
+}
+
+function applyTheme(theme: Theme) {
+  if (theme === 'system') document.documentElement.removeAttribute('data-theme')
+  else document.documentElement.setAttribute('data-theme', theme)
+  try {
+    if (theme === 'system') localStorage.removeItem(THEME_KEY)
+    else localStorage.setItem(THEME_KEY, theme)
+  } catch {
+    // storage unavailable: the choice lasts for this visit only
+  }
+}
+
+const navClass = ({ isActive }: { isActive: boolean }) =>
+  `flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm ${
+    isActive ? 'bg-accent-soft font-medium text-ink' : 'text-ink-2 hover:bg-surface-2 hover:text-ink'
+  }`
+
+const LATER = [
+  { name: 'Recommend', phase: 'Phase 3' },
+  { name: 'Songs', phase: 'Phase 4' },
+  { name: 'Books', phase: 'Phase 4' },
+]
+
+export function Layout() {
+  const location = useLocation()
+  const [theme, setTheme] = useState<Theme>(readTheme)
+  const [sessions, setSessions] = useState<SessionSummary[]>([])
+  const [progress, setProgress] = useState<Progress | null>(null)
+
+  useEffect(() => applyTheme(theme), [theme])
+
+  // Refresh the sidebar's history and counts on every page change.
+  useEffect(() => {
+    api.sessions().then(setSessions).catch(() => {})
+    api.progress().then(setProgress).catch(() => {})
+  }, [location.pathname])
+
+  const nextTheme: Record<Theme, Theme> = { system: 'light', light: 'dark', dark: 'system' }
+
+  return (
+    <div className="flex h-full">
+      <aside className="flex w-64 shrink-0 flex-col border-r border-line bg-surface">
+        <div className="px-4 pt-5 pb-4">
+          <NavLink to="/" className="flex items-center gap-2">
+            <span className="grid h-8 w-8 place-items-center rounded-lg bg-accent text-lg font-semibold text-accent-ink">
+              ñ
+            </span>
+            <span className="font-semibold text-ink">Spanish Tutor</span>
+          </NavLink>
+        </div>
+
+        <nav className="space-y-0.5 px-2" aria-label="Main">
+          <NavLink to="/" end className={navClass}>
+            Home
+          </NavLink>
+          <NavLink to="/new" className={navClass}>
+            Conversation
+          </NavLink>
+          <NavLink to="/history" className={navClass}>
+            History
+          </NavLink>
+          <NavLink to="/progress" className={navClass}>
+            Progress
+          </NavLink>
+          {LATER.map((item) => (
+            <span
+              key={item.name}
+              className="flex items-center justify-between rounded-md px-2.5 py-1.5 text-sm text-muted"
+              aria-disabled="true"
+            >
+              {item.name}
+              <span className="text-[11px]">{item.phase}</span>
+            </span>
+          ))}
+        </nav>
+
+        <div className="mt-6 min-h-0 flex-1 overflow-y-auto px-2">
+          <h2 className="px-2.5 pb-1 text-xs font-medium uppercase tracking-wide text-muted">
+            Recent
+          </h2>
+          {sessions.length === 0 && <p className="px-2.5 text-sm text-muted">No conversations yet.</p>}
+          {sessions.slice(0, 8).map((session) => (
+            <NavLink
+              key={session.session_id}
+              to={session.active ? `/chat/${session.session_id}` : `/history/${session.session_id}`}
+              className={navClass}
+            >
+              <span className="min-w-0 flex-1">
+                <span className="block truncate">{session.topic ?? 'Open conversation'}</span>
+                <span className="block text-xs text-muted">
+                  {when(session.started_at)}
+                  {session.active ? ' · open' : ''}
+                </span>
+              </span>
+            </NavLink>
+          ))}
+        </div>
+
+        <div className="space-y-3 border-t border-line px-4 py-3">
+          {progress && (
+            <NavLink to="/progress" className="block text-sm" aria-label="Words you know">
+              <span className="flex items-center gap-2 text-ink-2">
+                <span className="h-2.5 w-2.5 rounded-full bg-recognize" aria-hidden />
+                Recognize
+                <span className="ml-auto font-medium text-ink">{formatNumber(progress.recognition)}</span>
+              </span>
+              <span className="mt-1 flex items-center gap-2 text-ink-2">
+                <span className="h-2.5 w-2.5 rounded-full bg-produce" aria-hidden />
+                Can produce
+                <span className="ml-auto font-medium text-ink">{formatNumber(progress.production)}</span>
+              </span>
+            </NavLink>
+          )}
+          <button
+            type="button"
+            onClick={() => setTheme(nextTheme[theme])}
+            className="text-xs text-muted hover:text-ink"
+          >
+            Theme: {theme}
+          </button>
+        </div>
+      </aside>
+
+      <main className="min-w-0 flex-1 overflow-y-auto">
+        <Outlet />
+      </main>
+    </div>
+  )
+}
