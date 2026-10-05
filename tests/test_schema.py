@@ -349,7 +349,7 @@ def test_pending_migrations_lists_only_what_an_old_database_needs(conn):
     old = connect(":memory:")
     old.executescript((FIXTURES / "schema_v1.sql").read_text(encoding="utf-8"))
     old.execute("PRAGMA user_version = 1")
-    assert pending_migrations(old) == [2, 3, 4]
+    assert pending_migrations(old) == [2, 3, 4, 5]
 
 
 def test_version_2_database_upgrades_to_version_3_keeping_notes(conn):

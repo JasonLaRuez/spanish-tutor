@@ -368,6 +368,9 @@ footer{margin-top:3rem;padding-top:1.5rem;border-top:0.5px solid var(--line);fon
         <li><input type="checkbox" id="p25-5"><label for="p25-5">Spanish-characters keyboard (&aacute; &eacute; &iacute; &oacute; &uacute; &uuml; &ntilde; &iquest; &iexcl;) that inserts at the cursor</label></li>
         <li><input type="checkbox" id="p25-6"><label for="p25-6">Past conversations (read-only transcripts) and a progress page</label></li>
         <li><input type="checkbox" id="p25-7"><label for="p25-7">API tests (pytest) and component tests (Vitest); hold the remaining real conversations in the UI</label></li>
+        <li><input type="checkbox" id="p25-8"><label for="p25-8">End a conversation (a typed goodbye or a button) with a summary: stats computed in SQL from the log, plus the tutor&rsquo;s notes on what to work on</label></li>
+        <li><input type="checkbox" id="p25-9"><label for="p25-9">Cut API cost: cache the conversation history as well as the system prompt (replayed on real sessions: 23&ndash;28% cheaper per session), with exact per-turn cost columns</label></li>
+        <li><input type="checkbox" id="p25-10"><label for="p25-10">Multi-word expressions as single vocabulary items (Wiktionary entries, rule filters, then an LLM review via the Batch API: 2,352 kept)</label></li>
       </ul>
     </div>
 
@@ -390,7 +393,7 @@ footer{margin-top:3rem;padding-top:1.5rem;border-top:0.5px solid var(--line);fon
       <p class="goal">Add the two content-based skills on top of the recommender, then build the eval framework this project actually needs.</p>
       <ul class="tasks">
         <li><input type="checkbox" id="p4-1"><label for="p4-1">Set up the lyrics skill against your own (private, gitignored) song lyrics</label></li>
-        <li><input type="checkbox" id="p4-2"><label for="p4-2">Add an idiom/expression corpus (Wiktionary) so figurative translations aren't literal</label></li>
+        <li><input type="checkbox" id="p4-2"><label for="p4-2">Add an idiom/expression corpus (Wiktionary) so figurative translations aren't literal &mdash; the reviewed list of 2,352 expressions exists since Phase 2.5; what remains is retrieving them for lyrics</label></li>
         <li><input type="checkbox" id="p4-3"><label for="p4-3">Build the reading skill against Project Gutenberg short stories</label></li>
         <li><input type="checkbox" id="p4-4"><label for="p4-4">Add a multi-chapter public-domain book, chunked and difficulty-indexed by chapter</label></li>
         <li><input type="checkbox" id="p4-5"><label for="p4-5">Confirm the recommender's sequence constraint holds across real chapters</label></li>

@@ -63,7 +63,13 @@ class Scripted:
         reply = self.replies.pop(0)
         if isinstance(reply, str):
             reply = TutorReply(reply_es=reply, reply_en="(en)", misused=[], note_en=None)
-        return Generation(reply, input_tokens=100, cache_read_tokens=1000, output_tokens=50)
+        return Generation(
+            reply,
+            input_tokens=100,
+            cache_read_tokens=1000,
+            cache_write_5m_tokens=60,
+            output_tokens=50,
+        )
 
     def select_words(self, prompt):
         self.requests.append(prompt)

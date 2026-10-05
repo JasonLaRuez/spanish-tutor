@@ -15,7 +15,7 @@ the tagger that made it, and the steps that read it refuse a different one).
 import re
 import unicodedata
 from collections import Counter
-from collections.abc import Callable, Iterable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from functools import cache
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -210,6 +210,7 @@ class LemmaCorrector:
         parts_of_speech: Callable[[str], list[str]] = lambda word: [],
         misspellings: Mapping[Analysis, Analysis] | None = None,
         restorer: AccentRestorer | None = None,
+        expressions: "ExpressionMatcher | None" = None,
     ):
         self.is_word = is_word
         self.form_links = form_links
@@ -218,6 +219,7 @@ class LemmaCorrector:
         # Dictionary entries that are only a misspelling of another word (dia -> día).
         self.misspellings = misspellings or {}
         self.restorer = restorer  # applied to text before tagging, by `analyze`
+        self.expressions = expressions  # applied to the analyzed tokens, by `analyze`
         self.corrected: Counter[tuple[str, Analysis, Analysis]] = Counter()
         self.unresolved: Counter[tuple[str, Analysis]] = Counter()
 
@@ -369,6 +371,17 @@ def load_wiktionary() -> "Wiktionary":
 
 
 @cache
+def load_expression_matcher() -> "ExpressionMatcher | None":
+    """The approved expressions (ingest/expressions.py), or None before they're built."""
+    from spanish_tutor.ingest.expressions import load_expressions
+
+    expressions = load_expressions()
+    if not expressions:
+        return None
+    return ExpressionMatcher((e["phrase"], e["lemmas"]) for e in expressions)
+
+
+@cache
 def load_corrector() -> LemmaCorrector:
     """The corrector built from the downloaded Wiktionary and SUBTLEX-ESP files."""
     from spanish_tutor.ingest import subtlex
@@ -390,6 +403,7 @@ def load_corrector() -> LemmaCorrector:
         parts_of_speech=wiktionary.parts_of_speech,
         misspellings=misspellings,
         restorer=AccentRestorer(words | set(form_links), prior),
+        expressions=load_expression_matcher(),
     )
 
 
@@ -439,6 +453,66 @@ def token_analyses(token: Token, corrector: LemmaCorrector | None = None) -> lis
 TokenAnalysis = tuple[str, list[Analysis]]  # (surface form, analyses)
 
 
+class ExpressionMatcher:
+    """Finds approved multi-word expressions (sin embargo, darse cuenta) in analyzed text.
+
+    Matching is by lemma sequence over consecutive word tokens, so inflection is free
+    ("me di cuenta" contains dar + cuenta: darse cuenta) and a contraction counts with
+    both its lemmas ("al menos" is a + el + menos). A match must cover whole tokens. The
+    longest expression starting at a token wins.
+
+    A matched expression is one vocabulary item: its first token gets the single analysis
+    (phrase, "EXPR") and its surface becomes the whole phrase as written; the other
+    tokens keep their surface with no analyses, like names. So "sin embargo" credits and
+    teaches the expression, never "embargo" (seizure). The approved list comes from
+    ingest/expressions.py.
+    """
+
+    def __init__(self, expressions: Iterable[tuple[str, Sequence[str]]]):
+        self.by_first: dict[str, list[tuple[tuple[str, ...], str]]] = {}
+        for phrase, lemmas in expressions:
+            key = tuple(lemmas)
+            if len(key) >= 2:
+                self.by_first.setdefault(key[0], []).append((key, phrase))
+        for entries in self.by_first.values():
+            entries.sort(key=lambda entry: -len(entry[0]))
+
+    def __len__(self) -> int:
+        return sum(len(entries) for entries in self.by_first.values())
+
+    def apply(self, tokens: list[TokenAnalysis]) -> list[TokenAnalysis]:
+        lemmas = [[lemma for lemma, _ in analyses] for _, analyses in tokens]
+        result = list(tokens)
+        i = 0
+        while i < len(tokens):
+            span = self._match_at(lemmas, i)
+            if span is None:
+                i += 1
+                continue
+            end, phrase = span
+            written = " ".join(surface for surface, _ in tokens[i:end])
+            result[i] = (written, [(phrase, "EXPR")])
+            for j in range(i + 1, end):
+                result[j] = (tokens[j][0], [])
+            i = end
+        return result
+
+    def _match_at(self, lemmas: list[list[str]], start: int) -> tuple[int, str] | None:
+        if not lemmas[start]:
+            return None
+        for key, phrase in self.by_first.get(lemmas[start][0], ()):
+            position, token = 0, start
+            while position < len(key) and token < len(lemmas) and lemmas[token]:
+                part = lemmas[token]
+                if tuple(part) != key[position : position + len(part)]:
+                    break
+                position += len(part)
+                token += 1
+            if position == len(key):
+                return token, phrase
+        return None
+
+
 def analyze(
     texts: Iterable[str],
     batch_size: int = 64,  # fastest for the transformer on CPU (measured: 121/s vs 94 at 1000)
@@ -451,19 +525,22 @@ def analyze(
     surface form is *not* vocabulary. A contraction yields one token with two analyses.
     Lemmas are corrected against Wiktionary unless `corrector=None` is passed; with a
     corrector, words typed without their accents are restored before tagging, so the
-    surface forms are the restored ones ("detras" -> "detrás").
+    surface forms are the restored ones ("detras" -> "detrás"), and approved multi-word
+    expressions become one item each (ExpressionMatcher).
     """
     if corrector is DEFAULT:
         corrector = load_corrector()
     restorer = getattr(corrector, "restorer", None)
     if restorer is not None:
         texts = (restorer.restore_text(text) for text in texts)
+    expressions = getattr(corrector, "expressions", None)
     for doc in load_nlp().pipe(texts, batch_size=batch_size):
-        yield [
+        tokens = [
             (normalize_text(token.text), token_analyses(token, corrector))  # type: ignore[arg-type]
             for token in doc
             if not (token.is_punct or token.is_space)
         ]
+        yield expressions.apply(tokens) if expressions is not None else tokens
 
 
 def vocabulary(tokens: list[TokenAnalysis]) -> set[Analysis]:

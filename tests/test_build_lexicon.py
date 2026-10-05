@@ -258,3 +258,30 @@ def test_unlisted_reference_rolls_the_whole_fill_back(conn):
     with pytest.raises(sqlite3.IntegrityError):
         fill_lexicon(conn, ENTRIES)
     assert [r["lemma"] for r in conn.execute("SELECT lemma FROM lexemes")] == ["tambien"]
+
+
+# --- Multi-word expressions -------------------------------------------------------------
+
+
+def test_approved_expressions_become_entries_with_a_tatoeba_frequency(make_wiktionary):
+    wiktionary = make_wiktionary([("casa", "noun", "house")])
+    expression = [("sin embargo", [("sin embargo", "EXPR")]), ("embargo", [])]
+    sentences = [
+        sentence(1, [("casa", [CASA])] + expression, en="However, the house."),
+        sentence(2, [("casa", [CASA])]),
+        sentence(3, [("casa", [CASA]), ("de", [DE]), ("nada", [("de nada", "EXPR")])]),
+    ]
+    entries = build_entries(
+        lambda: sentences,
+        Counter({"casa": 10}),
+        wiktionary,
+        report=quiet,
+        expressions={"sin embargo": "however, nevertheless"},  # "de nada" isn't approved
+    )
+    by_key = {(e.lemma, e.pos): e for e in entries}
+    phrase = by_key["sin embargo", "EXPR"]
+    assert phrase.definition_en == "however, nevertheless"
+    # 1 occurrence in 7 Tatoeba tokens; subtitle counts don't cover phrases.
+    assert phrase.frequency_per_million == round(1 / 7 * 1e6, 4)
+    assert phrase.example and phrase.example.sentence_id == 1
+    assert ("de nada", "EXPR") not in by_key

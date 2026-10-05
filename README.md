@@ -26,7 +26,13 @@ those words *you* know.
 
 ```sh
 uv run python -m spanish_tutor.ingest.download        # corpora into data/raw/ (a few minutes)
-uv run python -m spanish_tutor.ingest.tatoeba         # lemmatize Tatoeba once (~1 h on CPU)
+uv run python -m spanish_tutor.ingest.tatoeba         # lemmatize Tatoeba (~90 min on CPU)
+# Optional: multi-word expressions (sin embargo, darse cuenta), reviewed by Claude in a
+# Batch API job (about $7 with Opus 5.5; needs ANTHROPIC_API_KEY), then re-lemmatize:
+uv run python -m spanish_tutor.ingest.expressions candidates
+uv run python -m spanish_tutor.ingest.expressions review    # submits the batch
+uv run python -m spanish_tutor.ingest.expressions collect   # waits for it, keeps the approved
+uv run python -m spanish_tutor.ingest.tatoeba         # re-runs because the list changed
 uv run python -m spanish_tutor.ingest.build_lexicon   # the general lexicon (backs up the DB first)
 uv run python -m spanish_tutor.seed candidates        # ~1,500 most frequent words to review
 # Open data/processed/seed_candidates.csv and fill the `known` column:
@@ -106,8 +112,14 @@ On an English keyboard, type accents as markers before the letter: `'a` → á (
 becomes `¿Qué tal?`. Words typed without any accents are also recognized (`manana`,
 `detras`) when only one Spanish word fits.
 
-Needs `ANTHROPIC_API_KEY` in `.env`; a turn costs about a cent. Every turn is logged in
-the `sessions` and `turns` tables, and each word event links to the turn that caused it.
+Fixed expressions (*sin embargo*, *a veces*, *darse cuenta*) count as one word each, so
+you're never taught *embargo* ("seizure") from *sin embargo*.
+
+Needs `ANTHROPIC_API_KEY` in `.env`. The instructions and your vocabulary are cached for
+an hour and the conversation so far for five minutes, so a turn costs about half a cent
+with Claude Opus 5.5. Every turn is logged in the `sessions` and `turns` tables (with its
+token counts, cache reads and writes), and each word event links to the turn that caused
+it.
 
 ## Tests
 

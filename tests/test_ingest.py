@@ -307,3 +307,36 @@ def test_cached_corpus_from_another_or_unrecorded_tagger_is_refused(tmp_path, re
         meta_path(analyzed).write_text(json.dumps({"tagger": recorded}), encoding="utf-8")
     with pytest.raises(TaggerMismatch, match=recorded or "unrecorded"):
         require_current(analyzed)
+
+
+def test_cached_corpus_from_another_expression_list_is_refused(tmp_path, monkeypatch):
+    from spanish_tutor.ingest import expressions
+
+    analyzed = tmp_path / "tatoeba_analyzed.jsonl"
+    monkeypatch.setattr(expressions, "signature", lambda: "aaaa")
+    record_tagger(analyzed)
+    require_current(analyzed)  # same tagger, same list
+    monkeypatch.setattr(expressions, "signature", lambda: "bbbb")  # the list changed
+    with pytest.raises(TaggerMismatch, match="bbbb"):
+        require_current(analyzed)
+
+
+def test_candidates_are_found_in_a_corpus_already_analyzed_with_expressions():
+    # Rebuilding the candidates after the list exists: the corpus has "sin embargo" as one
+    # EXPR item, which must still count as the lemma sequence (sin, embargo).
+    from spanish_tutor.ingest.expressions import Candidate, find_in_corpus, sentence_lemmas
+    from spanish_tutor.ingest.tatoeba import AnalyzedSentence
+
+    tokens = [
+        ("sin embargo", [("sin embargo", "EXPR")]),
+        ("embargo", []),
+        ("llueve", [("llover", "VERB")]),
+    ]
+    approved = {"sin embargo": ("sin", "embargo")}
+    assert sentence_lemmas(tokens, approved) == ["sin", "embargo", "llover"]
+    assert sentence_lemmas(tokens) == ["sin embargo", "llover"]  # no list: left as is
+
+    sentence = AnalyzedSentence(id=1, es="Sin embargo, llueve.", en=None, author="x", tokens=tokens)
+    candidate = Candidate("sin embargo", "adv", ["however"], lemmas=("sin", "embargo"))
+    find_in_corpus([candidate], [sentence], approved)
+    assert candidate.sentences == 1

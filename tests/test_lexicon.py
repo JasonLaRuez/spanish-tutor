@@ -372,3 +372,72 @@ def test_gracias_is_never_the_plural_of_gracia():
     assert normalize("Gracias", "gracia", "NOUN") == [("gracias", "NOUN")]
     assert normalize("gracias", "gracias", "INTJ") == [("gracias", "INTJ")]
     assert normalize("gracia", "gracia", "NOUN") == [("gracia", "NOUN")]  # the singular stays
+
+
+# --- Multi-word expressions -------------------------------------------------------------
+
+
+def matcher():
+    from spanish_tutor.lexicon import ExpressionMatcher
+
+    return ExpressionMatcher(
+        [
+            ("sin embargo", ("sin", "embargo")),
+            ("darse cuenta", ("dar", "cuenta")),
+            ("al menos", ("a", "el", "menos")),
+            ("a veces", ("a", "vez")),
+            ("a veces más", ("a", "vez", "más")),  # longer, to test longest-first
+        ]
+    )
+
+
+def test_an_expression_becomes_one_item_and_its_parts_none():
+    tokens = [
+        ("sin", [("sin", "ADP")]),
+        ("embargo", [("embargo", "NOUN")]),
+        ("llueve", [("llover", "VERB")]),
+    ]
+    assert matcher().apply(tokens) == [
+        ("sin embargo", [("sin embargo", "EXPR")]),
+        ("embargo", []),  # never credited or taught as "embargo" (seizure) here
+        ("llueve", [("llover", "VERB")]),
+    ]
+
+
+def test_expressions_match_inflected_and_contracted_forms():
+    di_cuenta = [
+        ("me", [("me", "PRON")]),
+        ("di", [("dar", "VERB")]),
+        ("cuenta", [("cuenta", "NOUN")]),
+    ]
+    assert matcher().apply(di_cuenta)[1] == ("di cuenta", [("darse cuenta", "EXPR")])
+    al_menos = [("al", [("a", "ADP"), ("el", "DET")]), ("menos", [("menos", "ADV")])]
+    assert matcher().apply(al_menos)[0] == ("al menos", [("al menos", "EXPR")])
+
+
+def test_expressions_dont_match_across_a_name_or_from_inside_a_contraction():
+    across = [("sin", [("sin", "ADP")]), ("juan", []), ("embargo", [("embargo", "NOUN")])]
+    assert matcher().apply(across) == across
+    from spanish_tutor.lexicon import ExpressionMatcher
+
+    inside = [("al", [("a", "ADP"), ("el", "DET")]), ("menos", [("menos", "ADV")])]
+    assert ExpressionMatcher([("el menos", ("el", "menos"))]).apply(inside) == inside
+
+
+def test_the_longest_expression_wins():
+    tokens = [("a", [("a", "ADP")]), ("veces", [("vez", "NOUN")]), ("más", [("más", "ADV")])]
+    assert matcher().apply(tokens)[0] == ("a veces más", [("a veces más", "EXPR")])
+
+
+def test_shared_loaders_are_cached():
+    # Building the corrector reads Wiktionary and SUBTLEX (seconds). analyze() calls
+    # load_corrector() on every use, and the Tatoeba run reports on the one it used,
+    # so it must be one shared instance. (A new function once displaced its @cache.)
+    from spanish_tutor import lexicon
+
+    for loader in (
+        lexicon.load_corrector,
+        lexicon.load_wiktionary,
+        lexicon.load_expression_matcher,
+    ):
+        assert hasattr(loader, "cache_info"), loader.__name__

@@ -16,7 +16,7 @@ before it is changed.
 import sqlite3
 import sys
 from collections import Counter, defaultdict
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import NamedTuple
 
@@ -24,6 +24,7 @@ from spanish_tutor import db
 from spanish_tutor.config import DB_PATH, SQL_DIR
 from spanish_tutor.ingest import subtlex
 from spanish_tutor.ingest.download import RAW_DIR, WIKTIONARY_FILE
+from spanish_tutor.ingest.expressions import load_expressions
 from spanish_tutor.ingest.tatoeba import (
     ANALYZED_PATH,
     AnalyzedSentence,
@@ -158,22 +159,43 @@ def build_entries(
     form_counts: Counter[str],
     wiktionary: Wiktionary,
     report: Callable[[str], None] = print,
+    expressions: Mapping[str, str] | None = None,
 ) -> list[LexiconEntry]:
-    """One entry per (lemma, pos) in the corpus that Wiktionary recognizes.
+    """One entry per (lemma, pos) in the corpus that Wiktionary recognizes, plus one per
+    approved multi-word expression found in it.
 
     `sentences` is called twice (frequency pass, example pass) so the corpus can be
-    streamed from disk rather than held in memory.
+    streamed from disk rather than held in memory. `expressions` maps each approved phrase
+    to its reviewed definition (ingest/expressions.py). SUBTLEX counts single words only,
+    so an expression's frequency is measured in Tatoeba itself: occurrences per million
+    Tatoeba tokens. That's a different corpus from the words' subtitles, so the two are
+    comparable only roughly (good enough to rank expressions for the seed review).
     """
+    expressions = expressions or {}
     occurrences, with_analysis = form_analysis_counts(sentences())
     frequencies, dropped = lemma_frequencies(form_counts, occurrences, with_analysis)
     total = sum(form_counts.values())
     report(f"  {dropped / total:.1%} of subtitle tokens are forms absent from Tatoeba")
 
-    in_corpus = {a for counts in with_analysis.values() for a in counts}
-    words = {a for a in in_corpus if a in wiktionary}
-    report(f"  {len(in_corpus):,} distinct (lemma, pos) in Tatoeba, {len(words):,} in Wiktionary")
+    per_million = {a: n / total * 1e6 for a, n in frequencies.items() if a[1] != "EXPR"}
+    corpus_tokens = sum(occurrences.values())
+    expression_counts: Counter[Analysis] = Counter()
+    for counts in with_analysis.values():
+        for analysis, n in counts.items():
+            if analysis[1] == "EXPR":
+                expression_counts[analysis] += n
+    per_million |= {a: n / corpus_tokens * 1e6 for a, n in expression_counts.items()}
 
-    ranked = sorted(words, key=lambda a: frequencies.get(a, 0), reverse=True)
+    in_corpus = {a for counts in with_analysis.values() for a in counts}
+    words = {a for a in in_corpus if a[1] != "EXPR" and a in wiktionary}
+    phrases = {a for a in in_corpus if a[1] == "EXPR" and a[0] in expressions}
+    report(
+        f"  {len(in_corpus):,} distinct (lemma, pos) in Tatoeba, {len(words):,} in "
+        f"Wiktionary, {len(phrases):,} approved expressions"
+    )
+    words |= phrases
+
+    ranked = sorted(words, key=lambda a: per_million.get(a, 0), reverse=True)
     basic = set(ranked[:BASIC_VOCABULARY_SIZE])
     examples = pick_examples(sentences(), words, known=basic)
 
@@ -182,11 +204,11 @@ def build_entries(
             lemma=lemma,
             pos=pos,
             frequency_per_million=(
-                round(frequencies[lemma, pos] / total * 1e6, 4)
-                if (lemma, pos) in frequencies
-                else None
+                round(per_million[lemma, pos], 4) if (lemma, pos) in per_million else None
             ),
-            definition_en=wiktionary.definition(lemma, pos),
+            definition_en=(
+                expressions[lemma] if pos == "EXPR" else wiktionary.definition(lemma, pos)
+            ),
             example=examples.get((lemma, pos)),
         )
         for lemma, pos in ranked
@@ -252,6 +274,7 @@ def main() -> None:
         lambda: read_analyzed(ANALYZED_PATH),
         subtlex.load_counts(paths[1]),
         Wiktionary(paths[0]),
+        expressions={e["phrase"]: e["definition_en"] for e in load_expressions()},
     )
     with_example = sum(1 for e in entries if e.example)
     print(f"  {len(entries):,} entries, {with_example:,} with an example sentence")

@@ -496,7 +496,7 @@ def test_pre_taught_words_are_in_the_frozen_vocabulary_and_every_note(make_tutor
     opening_request, reply_request = generator.requests[1], generator.requests[2]
     vocabulary = opening_request[0].content[1]["text"]
     assert "perro" in vocabulary and "nadar" in vocabulary
-    assert "perro, nadar" in opening_request[-2].content  # the opening message
+    assert "perro, nadar" in opening_request[-2].text  # the opening message
     for request in (opening_request, reply_request):
         note = request[-1].content
         assert "taught for today's topic, before the conversation: perro, nadar." in note
@@ -598,7 +598,7 @@ def test_ending_without_a_goodbye_credits_no_words(make_tutor, bank):
     tutor.open()
     ending = tutor.end()  # the app's button
 
-    assert generator.requests[1][-2].content == GOODBYE_MESSAGE
+    assert generator.requests[1][-2].text == GOODBYE_MESSAGE
     assert ending.turn.used == []
     assert bank.execute("SELECT COUNT(*) FROM turns WHERE role = 'learner'").fetchone()[0] == 0
     assert events(bank, event_type="used") == []
@@ -630,3 +630,42 @@ def test_summary_prompt_lists_todays_unused_words():
     }  # fmt: skip
     prompt = summary_prompt("el jardín", [], stats)
     assert "Not used by the learner: césped." in prompt and "about el jardín" in prompt
+
+
+# --- Prompt caching of the conversation --------------------------------------------------------
+
+
+def cache_marks(request):
+    """Where a request marks cache breakpoints: (message index, ttl or '5m')."""
+    marks = []
+    for i, message in enumerate(request):
+        if isinstance(message.content, list):
+            for block in message.content:
+                if isinstance(block, dict) and "cache_control" in block:
+                    marks.append((i, block["cache_control"].get("ttl", "5m")))
+    return marks
+
+
+def test_the_latest_message_is_the_conversation_cache_breakpoint(make_tutor):
+    tutor, generator = make_tutor("Hola.", "¡Bien!", "¿Y hoy?")
+    tutor.open()
+    tutor.respond("Estoy cansado.")
+    tutor.respond("Hoy como en casa.")
+
+    for request in generator.requests:
+        # Two breakpoints: the system prompt (1 hour), then the newest message (5 minutes),
+        # the order the API requires (longer lifetimes first).
+        latest = max(i for i, m in enumerate(request) if isinstance(m, HumanMessage))
+        assert cache_marks(request) == [(0, "1h"), (latest, "5m")]
+    # Earlier messages are sent unmarked but otherwise identical, so the next request's
+    # prefix matches what the previous one cached.
+    previous, current = generator.requests[1], generator.requests[2]
+    assert current[4].content == [{"type": "text", "text": "Estoy cansado."}]
+    assert previous[4].content[0]["text"] == current[4].content[0]["text"]
+
+
+def test_cache_writes_are_stored_by_lifetime(make_tutor, bank):
+    tutor, _ = make_tutor("Hola.")
+    tutor.open()
+    row = turns(bank)[0]
+    assert (row["cache_write_5m_tokens"], row["cache_write_1h_tokens"]) == (60, 0)

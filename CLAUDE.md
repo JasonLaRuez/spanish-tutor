@@ -76,8 +76,8 @@ Schema decisions (settled with Jason 2026-09-29; the schema lives in `sql/schema
 - **Words are keyed on `(lemma, pos)`** in `lexemes`. *bajo* ADJ/ADP/NOUN are distinct
   words; POS-tagger mistakes are an accepted cost. spaCy's AUX is folded into VERB at
   ingestion so *ser*/*estar*/*haber* aren't split in two. Multi-word expressions are
-  allowed (`pos = 'EXPR'`); likely source is Wiktionary via kaikki.org (CC BY-SA),
-  detected in text with spaCy's `Matcher` on lemmas.
+  allowed (`pos = 'EXPR'`): a reviewed list from Wiktionary via kaikki.org (CC BY-SA),
+  detected in text on lemma sequences (see "Multi-word expressions" below).
 - **Recognition and production are tracked separately** (the `mode` column). A word enters
   recognition when taught and production the first time the learner uses it. This is the
   passive/active gap the project exists to close, so it belongs in the data model.
@@ -259,68 +259,43 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
 
 ## Working conventions
 
-- **Status (as of 2026-10-02):** Phase 0 is complete. Phase 1 has 5 of 7 roadmap steps done,
-  plus extra groundwork:
-  - Done: the word bank schema; the seed (987 recognized / 730 produced words); Tatoeba in
-    Chroma (261k sentences); **the conversation skill with write-back**
-    (`conversation.py`, `words.py`, `teaching.py`, migration 002: `sessions`, `turns`,
-    `word_events.turn_id`).
-  - Extra: lemma correction, and the general lexicon (26k words).
-  - **Session 1 (2026-10-02, "el jardin", 15 turns)** led to four changes, made the same
-    day:
-    - **Topic pre-teaching** (`topics.py`). This is the core of Phase 2, pulled forward.
-    - **"¿Cómo se dice …?"** translation turns.
-    - **Typed accent markers** (`keyboard.py`).
-    - **Accent restoration in the pipeline** (`lexicon.AccentRestorer`).
-    - Also: migration 003 (`turns.kind`, `correction_en` → `note_en`), a 1-hour cache
-      TTL, and cleanup of stray characters in notes.
-    - Known artifact: session 1 logged *wáter* as taught and used. It came from the
-      English inside a "como se dice" quote, before translation turns existed. It stays,
-      because the log is append-only.
-  - **Next: more real conversations** by Jason (~19 to go), now in the web UI
-    (`uv run spanish-tutor serve`).
-  - Measured in session 1: Claude stayed inside the word bank in every reply, and gaps
-    between turns were 1–3.5 min, with one 33-minute break.
-  - **Notebook 02** (`notebooks/02_conversation.ipynb`, done 2026-10-02) walks through one
-    real session:
-    - a topic query ("el jardín") with the database's ranked candidates, cross-checked
-      against Claude's unconstrained suggestions, and the final grounded choice;
-    - a 3-message conversation with one "¿cómo se dice?";
-    - the transcript, events, adherence and completeness metrics in SQL, and the cost
-      per turn.
-    - It runs on an **in-memory copy** of the word bank, so the real learning history is
-      untouched. About 10 API calls (~10¢) per run, and Claude's wording varies between
-      runs.
-  - **Open items (as of 2026-10-02), none started:**
-    - ~~Stale frequencies~~: done 2026-10-02, see "General lexicon" below.
-    - ~~Noun/verb homographs~~: fixed 2026-10-02 by switching the tagger to
-      `es_dep_news_trf` and adding the form-of lemma check. See "Tagger" below.
-    - **After each real session**, review it in SQL (`turns`, `word_events` by turn) like
-      session 1. Its data surfaced every fix made on 2026-10-02.
-    - **Context-dependent unresolved words:** in a garbled test message, *tal* in *¿Qué
-      tal?* came back as "not recognized" (an unresolved corrector tie, *tal* is listed
-      among them); in a clean message it resolved. Measure how often learner turns hit
-      this before deciding anything.
-    - ***gracias* taught as *gracia*: fixed in code 2026-10-05, corpus pending.** The
-      transformer files the thanks under *gracia* ("grace") in 451 of 1,127 Tatoeba tokens.
-      `lexicon.LEMMA_FIXES` (a single-word rule, Jason's call: the plural of *gracia* in
-      that sense is vanishingly rare) fixes the lemma and keeps the tagger's POS, so it
-      maps onto *gracias* INTJ/NOUN, both in Jason's bank. Live text is fixed now; the
-      corpus needs the next re-analysis (bundled with expressions).
-    - **Session 2 review (2026-10-05), decided by Jason:**
-      - Wrong words vs wrong forms (done, below under Grading).
-      - Lookups of known words are free reminders (done, below).
-      - Detect multi-word expressions (planned: Wiktionary entries, rule filters, then an
-        Opus 5.5 Batch review; one unit per match; a seed review of the top ones).
-      - Cache the conversation history with a 5-minute breakpoint (planned; replayed on
-        sessions 1–2: −23% and −28% per session) and add `turns.cache_write_tokens`
-        (migration 005, SQL to be shown first).
-      - Also seen: *sin embargo* taught *embargo* (expressions fix it); *cuatros* taught
-        *cuatro* NOUN (tagger artifact, left).
+- **Status (as of 2026-10-05):** Phase 0 is complete. Phase 1 has 5 of 7 roadmap steps
+  done (the ~20 real conversations are in progress: 2 so far). Phase 2's core
+  (pre-teaching) and the new **Phase 2.5 web UI** are done. Next: more real conversations,
+  each reviewed in SQL afterwards; then Phase 3 (difficulty index + recommender).
+  - **Built so far:** word bank schema + migrations 001–005; seed (1,030 recognized / 762
+    produced after the seed-gap marks; grows with sessions); general lexicon; Tatoeba in
+    Chroma (261k sentences); the conversation skill with write-back, topic pre-teaching
+    (up to 20 words), "¿cómo se dice?", typed accent markers, accent restoration, wrong-
+    word vs wrong-form grading, free lookups, conversation endings with a stored summary,
+    conversation-history caching; the web app (FastAPI + React/TypeScript); multi-word
+    expressions (2,352 approved, in the corpus from the 2026-10-05 re-analysis).
+  - **Sessions:** 1 (2026-10-02, "el jardin", 15 turns) and 2 (2026-10-05, "videogames",
+    23 turns, 8 learner messages). Every reply stayed inside the word bank except allowed
+    i+1 words (4 in session 1, 1 in session 2); no retries. Each session's review drove
+    the fixes listed in the sections below (session 1: pre-teaching, translations,
+    markers, accents; session 2: wrong words, free lookups, expressions, *gracias*,
+    history caching).
+  - Known artifacts kept (the log is append-only): session 1 logged *wáter* (from the
+    English in an early "cómo se dice"); session 2 logged *jugo* (a slip for *juego*,
+    before wrong-word grading) and 8 grade-1 lookups from testing the click feature.
+  - **Notebooks:** 01 (`notebooks/01_data_pipeline.ipynb`) documents every data-processing
+    step; 02 (`notebooks/02_conversation.ipynb`) walks through a real conversation on an
+    **in-memory copy** of the word bank (~10 API calls, ~10¢ a run; wording varies).
+  - **Open items:**
+    - **After each real session**, review it in SQL (`turns`, `word_events` by turn,
+      `session_stats.sql`); both reviews so far surfaced real fixes.
+    - **Seed review of expressions (waiting on Jason):** expressions are new lexemes, so
+      they start unknown. The 125 at least as frequent as the rank-1,500 word (the seed's
+      depth; 41.8 per million) are appended to `seed_candidates.csv` (2026-10-05, *por
+      qué* … *llevar puesto*, ranked among the words by frequency). Jason marks them r/p,
+      then `seed build`.
+    - **Context-dependent unresolved words:** *tal* in *¿Qué tal?* once came back "not
+      recognized" (an unresolved corrector tie) in a garbled message, and resolved in a
+      clean one. Measure how often learner turns hit this before deciding anything.
     - **Resuming a conversation after a server restart** isn't built: the transcript is
       shown read-only. It would mean rebuilding `Tutor.history` from `turns`.
-    - Then roadmap Phase 3 (difficulty index and recommender). Pre-teaching, the core
-      of Phase 2, is already done.
+    - Then roadmap Phase 3 (difficulty index and recommender).
   - Build log, published (private): https://claude.ai/artifact/NAheU5cpSBdxY7QpoeQbHQ.
     Republish it after milestones. The local copy lived in a session's temp folder, so in
     a new session `Artifact read` the URL first, edit that HTML, then republish with
@@ -456,15 +431,37 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
       - A "cómo se dice" turn went from ~5,470 uncached tokens to ~650 uncached + 5,290
         cached (~2.7¢ → ~0.4¢). Jason expects to use it often.
       - The topic-word selection keeps its own schema: it's one call per session, with a
-        different prompt and nothing to share.
+        different prompt and nothing to share. So do the end-of-conversation notes.
+    - **The conversation history is cached too (2026-10-05, Jason: "minimizing the
+      monetary cost of using the tool is an important objective").**
+      - Before, only the system prompt + vocabulary (~5.4k tokens) was cached; the history
+        was re-sent at full price each turn (453 → 2,695 uncached tokens per turn in
+        session 2), roughly 85% of a session's input cost.
+      - Now a second breakpoint (5-minute TTL) sits on the latest learner message
+        (`conversation.learner_message(text, cached=True)`); the system keeps its 1-hour
+        entry (longer TTL first, as the API requires). History messages are stored as the
+        same text block without the mark, so the prefix bytes match.
+      - Replayed on sessions 1–2 with their real gaps (Opus 5.5: $4/$20 per MTok, reads
+        0.05×, writes 1.25× 5-min / 2× 1-hour): −23% and −28% per session; the 5-minute
+        TTL beat 1 hour (−18%, −24%) because gaps are almost always under 5 minutes.
+      - Verified live on a database copy: reads grow every turn (5,927 → 6,396), writes
+        are only the last exchange (29–185 tokens), full-price input is just the per-turn
+        note (~80–160); 0.41–0.65¢ per turn, versus ~1–1.6¢ before.
+      - **Migration 005 (Jason approved the SQL):** `turns.cache_write_5m_tokens` and
+        `turns.cache_write_1h_tokens`, the part of `input_tokens` written to the cache by
+        lifetime (NULL before migration 5). Exact per-turn cost =
+        (input − w5m − w1h)·1 + w5m·1.25 + w1h·2 + reads·0.05 at $4/MTok, + output at
+        $20/MTok.
+      - What's left: output (thinking included) is ~6–7.5¢ of a session after caching;
+        lowering it means effort/quality tradeoffs, not yet discussed.
   - **Tagger limit seen in testing (fixed 2026-10-02, see "Tagger"):** *riego* in "y riego
     las plantas" (I water) was tagged as the noun *riego* (irrigation) and taught as a new
     word, although *regar* had been pre-taught.
 - **Known data limits:** sentence-initial *Sé* is tagged as the imperative of *ser* both
   in *Sé amable* (right) and *Sé que…* (wrong, it's *saber*), about half each across 537
   tokens; sentence-initial words are sometimes tagged as names and dropped; ~100
-  NOUN-tagged *conmigo* tokens became an ADV entry; multi-word expressions (`EXPR`) are
-  allowed in the schema but not yet detected in text.
+  NOUN-tagged *conmigo* tokens became an ADV entry; an expression isn't matched with a
+  word inserted into it (*echar mucho de menos*).
   - **Lowercase words tagged PROPN: fixed in the pipeline on 2026-10-01.**
     - The problem: spaCy tags some common words as proper nouns even lowercase and
       mid-sentence (*Me gusta la nube.*). PROPN was dropped, so 8.5k Tatoeba tokens
@@ -604,11 +601,18 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
   - Regression found and fixed: the transformer lemmatizes *vos* as *vo* (a Wiktionary
     word), so personal pronouns now keep their own form by the *form*, not only by the
     tagger's lemma.
+  - ***gracias* (fixed 2026-10-05):** the transformer files the thanks under *gracia*
+    ("grace") in 451 of 1,127 Tatoeba tokens, so tutor replies taught *gracia*.
+    `lexicon.LEMMA_FIXES` maps (form *gracias*, lemma *gracia*) to *gracias*, keeping the
+    tagger's POS, onto entries Jason knows (INTJ and NOUN). A single-word rule, Jason's
+    call: the plural of *gracia* in that sense is vanishingly rare. Add to this table only
+    for measured, frequent errors; general rules come first.
   - Cost: ~10 ms/sentence on CPU (batch size 64 is fastest), a 6 s model load, a full
     Tatoeba analysis takes ~90 min (was 15).
-  - The cached corpus records its tagger in `tatoeba_analyzed.meta.json`;
-    `build_lexicon` and `index_tatoeba` refuse a cache from another tagger. It doesn't
-    record corrector changes: delete the cache to re-analyze after changing `lexicon.py`.
+  - The cached corpus records its tagger and the expression list's fingerprint in
+    `tatoeba_analyzed.meta.json`; `build_lexicon` and `index_tatoeba` refuse a cache made
+    with a different setup, and `ingest.tatoeba` re-analyzes it. It doesn't record code
+    changes: delete the cache to re-analyze after changing `lexicon.py`.
   - Rebuild results (2026-10-02): lexicon 663 added, 741 removed (unreferenced junk such
     as *empecer*, the noun *miente*), 0 frequencies cleared; 31k Chroma vocab entries
     updated; word bank unchanged (999 recognized / 745 produced).
@@ -617,6 +621,61 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
     *francés* NOUN). They're appended to `seed_candidates.csv` (new ranks). Jason marked
     them 2026-10-03 (14 `r`, 17 `p`, 47 left unknown) and `seed build` loaded them: word
     bank 1,030 recognized / 762 produced.
+- **Multi-word expressions (`ingest/expressions.py`, added 2026-10-05; Jason's decisions):**
+  - Why: *sin embargo* taught *embargo* ("seizure") in session 2; fixed expressions must be
+    one vocabulary item.
+  - Source: Wiktionary's multi-word entries (15,602 without names and proverbs). Naive
+    matching is harmful (measured): the top matches were function-word pairs (*de la*,
+    *a la*, *lo que*), phrasebook sentences (*no sé*, *dónde estás*), and wrong senses
+    (*la vida* is listed only as slang for prostitution).
+  - Pipeline (`python -m spanish_tutor.ingest.expressions candidates|review|collect`):
+    1. Rule filters: drop phrase/proverb/article/name entries and senses that are literal
+       ("used other than figuratively"), vulgar, derogatory, archaic, obsolete, dated,
+       historical or alternative spellings; keep lemma sequences found in ≥3 Tatoeba
+       sentences: 3,066 candidates (`expression_candidates.jsonl`).
+    2. Review: Claude Opus 5.5 via the Batch API (Jason's choice of model) sees each
+       candidate's senses and up to 4 real Tatoeba sentences and decides keep + which
+       sense (`expression_reviews.jsonl`, with the reviewer). A pilot on 8 cases was
+       right on all 8 (kept *sin embargo*, *por favor*, *un poco*, *darse cuenta*;
+       rejected *a la*, *lo que*, *de una*, *la vida*). Estimated $1.50, re-estimated
+       $7.30 after the pilot (examples make prompts ~805 tokens); Jason approved;
+       actual **$6.68** (2.23M in, 221k out).
+    3. Kept **2,352** (`expressions.jsonl`: phrase, lemma sequence, the reviewed sense as
+       definition, sentence count). The review kept 2,371. The other 19 had no listed
+       sense that fits the corpus (sense 0), so they're dropped rather than taught with a
+       wrong definition. Examples: *a punto* is listed only as "at the ready";
+       *con gusto*, *dar lugar*. Their main uses survive as longer approved expressions
+       (*a punto de*, *dejar de lado*, *con tal de que*). Could be revisited by having
+       Claude write those 19 definitions (marked as model-written); not discussed with
+       Jason yet. Top: *por qué*, *por favor*, *un poco*, *después de*,
+       *ya no*, *a menudo*, *a veces*, *así que*, *darse cuenta*, *de acuerdo*.
+  - Matching (`lexicon.ExpressionMatcher`, applied in `analyze` when the corrector has
+    it): lemma sequences over consecutive whole tokens, longest first; inflection is free
+    (*me di cuenta* → *darse cuenta*), a contraction counts with both lemmas (*al menos*);
+    no match across a name or with a word inserted (*echar mucho de menos*), accepted.
+  - **One unit (Jason's choice):** the first token gets (phrase, `EXPR`) and the whole
+    phrase as its surface; the other tokens keep their surface with no analyses. So the
+    phrase is credited/taught, never its parts there.
+  - Lexicon: `build_entries(..., expressions=...)` adds approved phrases found in the
+    corpus with the reviewed definition; frequency is Tatoeba occurrences per million
+    Tatoeba tokens (SUBTLEX has no phrases), only roughly comparable to the words'.
+  - The data files are derived (CC BY-SA) and gitignored like the rest of
+    `data/processed/`.
+  - **Rebuild results (2026-10-05):**
+    - Re-analysis vs the previous cache: 88,261 EXPR tokens (2,310 distinct phrases; top:
+      *por qué* 5,575, *por favor* 3,584, *un poco* 2,371). The only other token change:
+      341 *gracias* moved from *gracia*.
+    - Lexicon: 2,309 expressions added. 113 rows removed, almost all words that only occur
+      inside an expression (*repente*, *bordo*, *vano*, *obstante*, *antemano*,
+      *santiamén*), which are now taught as the expression.
+    - Word bank unchanged (1,044 recognized / 777 produced; 2,417 events). The real DB is
+      at migration 5. The foreign-key check is clean.
+    - Bug found in that run and fixed: adding `load_expression_matcher` had displaced
+      `load_corrector`'s `@cache`. So the run's reports came from a fresh, empty
+      corrector (0 corrections), and every `analyze()` call rebuilt the corrector.
+      `test_shared_loaders_are_cached` guards it. The corrections CSV was restored from
+      the previous run (the analyses are identical), and the accent restorations were
+      regenerated from the text.
 - **Lemma correction** (`lexicon.LemmaCorrector`, added 2026-10-01):
   - When spaCy's `(lemma, pos)` isn't a Wiktionary word, it's repaired from Wiktionary's
     form-of table (`data/raw/wiktionary_es_forms.tsv`).

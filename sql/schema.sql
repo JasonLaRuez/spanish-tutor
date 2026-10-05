@@ -118,6 +118,10 @@ CREATE TABLE IF NOT EXISTS turns (
     retried           INTEGER CHECK (retried IN (0, 1)),
     input_tokens      INTEGER,           -- uncached input tokens, summed over any retry
     cache_read_tokens INTEGER,
+    -- How much of input_tokens was written to the cache, by lifetime (5-minute writes cost
+    -- 1.25x, 1-hour 2x). NULL on turns from before migration 5.
+    cache_write_5m_tokens INTEGER,
+    cache_write_1h_tokens INTEGER,
     output_tokens     INTEGER,           -- includes thinking
     latency_ms        INTEGER,
     created_at        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,

@@ -65,38 +65,49 @@ def load_sentences(spa_detailed: Path, eng_sentences: Path, links: Path) -> list
 
 
 class TaggerMismatch(Exception):
-    """The cached corpus was analyzed by a different tagger than the one in use."""
+    """The cached corpus was analyzed with a different setup than the one in use."""
 
 
 def meta_path(analyzed: Path) -> Path:
-    """Where the tagger that made `analyzed` is recorded: tatoeba_analyzed.meta.json."""
+    """Where the setup that made `analyzed` is recorded: tatoeba_analyzed.meta.json."""
     return analyzed.with_name(analyzed.stem + ".meta.json")
 
 
+def analysis_setup() -> dict:
+    """What an analysis depends on besides the code: the tagger and the expression list."""
+    from spanish_tutor.ingest.expressions import signature
+
+    return {"tagger": tagger(), "expressions": signature()}
+
+
 def record_tagger(analyzed: Path) -> None:
-    meta_path(analyzed).write_text(json.dumps({"tagger": tagger()}), encoding="utf-8")
+    meta_path(analyzed).write_text(json.dumps(analysis_setup()), encoding="utf-8")
 
 
-def analyzed_by(analyzed: Path) -> str | None:
-    """The tagger recorded for a cached corpus; None if unrecorded (made before 2026-10-02)."""
+def analyzed_by(analyzed: Path) -> dict | None:
+    """The setup recorded for a cached corpus; None if unrecorded (made before 2026-10-02).
+
+    A record from before expressions existed has no "expressions" key: read as None.
+    """
     try:
-        return json.loads(meta_path(analyzed).read_text(encoding="utf-8"))["tagger"]
+        recorded = json.loads(meta_path(analyzed).read_text(encoding="utf-8"))
     except FileNotFoundError:
         return None
+    return {"tagger": recorded.get("tagger"), "expressions": recorded.get("expressions")}
 
 
 def require_current(analyzed: Path = ANALYZED_PATH) -> None:
-    """Refuse a cached corpus made by another tagger.
+    """Refuse a cached corpus made with another tagger or another expression list.
 
     Its (lemma, pos) pairs would silently disagree with how live text (a learner's turn)
     is analyzed, so a word could count as both known and new.
     """
-    found, expected = analyzed_by(analyzed), tagger()
+    found, expected = analyzed_by(analyzed), analysis_setup()
     if found != expected:
         raise TaggerMismatch(
-            f"{analyzed.name} was analyzed by {found or 'an unrecorded tagger'}, not "
+            f"{analyzed.name} was analyzed with {found or 'an unrecorded setup'}, not "
             f"{expected}. Re-analyze it: `uv run python -m spanish_tutor.ingest.tatoeba` "
-            "(about an hour on CPU)."
+            "(about 90 minutes on CPU)."
         )
 
 
@@ -130,10 +141,10 @@ def read_analyzed(path: Path) -> Iterator[AnalyzedSentence]:
 
 def main() -> None:
     if ANALYZED_PATH.exists():
-        if (found := analyzed_by(ANALYZED_PATH)) == tagger():
+        if (found := analyzed_by(ANALYZED_PATH)) == analysis_setup():
             print(f"skip  {ANALYZED_PATH.name} (exists; delete it to re-analyze)")
             return
-        print(f"re-analyzing: {ANALYZED_PATH.name} was made by {found or 'an unrecorded tagger'}")
+        print(f"re-analyzing: {ANALYZED_PATH.name} was made with {found or 'an unrecorded setup'}")
     print("loading Tatoeba sentences ...")
     sentences = load_sentences(
         RAW_DIR / "spa_sentences_detailed.tsv.bz2",

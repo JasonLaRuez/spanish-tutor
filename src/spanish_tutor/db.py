@@ -157,6 +157,8 @@ TURN_COLUMNS = (
     "retried",
     "input_tokens",
     "cache_read_tokens",
+    "cache_write_5m_tokens",
+    "cache_write_1h_tokens",
     "output_tokens",
     "latency_ms",
 )
