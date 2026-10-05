@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router'
 import { api, type Progress, type SessionSummary } from '../api/client'
 import { formatNumber, when } from '../lib/text'
+import { useConversations } from '../state/context'
 
 type Theme = 'system' | 'light' | 'dark'
 const THEME_KEY = 'spanish-tutor-theme'
@@ -45,11 +46,16 @@ export function Layout() {
 
   useEffect(() => applyTheme(theme), [theme])
 
-  // Refresh the sidebar's history and counts on every page change.
+  // Refresh the sidebar's history and counts on every page change, and when a conversation
+  // ends (it stops being "open") or a reply changes the word counts.
+  const { chats } = useConversations()
+  const activity = Object.values(chats)
+    .map((chat) => `${chat.sessionId}:${chat.items.length}:${chat.closed}`)
+    .join(',')
   useEffect(() => {
     api.sessions().then(setSessions).catch(() => {})
     api.progress().then(setProgress).catch(() => {})
-  }, [location.pathname])
+  }, [location.pathname, activity])
 
   const nextTheme: Record<Theme, Theme> = { system: 'light', light: 'dark', dark: 'system' }
 

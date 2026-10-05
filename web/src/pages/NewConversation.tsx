@@ -3,6 +3,9 @@ import { useNavigate } from 'react-router'
 import { AccentKeyboard } from '../components/AccentKeyboard'
 import { useConversations } from '../state/context'
 
+// The most topic words that can be taught first (MAX_WORDS in topics.py).
+const MAX_NEW_WORDS = 20
+
 const TOPICS = ['el jardín', 'la comida', 'el tiempo', 'los deportes', 'mi familia', 'el trabajo', 'los viajes']
 
 export function NewConversation() {
@@ -65,20 +68,21 @@ export function NewConversation() {
 
         <div className={`space-y-2 ${topic.trim() ? '' : 'opacity-50'}`}>
           <label htmlFor="new-words" className="block font-medium text-ink">
-            New words to learn first: <span className="tabular">{newWords}</span>
+            New words to learn first: up to <span className="tabular">{newWords}</span>
           </label>
           <input
             id="new-words"
             type="range"
             min={2}
-            max={10}
+            max={MAX_NEW_WORDS}
             value={newWords}
             disabled={!topic.trim()}
             onChange={(event) => setNewWords(Number(event.target.value))}
             className="w-full accent-[var(--accent)]"
           />
           <p className="text-sm text-muted">
-            Topic words are chosen from real sentences about the topic and taught before you start.
+            Topic words are chosen from real sentences about the topic and taught before you
+            start. A broad topic may get fewer than you ask for; you’ll see why.
           </p>
         </div>
 

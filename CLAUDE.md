@@ -278,7 +278,7 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
       English inside a "como se dice" quote, before translation turns existed. It stays,
       because the log is append-only.
   - **Next: more real conversations** by Jason (~19 to go), now in the web UI
-    (`uv run spanish-tutor serve`). First, Jason marks the 78 seed-gap words (see "Tagger").
+    (`uv run spanish-tutor serve`).
   - Measured in session 1: Claude stayed inside the word bank in every reply, and gaps
     between turns were 1–3.5 min, with one 33-minute break.
   - **Notebook 02** (`notebooks/02_conversation.ipynb`, done 2026-10-02) walks through one
@@ -301,6 +301,11 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
       tal?* came back as "not recognized" (an unresolved corrector tie, *tal* is listed
       among them); in a clean message it resolved. Measure how often learner turns hit
       this before deciding anything.
+    - ***gracias* is taught as *gracia* (found 2026-10-05):** the transformer tags the
+      thanks *gracias* as the plural noun *gracia* ("grace, charm"; 235 Tatoeba tokens
+      changed in the tagger comparison). Harmless in the corpus, but tutor replies say
+      *gracias* all the time, so it gets taught as a new word. Measure, then fix (likely
+      in the lemma correction, e.g. treat *gracias* as INTJ).
     - **Resuming a conversation after a server restart** isn't built: the transcript is
       shown read-only. It would mean rebuilding `Tutor.history` from `turns`.
     - Then roadmap Phase 3 (difficulty index and recommender). Pre-teaching, the core
@@ -354,15 +359,54 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
     and the known-word list. The ~987 lemmas are stable within a session.
 - **Conversation additions (requested by Jason 2026-10-02, after session 1):**
   - **Topic pre-teaching:**
-    - Before `open()`, `Tutor.pre_teach(n)` teaches n topic words. The CLI asks for the
-      topic and n (2–10, Enter = 5).
-    - Candidates are grounded: the 300 Tatoeba sentences nearest the topic give the
+    - Before `open()`, `Tutor.pre_teach(n)` teaches up to n topic words. n is 2–20 (raised
+      from 10 on 2026-10-05, Jason's request; Enter = 5).
+    - Candidates are grounded: the **2,000** Tatoeba sentences nearest the topic give the
       unknown content words seen at least 3 times. They're ranked by topic association,
       count × log(count / expected count from overall frequency).
-    - Claude chooses n from that list and can't add words; invalid picks are dropped,
-      with a fallback to the top scores.
+    - **Depth measured 2026-10-05** (Jason asked for the noise check): 8 topics, top 40
+      candidates hand-labeled on-topic vs. noise. Noise in the top 20 was 29% at 300
+      sentences, 18% at 1,000, 12% at 2,000; on-topic words offered 49 → 212 → 250. At
+      300, most topics had only 5–15 candidates, so even 10 words couldn't be filled.
+      Broad topics stay noisy at any depth (*el trabajo*: 16 of 40 on-topic).
+    - Claude chooses from `candidate_count(n)` = max(25, 2n) candidates and can't add
+      words; invalid picks are dropped (if none are valid, the top scores are used).
+    - **Claude may choose fewer than n** rather than pad with off-topic words, giving a
+      reason (`TopicWords.fewer_because`). Any shortfall is explained to the learner
+      (`TopicChoice.shortfall`: too few candidates, Claude's reason, or both), shown in
+      the CLI and the web UI ("12 of 20 words: …").
+    - **The words are for the learner to practice (Jason, 2026-10-05).** The note and the
+      system prompt ask the tutor to invite the learner to use them and to use *some*
+      itself where natural, not all. The web UI's "Today's words" checklist ticks each one
+      off when the learner uses it (`TutorTurn.used`; after a reload, rebuilt from the
+      transcript's `pre_taught` and `used`).
     - The words join the frozen prompt vocabulary and are named in every turn's note.
       Their events are logged as `taught`, `source='pre_teach'`, on the opening turn.
+  - **Ending a conversation (Jason, 2026-10-05):**
+    - A message *ending* with a goodbye (*hasta luego / mañana / pronto / la próxima*,
+      *adiós*, *chao/chau*, *nos vemos*; accents optional, an optional short address like
+      ", profesor") ends it: `conversation.is_farewell`, checked in `reply_to` after markers
+      are expanded. It's a normal turn (its words are credited), with `FAREWELL_NOTE` asking
+      for a short goodbye and no question.
+    - The web UI's **¡Hasta luego!** button (`POST /api/sessions/{id}/end`) and the CLI's
+      `/salir` end it with `Tutor.end()` and no learner text: the tutor says goodbye
+      (`GOODBYE_MESSAGE`) and no words are credited, since the learner wrote none.
+    - Then: `sessions.ended_at` is set, the stats are computed, and the tutor's notes are
+      written by one Claude call with its own schema (`SessionNotes`: went well, 2–3 things
+      to work on), from the transcript, its correction notes and the stats. If that call
+      fails, the conversation still ends with its stats (`Ending.notes_error`).
+    - **Schema (migration 004, Jason approved the SQL as proposed):**
+      `sessions.ended_at` (NULL = open or abandoned) and `session_summaries` (one row per
+      session, PK = FK to sessions; the notes, the model, and the same cost columns as
+      `turns`). "Work on" points are one TEXT column, one per line (2–3 lines always shown
+      together; a table would be over-normalized).
+    - **Stats are never stored:** `sql/queries/session_stats.sql` computes them from the
+      log. "Used for the first time" is a `ROW_NUMBER()` over each word's `used` events;
+      it needs a `LEFT JOIN` to `turns`, or seed events (no turn) drop out and every seed
+      `p` word counts as new. Cross-checked against the word bank: per-session first uses
+      equal the production entries learned via conversation (15 + 15 for sessions 1–2).
+    - Ended conversations are closed on the server; History marks them and shows the
+      summary card under the transcript.
   - **Translation turns:**
     - The CLI detects `¿Cómo se dice "…"?` on the raw input, which is lenient about
       accents, quotes and "en español".
@@ -551,8 +595,9 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
     updated; word bank unchanged (999 recognized / 745 produced).
   - **Seed gap:** 78 words entered the top 1,500 that Jason never reviewed (*hola*,
     *callar*, *nadar*, *vamos*, *perdón*; 9 are known words under a new POS, e.g.
-    *francés* NOUN). They're appended to `seed_candidates.csv` (new ranks, blank `known`).
-    **Pending: Jason marks them, then `seed build`.**
+    *francés* NOUN). They're appended to `seed_candidates.csv` (new ranks). Jason marked
+    them 2026-10-03 (14 `r`, 17 `p`, 47 left unknown) and `seed build` loaded them: word
+    bank 1,030 recognized / 762 produced.
 - **Lemma correction** (`lexicon.LemmaCorrector`, added 2026-10-01):
   - When spaCy's `(lemma, pos)` isn't a Wiktionary word, it's repaired from Wiktionary's
     form-of table (`data/raw/wiktionary_es_forms.tsv`).

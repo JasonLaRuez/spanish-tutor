@@ -27,6 +27,7 @@ from pydantic import BaseModel, Field
 from spanish_tutor import db, progress
 from spanish_tutor.config import DB_PATH
 from spanish_tutor.conversation import (
+    Ending,
     Resources,
     TranslationTurn,
     Tutor,
@@ -77,6 +78,7 @@ class TurnOut(BaseModel):
     note_en: str | None
     lessons: list[LessonOut]
     not_words: list[str] = []
+    used: list[str] = []  # words (lemmas) the learner used in the message this replies to
     pending: str | None = None
 
     @classmethod
@@ -97,6 +99,7 @@ class TurnOut(BaseModel):
             note_en=turn.note_en,
             lessons=[LessonOut.of(item) for item in turn.lessons],
             not_words=turn.not_words,
+            used=turn.used,
         )
 
 
@@ -114,6 +117,8 @@ class SessionStarted(BaseModel):
     session_id: int
     topic: str | None
     lessons: list[LessonOut]  # the topic words taught before the conversation
+    requested_words: int  # how many topic words the learner asked for
+    shortfall: str | None  # why fewer than requested were taught, for the learner
     opening: TurnOut
 
 
@@ -121,10 +126,52 @@ class Message(BaseModel):
     text: str = Field(min_length=1)
 
 
+class SummaryOut(BaseModel):
+    """The end-of-conversation summary: stats computed from the log, and the tutor's notes."""
+
+    minutes: float | None
+    messages: int
+    how_to_say: int
+    corrections: int
+    words_used: int
+    words_taught: int
+    first_time: list[str]  # words the learner used for the first time ever
+    pre_taught: list[str]  # today's topic words
+    pre_taught_used: list[str]  # ... the ones the learner used
+    went_well_en: str | None  # the tutor's notes; None if they couldn't be written
+    work_on: list[str]
+    notes_error: str | None = None
+
+    @classmethod
+    def of(cls, stats: dict, notes: dict | None, error: str | None = None) -> "SummaryOut":
+        fields = {key: stats[key] for key in cls.model_fields if key in stats}
+        return cls(
+            **fields,
+            went_well_en=notes["went_well_en"] if notes else None,
+            work_on=notes["work_on"] if notes else [],
+            notes_error=error,
+        )
+
+    @classmethod
+    def of_ending(cls, ending: Ending) -> "SummaryOut":
+        notes = (
+            {"went_well_en": ending.went_well_en, "work_on": ending.work_on}
+            if ending.went_well_en
+            else None
+        )
+        return cls.of(ending.stats, notes, ending.notes_error)
+
+
 class MessageReply(BaseModel):
     written: str  # the learner's text as sent, with accent markers expanded ('a -> á)
     turn: TurnOut
     taught: list[str]  # every word taught this session so far
+    summary: SummaryOut | None = None  # set when the message ended the conversation (a goodbye)
+
+
+class Ended(BaseModel):
+    turn: TurnOut  # the tutor's goodbye
+    summary: SummaryOut
 
 
 class LookUp(BaseModel):
@@ -174,6 +221,7 @@ class SessionSummary(BaseModel):
     corrections: int
     words_taught: int
     words_used: int
+    ended_at: str | None  # None: still open, or left without ending
     active: bool  # still open in this server, so it can be continued
 
 
@@ -185,12 +233,14 @@ class TranscriptTurn(BaseModel):
     note_en: str | None
     created_at: str
     taught: list[str]
+    pre_taught: list[str]  # topic words taught before the conversation (on the opening turn)
     used: list[str]
 
 
 class Transcript(BaseModel):
     session: SessionSummary
     turns: list[TranscriptTurn]
+    summary: SummaryOut | None  # for an ended conversation
 
 
 # --- The app ----------------------------------------------------------------------------
@@ -242,6 +292,8 @@ def create_app(
             session_id=tutor.session_id,
             topic=topic,
             lessons=[LessonOut.of(item) for item in lessons],
+            requested_words=request.new_words if topic else 0,
+            shortfall=tutor.pre_teach_shortfall,
             opening=TurnOut.of(opening),
         )
 
@@ -251,7 +303,24 @@ def create_app(
         with lock:
             written, turn = reply_to(tutor, message.text.strip())
             taught = [lex.lemma for lex in tutor.taught]
+            if isinstance(turn, Ending):  # a goodbye ended it
+                tutors.pop(session_id, None)
+                return MessageReply(
+                    written=written,
+                    turn=TurnOut.of(turn.turn),
+                    taught=taught,
+                    summary=SummaryOut.of_ending(turn),
+                )
         return MessageReply(written=written, turn=TurnOut.of(turn), taught=taught)
+
+    @app.post("/api/sessions/{session_id}/end")
+    def end_session(session_id: int) -> Ended:
+        """End the conversation without a typed goodbye (the "Hasta luego" button)."""
+        tutor = tutor_for(session_id)
+        with lock:
+            ending = tutor.end()
+            tutors.pop(session_id, None)
+        return Ended(turn=TurnOut.of(ending.turn), summary=SummaryOut.of_ending(ending))
 
     @app.post("/api/sessions/{session_id}/lookup")
     def look_up(session_id: int, request: LookUp) -> LessonOut:
@@ -279,7 +348,12 @@ def create_app(
             if summary is None:
                 raise HTTPException(404, "No such session.")
             turns = progress.transcript(conn, session_id)
+            ended = None
+            if summary["ended_at"]:
+                stats = progress.session_stats(conn, session_id)
+                ended = SummaryOut.of(stats, progress.summary(conn, session_id))
         return Transcript(
+            summary=ended,
             session=SessionSummary(**summary, active=session_id in tutors),
             turns=[
                 TranscriptTurn(
@@ -290,6 +364,7 @@ def create_app(
                     note_en=clean_note(t["note_en"]),
                     created_at=t["created_at"],
                     taught=t["taught"].split(", ") if t["taught"] else [],
+                    pre_taught=t["pre_taught"].split(", ") if t["pre_taught"] else [],
                     used=t["used"].split(", ") if t["used"] else [],
                 )
                 for t in turns

@@ -121,6 +121,34 @@ def start_session(
     ).lastrowid
 
 
+def end_session(conn: sqlite3.Connection, session_id: int) -> None:
+    """Record that the learner ended the session (only the first time)."""
+    conn.execute(
+        "UPDATE sessions SET ended_at = CURRENT_TIMESTAMP "
+        "WHERE session_id = ? AND ended_at IS NULL",
+        (session_id,),
+    )
+
+
+def add_summary(
+    conn: sqlite3.Connection,
+    session_id: int,
+    went_well_en: str,
+    work_on: list[str],
+    model: str,
+    **costs: int,
+) -> None:
+    """Store the tutor's end-of-conversation notes; `costs` are the token and latency columns."""
+    if unknown := set(costs) - {"input_tokens", "cache_read_tokens", "output_tokens", "latency_ms"}:
+        raise TypeError(f"Unknown summary columns: {sorted(unknown)}")
+    names = ["session_id", "went_well_en", "work_on_en", "model", *costs]
+    conn.execute(
+        f"INSERT INTO session_summaries ({', '.join(names)}) "
+        f"VALUES ({', '.join('?' * len(names))})",
+        (session_id, went_well_en, "\n".join(work_on), model, *costs.values()),
+    )
+
+
 TURN_COLUMNS = (
     "kind",
     "note_en",

@@ -2,14 +2,20 @@
 spaCy). Both live in fakes.py, shared with the API tests."""
 
 import pytest
-from fakes import FORMS, Scripted, analyze, said, seed_bank
+from fakes import FORMS, Scripted, analyze, make_topic_store, notes, said, seed_bank
 from langchain_core.embeddings import DeterministicFakeEmbedding
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from spanish_tutor.conversation import (
+    FAREWELL_NOTE,
+    GOODBYE_MESSAGE,
+    Ending,
     Tutor,
     clean_note,
+    is_farewell,
     parse_translation_request,
+    reply_to,
+    summary_prompt,
     vocabulary_block,
 )
 from spanish_tutor.ingest.index_tatoeba import index_sentences
@@ -417,31 +423,13 @@ def test_the_translation_note_names_the_phrase_and_the_conversation_resumes(make
 
 @pytest.fixture
 def topic_store(bank, tmp_path):
-    """Sentences about dogs swimming, with frequencies for the candidate scoring."""
-    bank.executemany(
-        "UPDATE lexemes SET frequency_per_million = ? WHERE lemma = ?",
-        [(30.0, "perro"), (5.0, "nadar"), (20.0, "río"), (5000.0, "el"), (900.0, "casa")],
-    )
-    store = open_store(tmp_path / "chroma", embeddings=DeterministicFakeEmbedding(size=32))
-    vocab = [FORMS[w] for w in ["el", "perro", "nada", "río"]]
-    sentences = [
-        AnalyzedSentence(
-            id=i,
-            es="El perro nada en el río.",
-            en="The dog swims.",
-            author=None,
-            tokens=[(lemma, [(lemma, pos)]) for lemma, pos in vocab],
-        )
-        for i in range(4)
-    ]
-    index_sentences(store, sentences, report=lambda _: None)
-    return store
+    return make_topic_store(bank, tmp_path / "chroma")
 
 
 def test_pre_taught_words_are_taught_before_the_conversation_and_logged_with_it(
     make_tutor, bank, topic_store
 ):
-    choice = TopicWords(words=["perro|NOUN", "nadar|VERB"])
+    choice = TopicWords(words=["perro|NOUN", "nadar|VERB"], fewer_because=None)
     tutor, generator = make_tutor(choice, "Hola. El perro nada.", store=topic_store)
     lessons = tutor.pre_teach(2)
     turn = tutor.open()
@@ -464,7 +452,7 @@ def test_pre_taught_words_are_taught_before_the_conversation_and_logged_with_it(
 
 
 def test_pre_taught_words_are_in_the_frozen_vocabulary_and_every_note(make_tutor, topic_store):
-    choice = TopicWords(words=["perro|NOUN", "nadar|VERB"])
+    choice = TopicWords(words=["perro|NOUN", "nadar|VERB"], fewer_because=None)
     tutor, generator = make_tutor(choice, "Hola.", "Bien.", store=topic_store)
     tutor.pre_teach(2)
     tutor.open()
@@ -475,10 +463,10 @@ def test_pre_taught_words_are_in_the_frozen_vocabulary_and_every_note(make_tutor
     assert "perro" in vocabulary and "nadar" in vocabulary
     assert "perro, nadar" in opening_request[-2].content  # the opening message
     for request in (opening_request, reply_request):
-        assert (
-            "Words taught for today's topic, before the conversation: perro, nadar."
-            in request[-1].content
-        )
+        note = request[-1].content
+        assert "taught for today's topic, before the conversation: perro, nadar." in note
+        # The words are for the learner to practice; the tutor uses some, not all.
+        assert "invite the learner to use them" in note and "don't need to use them all" in note
         assert "Words taught this session: none yet." in request[-1].content
 
 
@@ -488,3 +476,122 @@ def test_pre_teaching_needs_a_topic_and_must_come_before_the_opening(make_tutor,
     tutor, _ = make_tutor("Hola.", store=topic_store)
     tutor.open()
     assert tutor.pre_teach(3) == []  # the vocabulary is frozen once the conversation opens
+
+
+def test_fewer_topic_words_than_requested_come_with_a_reason(make_tutor, topic_store):
+    choice = TopicWords(words=["perro|NOUN"], fewer_because="Only perro is about animals.")
+    tutor, _ = make_tutor(choice, "Hola.", store=topic_store)
+    lessons = tutor.pre_teach(5)
+    assert [item.lemma for item in lessons] == ["perro"]
+    # 3 candidates for 5 requested, and Claude chose 1 of them.
+    assert tutor.pre_teach_shortfall == (
+        "Only 3 words about “los animales” turned up that you don't know yet. "
+        "Only perro is about animals."
+    )
+
+
+def test_all_requested_topic_words_means_no_shortfall(make_tutor, topic_store):
+    choice = TopicWords(words=["perro|NOUN", "nadar|VERB"], fewer_because=None)
+    tutor, _ = make_tutor(choice, "Hola.", store=topic_store)
+    tutor.pre_teach(2)
+    assert tutor.pre_teach_shortfall is None
+
+
+def test_a_turn_reports_the_words_the_learner_used(make_tutor):
+    tutor, _ = make_tutor("Hola.", "¡Bien!")
+    tutor.open()
+    assert tutor.respond("Yo estoy cansado hoy.").used == ["yo", "estar", "cansado", "hoy"]
+
+
+# --- Ending a conversation ----------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("text", "ends"),
+    [
+        ("¡Hasta luego!", True),
+        ("Bueno, tengo que irme. ¡Adiós!", True),
+        ("Gracias, nos vemos", True),
+        ("¡Chao, profesor!", True),
+        ("adios", True),  # accents optional
+        ("hasta manana!", True),
+        ("Hasta la próxima vez.", True),
+        ("Mi abuela dice hasta luego a todos.", False),  # not at the end
+        ("¿Cómo se dice adiós?", False),
+        ("chaos", False),
+    ],
+)
+def test_a_message_ending_with_a_goodbye_ends_the_conversation(text, ends):
+    assert is_farewell(text) is ends
+
+
+def test_a_typed_goodbye_is_a_turn_then_the_summary_is_stored(make_tutor, bank):
+    tutor, generator = make_tutor(
+        "Hola.", said("Adiós, hasta pronto.", correction="Say 'cansado'."), notes()
+    )
+    tutor.open()
+    ending = tutor.end("Yo estoy cansado. ¡Adiós!")
+
+    assert isinstance(ending, Ending) and tutor.ended
+    assert ending.turn.reply_es == "Adiós, hasta pronto."
+    assert FAREWELL_NOTE in generator.requests[1][-1].content  # no question, just goodbye
+    assert {"yo", "estar", "cansado"} <= set(ending.turn.used)  # the goodbye's words count
+    assert (ending.went_well_en, ending.work_on) == (
+        "You asked good questions.",
+        ["Practice estar."],
+    )
+    assert ending.stats["messages"] == 1 and ending.stats["corrections"] == 1
+    assert sorted(ending.stats["first_time"]) == ["cansado", "estar", "yo"]
+    session = bank.execute("SELECT ended_at FROM sessions").fetchone()
+    assert session["ended_at"] is not None
+    row = bank.execute("SELECT went_well_en, work_on_en, output_tokens FROM session_summaries")
+    assert tuple(row.fetchone()) == ("You asked good questions.", "Practice estar.", 120)
+
+
+def test_the_summary_request_has_the_transcript_notes_and_numbers(make_tutor):
+    tutor, generator = make_tutor("Hola.", said("¡Adiós!", correction="Use estar."), notes())
+    tutor.open()
+    tutor.end("Yo soy cansado. Adiós.")
+    prompt = generator.requests[-1]
+    assert "Learner: Yo soy cansado. Adiós." in prompt
+    assert "(note to the learner: Use estar.)" in prompt
+    assert "Corrections given: 1" in prompt and "don't invent mistakes" in prompt
+
+
+def test_ending_without_a_goodbye_credits_no_words(make_tutor, bank):
+    tutor, generator = make_tutor("Hola.", "¡Hasta luego!", notes())
+    tutor.open()
+    ending = tutor.end()  # the app's button
+
+    assert generator.requests[1][-2].content == GOODBYE_MESSAGE
+    assert ending.turn.used == []
+    assert bank.execute("SELECT COUNT(*) FROM turns WHERE role = 'learner'").fetchone()[0] == 0
+    assert events(bank, event_type="used") == []
+
+
+def test_a_failed_summary_still_ends_the_conversation_with_its_stats(make_tutor, bank):
+    tutor, _ = make_tutor("Hola.", "Adiós.", RuntimeError("overloaded"))
+    tutor.open()
+    ending = tutor.end()
+    assert (ending.went_well_en, ending.notes_error) == (None, "overloaded")
+    assert ending.stats["messages"] == 0
+    assert bank.execute("SELECT ended_at FROM sessions").fetchone()[0] is not None
+    assert bank.execute("SELECT COUNT(*) FROM session_summaries").fetchone()[0] == 0
+
+
+def test_messages_are_routed_to_the_ending_by_their_goodbye(make_tutor):
+    tutor, _ = make_tutor("Hola.", "¡Bien!", "Adiós.", notes())
+    tutor.open()
+    _, turn = reply_to(tutor, "Estoy cansado hoy.")
+    assert not isinstance(turn, Ending)
+    written, ending = reply_to(tutor, "Bueno, me voy. ¡Adi'os!")  # a typed marker
+    assert written == "Bueno, me voy. ¡Adiós!" and isinstance(ending, Ending)
+
+
+def test_summary_prompt_lists_todays_unused_words():
+    stats = {
+        "messages": 3, "corrections": 0, "how_to_say": 1, "first_time": [],
+        "pre_taught": ["regar", "césped"], "pre_taught_used": ["regar"],
+    }  # fmt: skip
+    prompt = summary_prompt("el jardín", [], stats)
+    assert "Not used by the learner: césped." in prompt and "about el jardín" in prompt

@@ -78,10 +78,12 @@ plus a short note in English.
 uv run python -m spanish_tutor.conversation --topic "el tiempo"
 ```
 
-With a topic (from `--topic`, or asked at the start), the tutor first teaches a few topic
-words (you choose how many, 2–10), then works them into the conversation. The candidates come
-from the Tatoeba sentences closest to the topic, ranked by how strongly each word is
-associated with it; Claude picks the most useful ones from that list and can't add others.
+With a topic (from `--topic`, or asked at the start), the tutor first teaches topic words
+(you choose how many, 2–20), then asks questions that invite you to use them. The candidates
+come from the 2,000 Tatoeba sentences closest to the topic, ranked by how strongly each word
+is associated with it; Claude picks the most useful ones from that list and can't add others.
+A broad topic may get fewer words than you asked for, and you're told why. In the web app,
+"Today's words" checks each one off as you use it.
 
 During a conversation:
 
@@ -91,7 +93,13 @@ During a conversation:
 | `/q palabra` | Look a word up |
 | `/en` | See the last reply in English |
 | `/palabras` | List the words taught this session |
-| `/salir` | Quit |
+| `/salir` | End the conversation and see its summary |
+
+To end a conversation, say goodbye: a message ending with *hasta luego*, *adiós*, *chao*,
+*nos vemos* (and similar) ends it, or use the web app's **¡Hasta luego!** button. You get a
+summary: minutes, messages, corrections, words used and taught, the words you used for the
+first time ever, which of today's words you used, and the tutor's notes on what went well
+and what to work on next. History keeps each summary.
 
 On an English keyboard, type accents as markers before the letter: `'a` → á (any vowel),
 `~n` → ñ, `:u` → ü, and `?` or `!` directly before a word → ¿ or ¡. So `?Qu'e tal?`

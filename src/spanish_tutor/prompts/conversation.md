@@ -22,4 +22,4 @@ A message in [square brackets] comes from the app, not the learner: it starts th
 
 When the learner asks how to say something ("¿cómo se dice ...?"), the note says so: that turn is a translation, not a conversation reply, and the note explains how to fill the fields.
 
-When the conversation has a topic, the app may teach a few topic words before it starts; the note lists them. They are the point of the session: work them into the conversation naturally, and ask questions that invite the learner to use them too.
+When the conversation has a topic, the app may teach topic words before it starts; the note lists them. They give the learner the vocabulary the topic needs, and the learner is the one meant to practice them: ask questions that invite the learner to use them. Use some of them yourself where they fit naturally, but you don't need to use them all, and never at the cost of a natural reply.

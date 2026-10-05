@@ -3,10 +3,12 @@ import userEvent from '@testing-library/user-event'
 import { useRef, useState } from 'react'
 import { MemoryRouter } from 'react-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { api, ApiError, type Lesson, type Turn } from '../api/client'
+import { api, ApiError, type Lesson, type Summary, type Turn } from '../api/client'
 import { AccentKeyboard } from '../components/AccentKeyboard'
 import { toPoints } from '../lib/growth'
 import { TutorMessage, TypingIndicator } from '../components/Messages'
+import { SummaryCard } from '../components/SummaryCard'
+import { PreTaught } from '../components/TodaysWords'
 import { niceTicks } from '../lib/chart'
 import { insertAt, splitWords } from '../lib/text'
 import { ChatView } from '../pages/Chat'
@@ -28,6 +30,7 @@ const turn = (overrides: Partial<Turn> = {}): Turn => ({
   note_en: null,
   lessons: [],
   not_words: [],
+  used: [],
   pending: null,
   ...overrides,
 })
@@ -139,6 +142,8 @@ describe('ChatView', () => {
     topic: 'el jardín',
     items: [{ kind: 'tutor', id: 1, turn: turn() }],
     taught: ['regar'],
+    focus: [],
+    used: [],
     pending: false,
     closed: false,
     ...overrides,
@@ -174,10 +179,119 @@ describe('ChatView', () => {
     expect(screen.getByRole('button', { name: 'Send' })).toBeEnabled()
   })
 
+  it("checks off today's words as the learner uses them", () => {
+    renderChat(chat({ focus: ['regar', 'césped', 'planta'], used: ['yo', 'regar', 'planta'] }))
+    expect(screen.getByRole('button', { name: 'Today’s words: 2 of 3 used' })).toBeInTheDocument()
+    const words = screen.getByRole('list', { name: 'Today’s words' })
+    expect(words).toHaveTextContent('✓ regar')
+    expect(words).toHaveTextContent('✓ planta')
+    expect(screen.getByText('césped')).toHaveTextContent('césped (not used yet)')
+  })
+
+  it('has no checklist when no words were taught first', () => {
+    renderChat(chat())
+    expect(screen.queryByRole('button', { name: /Today’s words/ })).not.toBeInTheDocument()
+  })
+
   it('offers a new conversation once this one has ended', () => {
     renderChat(chat({ closed: true }))
     expect(screen.queryByLabelText('Your message')).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Start a new one' })).toBeInTheDocument()
+  })
+})
+
+describe('PreTaught', () => {
+  it('says how many of the requested words were taught, and why not more', () => {
+    render(<PreTaught lessons={[lesson]} requested={20} shortfall="The rest weren't really about the topic." />)
+    expect(screen.getByText('1 of 20 words:')).toBeInTheDocument()
+    expect(screen.getByText("The rest weren't really about the topic.")).toBeInTheDocument()
+    expect(screen.getByText(/Try to use these in your replies/)).toBeInTheDocument()
+  })
+
+  it('has no shortfall note when every requested word was taught', () => {
+    render(<PreTaught lessons={[lesson]} requested={1} shortfall={null} />)
+    expect(screen.queryByText(/of 1 words/)).not.toBeInTheDocument()
+  })
+})
+
+const summary = (overrides: Partial<Summary> = {}): Summary => ({
+  minutes: 22,
+  messages: 8,
+  how_to_say: 3,
+  corrections: 7,
+  words_used: 55,
+  words_taught: 14,
+  first_time: ['celular', 'videojuego'],
+  pre_taught: ['escena', 'pantalla', 'videojuego'],
+  pre_taught_used: ['escena', 'videojuego'],
+  went_well_en: 'You kept the conversation going.',
+  work_on: ['Use estar for states: "estoy cansado".', 'Try "pantalla".'],
+  notes_error: null,
+  ...overrides,
+})
+
+describe('SummaryCard', () => {
+  it('shows the numbers, new words, today’s words and the tutor’s notes', () => {
+    render(<SummaryCard summary={summary()} />)
+    const card = screen.getByRole('region', { name: 'Conversation summary' })
+    expect(card).toHaveTextContent('Messages8')
+    expect(card).toHaveTextContent('Corrections7')
+    expect(screen.getByText('Used for the first time: 2 words')).toBeInTheDocument()
+    expect(screen.getByText('celular, videojuego')).toBeInTheDocument()
+    expect(screen.getByText('Today’s words: 2 of 3 used')).toBeInTheDocument()
+    expect(screen.getByText('pantalla')).toHaveTextContent('pantalla (not used yet)')
+    expect(screen.getByText('You kept the conversation going.')).toBeInTheDocument()
+    expect(screen.getByText('Try "pantalla".')).toBeInTheDocument()
+  })
+
+  it('still shows the numbers when the notes failed', () => {
+    render(<SummaryCard summary={summary({ went_well_en: null, work_on: [], notes_error: 'overloaded' })} />)
+    expect(screen.getByText(/The tutor’s notes couldn’t be written \(overloaded\)/)).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Conversation summary' })).toHaveTextContent('Messages8')
+  })
+})
+
+describe('ending a conversation', () => {
+  const chat = (overrides: Partial<Chat> = {}): Chat => ({
+    sessionId: 7,
+    topic: 'los videojuegos',
+    items: [{ kind: 'tutor', id: 1, turn: turn() }],
+    taught: [],
+    focus: [],
+    used: [],
+    pending: false,
+    closed: false,
+    ...overrides,
+  })
+  const renderChat = (value: Chat) =>
+    render(
+      <MemoryRouter>
+        <ConversationsProvider>
+          <ChatView chat={value} />
+        </ConversationsProvider>
+      </MemoryRouter>,
+    )
+
+  it('the Hasta luego button asks the server to end it', async () => {
+    const user = userEvent.setup()
+    const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ turn: turn({ reply_es: '¡Adiós!' }), summary: summary() })),
+    )
+    renderChat(chat())
+    await user.click(screen.getByRole('button', { name: '¡Hasta luego!' }))
+    expect(fetch).toHaveBeenCalledWith('/api/sessions/7/end', expect.objectContaining({ method: 'POST' }))
+  })
+
+  it('can’t be pressed while a reply is on its way', () => {
+    renderChat(chat({ pending: true }))
+    expect(screen.getByRole('button', { name: '¡Hasta luego!' })).toBeDisabled()
+  })
+
+  it('shows the summary in the chat once it has ended', () => {
+    renderChat(chat({ closed: true, items: [{ kind: 'summary', id: 2, summary: summary() }] }))
+    expect(screen.getByRole('region', { name: 'Conversation summary' })).toBeInTheDocument()
+    expect(screen.getByText(/This conversation has ended/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '¡Hasta luego!' })).not.toBeInTheDocument()
   })
 })
 

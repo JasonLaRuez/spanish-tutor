@@ -5,12 +5,13 @@ connections, which an in-memory database can't share.
 """
 
 import pytest
-from fakes import KNOWN, Scripted, analyze, said, seed_bank
+from fakes import KNOWN, Scripted, analyze, make_topic_store, notes, said, seed_bank
 from fastapi.testclient import TestClient
 
 from spanish_tutor import db
 from spanish_tutor.api.app import create_app
 from spanish_tutor.conversation import Resources
+from spanish_tutor.topics import TopicWords
 from spanish_tutor.words import LexiconIndex
 
 
@@ -30,12 +31,17 @@ def serve(db_path, tmp_path, make_wiktionary):
     wiktionary = make_wiktionary([("pez", "noun", "fish")])
     clients = []
 
-    def make(*replies, web_dist=tmp_path / "no-ui"):
+    def make(*replies, web_dist=tmp_path / "no-ui", topics=False):
         generator = Scripted(*replies)
+        store = None
+        if topics:  # sentences about a dog swimming, for topic pre-teaching
+            conn = db.connect(db_path)
+            store = make_topic_store(conn, tmp_path / "chroma")
+            conn.close()
 
         def load():
             conn = db.connect(db_path, check_same_thread=False)
-            return Resources(conn, generator, LexiconIndex(conn, wiktionary), analyze, None)
+            return Resources(conn, generator, LexiconIndex(conn, wiktionary), analyze, store)
 
         client = TestClient(create_app(load=load, db_path=db_path, web_dist=web_dist))
         client.__enter__()
@@ -77,6 +83,27 @@ def test_starting_a_session_returns_the_opening_and_records_it(serve, db_path):
     ]
 
 
+def test_a_session_reports_topic_words_and_why_fewer_than_requested(serve):
+    choice = TopicWords(words=["perro|NOUN", "nadar|VERB"], fewer_because="Only two fit.")
+    client, _ = serve(choice, "Hola.", topics=True)
+    started = start(client, topic="los animales", new_words=5)
+
+    assert [lesson["lemma"] for lesson in started["lessons"]] == ["perro", "nadar"]
+    assert started["requested_words"] == 5
+    assert started["shortfall"] == (
+        "Only 3 words about “los animales” turned up that you don't know yet. Only two fit."
+    )
+    opening = client.get(f"/api/sessions/{started['session_id']}").json()["turns"][0]
+    assert opening["pre_taught"] == ["perro", "nadar"]  # restores the checklist on reload
+
+
+def test_a_session_with_every_requested_word_has_no_shortfall(serve):
+    choice = TopicWords(words=["perro|NOUN", "nadar|VERB"], fewer_because=None)
+    client, _ = serve(choice, "Hola.", topics=True)
+    started = start(client, topic="los animales", new_words=2)
+    assert (started["requested_words"], started["shortfall"]) == (2, None)
+
+
 def test_a_message_expands_markers_and_logs_the_learners_words(serve, db_path):
     client, _ = serve("Hola.", said("¡Qué bien!", correction="Say 'estoy'."))
     session = start(client)["session_id"]
@@ -93,6 +120,7 @@ def test_a_message_expands_markers_and_logs_the_learners_words(serve, db_path):
         "WHERE e.event_type = 'used' ORDER BY l.lemma",
     )
     assert used == [("cansado",), ("estar",), ("yo",)]
+    assert body["turn"]["used"] == ["yo", "estar", "cansado"]  # for the word checklist
 
 
 def test_how_to_say_is_answered_as_a_translation_and_teaches_its_words(serve, db_path):
@@ -125,8 +153,8 @@ def test_a_conversation_the_server_doesnt_have_open_is_404(serve):
     assert response.status_code == 404
 
 
-@pytest.mark.parametrize("new_words", [1, 11, -1])
-def test_new_word_counts_outside_2_to_10_are_rejected(serve, new_words):
+@pytest.mark.parametrize("new_words", [1, 21, -1])
+def test_new_word_counts_outside_2_to_20_are_rejected(serve, new_words):
     client, _ = serve()
     response = client.post("/api/sessions", json={"topic": "x", "new_words": new_words})
     assert response.status_code == 422
@@ -199,3 +227,50 @@ def test_the_built_ui_is_served_with_a_fallback_for_its_own_routes(serve, tmp_pa
     assert client.get("/assets/app.js").text == "console.log(1)"
     assert client.get("/api/health").json() == {"ok": True}
     assert "tutor" in client.get("/..%2Fword_bank.db").text  # never a file outside dist
+
+
+# --- Ending a conversation ---------------------------------------------------------------------
+
+
+def test_a_goodbye_message_ends_the_conversation_with_a_summary(serve):
+    client, _ = serve("Hola.", said("¡Hasta pronto!", correction="Use estar."), notes())
+    session = start(client)["session_id"]
+
+    body = client.post(
+        f"/api/sessions/{session}/messages", json={"text": "Yo estoy cansado. ¡Hasta luego!"}
+    ).json()
+
+    assert body["turn"]["reply_es"] == "¡Hasta pronto!"
+    summary = body["summary"]
+    assert (summary["messages"], summary["corrections"]) == (1, 1)
+    assert sorted(summary["first_time"]) == ["cansado", "estar", "yo"]
+    assert summary["went_well_en"] == "You asked good questions."
+    assert summary["work_on"] == ["Practice estar."]
+    # Ended: closed on the server, marked in history, summary kept with the transcript.
+    assert (
+        client.post(f"/api/sessions/{session}/messages", json={"text": "hola"}).status_code == 404
+    )
+    (listed,) = client.get("/api/sessions").json()
+    assert listed["ended_at"] is not None and listed["active"] is False
+    transcript = client.get(f"/api/sessions/{session}").json()
+    assert transcript["summary"]["went_well_en"] == "You asked good questions."
+    assert transcript["summary"]["first_time"] == summary["first_time"]
+
+
+def test_the_end_button_ends_without_a_learner_turn(serve, db_path):
+    client, _ = serve("Hola.", "¡Hasta luego!", notes())
+    session = start(client)["session_id"]
+
+    body = client.post(f"/api/sessions/{session}/end").json()
+
+    assert body["turn"]["reply_es"] == "¡Hasta luego!"
+    assert body["summary"]["messages"] == 0 and body["summary"]["work_on"] == ["Practice estar."]
+    assert rows(db_path, "SELECT role FROM turns") == [("tutor",), ("tutor",)]
+    assert client.post(f"/api/sessions/{session}/end").status_code == 404  # already ended
+
+
+def test_an_open_conversation_has_no_summary(serve):
+    client, _ = serve("Hola.")
+    session = start(client)["session_id"]
+    transcript = client.get(f"/api/sessions/{session}").json()
+    assert transcript["summary"] is None and transcript["session"]["ended_at"] is None

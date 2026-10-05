@@ -2,8 +2,9 @@ import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type Keyb
 import { Link, useParams } from 'react-router'
 import { api } from '../api/client'
 import { AccentKeyboard } from '../components/AccentKeyboard'
-import { LessonList } from '../components/LessonCard'
 import { LearnerMessage, TutorMessage, TypingIndicator } from '../components/Messages'
+import { SummaryCard } from '../components/SummaryCard'
+import { PreTaught, TodaysWords } from '../components/TodaysWords'
 import { useConversations, type Chat } from '../state/context'
 
 const HOW_TO_SAY = '¿Cómo se dice ""?'
@@ -40,9 +41,11 @@ export function ChatPage() {
 }
 
 export function ChatView({ chat }: { chat: Chat }) {
-  const { send, lookUp } = useConversations()
+  const { send, lookUp, end: endConversation } = useConversations()
   const [text, setText] = useState('')
   const [showTaught, setShowTaught] = useState(false)
+  const [showToday, setShowToday] = useState(true)
+  const usedToday = chat.focus.filter((word) => chat.used.includes(word)).length
   const field = useRef<HTMLTextAreaElement>(null)
   const end = useRef<HTMLDivElement>(null)
 
@@ -89,6 +92,16 @@ export function ChatView({ chat }: { chat: Chat }) {
           <h1 className="truncate font-semibold text-ink">{chat.topic ?? 'Open conversation'}</h1>
           <p className="text-xs text-muted">Click any Spanish word to look it up.</p>
         </div>
+        {chat.focus.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setShowToday((shown) => !shown)}
+            aria-expanded={showToday}
+            className="rounded-md border border-line px-2.5 py-1 text-sm text-ink-2 hover:bg-surface-2"
+          >
+            Today’s words: {usedToday} of {chat.focus.length} used
+          </button>
+        )}
         <button
           type="button"
           onClick={() => setShowTaught((shown) => !shown)}
@@ -98,6 +111,12 @@ export function ChatView({ chat }: { chat: Chat }) {
           Words taught: {chat.taught.length}
         </button>
       </header>
+
+      {showToday && chat.focus.length > 0 && (
+        <div className="border-b border-line bg-surface px-6 py-2.5">
+          <TodaysWords focus={chat.focus} used={chat.used} />
+        </div>
+      )}
 
       {showTaught && (
         <div className="border-b border-line bg-surface-2 px-6 py-2 text-sm text-ink-2">
@@ -110,7 +129,14 @@ export function ChatView({ chat }: { chat: Chat }) {
           {chat.items.map((item) => {
             switch (item.kind) {
               case 'lessons':
-                return <LessonList key={item.id} lessons={item.lessons} title="Words for today" />
+                return (
+                  <PreTaught
+                    key={item.id}
+                    lessons={item.lessons}
+                    requested={item.requested}
+                    shortfall={item.shortfall}
+                  />
+                )
               case 'tutor':
                 return (
                   <TutorMessage
@@ -121,6 +147,8 @@ export function ChatView({ chat }: { chat: Chat }) {
                 )
               case 'learner':
                 return <LearnerMessage key={item.id} text={item.text} />
+              case 'summary':
+                return <SummaryCard key={item.id} summary={item.summary} />
               case 'error':
                 return (
                   <p key={item.id} role="alert" className="text-sm text-danger">
@@ -139,6 +167,10 @@ export function ChatView({ chat }: { chat: Chat }) {
           {chat.closed ? (
             <p className="text-sm text-ink-2">
               This conversation has ended.{' '}
+              <Link to="/history" className="text-accent-text underline">
+                History
+              </Link>
+              {' · '}
               <Link to="/new" className="text-accent-text underline">
                 Start a new one
               </Link>
@@ -147,13 +179,24 @@ export function ChatView({ chat }: { chat: Chat }) {
             <>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <AccentKeyboard target={field} value={text} onChange={setText} />
-                <button
-                  type="button"
-                  onClick={askHowToSay}
-                  className="rounded-md border border-line px-2.5 py-1 text-sm text-ink-2 hover:bg-surface-2"
-                >
-                  ¿Cómo se dice…?
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={askHowToSay}
+                    className="rounded-md border border-line px-2.5 py-1 text-sm text-ink-2 hover:bg-surface-2"
+                  >
+                    ¿Cómo se dice…?
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => endConversation(chat.sessionId)}
+                    disabled={chat.pending}
+                    title="End the conversation and see a summary (or just write “¡Hasta luego!”)"
+                    className="rounded-md border border-line px-2.5 py-1 text-sm text-ink-2 hover:bg-surface-2 disabled:opacity-40"
+                  >
+                    ¡Hasta luego!
+                  </button>
+                </div>
               </div>
               <div className="flex items-end gap-2">
                 <label htmlFor="message" className="sr-only">

@@ -56,6 +56,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sessions/{session_id}/end": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * End Session
+         * @description End the conversation without a typed goodbye (the "Hasta luego" button).
+         */
+        post: operations["end_session_api_sessions__session_id__end_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sessions/{session_id}/lookup": {
         parameters: {
             query?: never;
@@ -123,6 +143,11 @@ export interface components {
             recognized: number;
             /** Produced */
             produced: number;
+        };
+        /** Ended */
+        Ended: {
+            turn: components["schemas"]["TurnOut"];
+            summary: components["schemas"]["SummaryOut"];
         };
         /** ExampleOut */
         ExampleOut: {
@@ -203,6 +228,7 @@ export interface components {
             turn: components["schemas"]["TurnOut"];
             /** Taught */
             taught: string[];
+            summary?: components["schemas"]["SummaryOut"] | null;
         };
         /** NewSession */
         NewSession: {
@@ -213,7 +239,7 @@ export interface components {
             topic?: string | null;
             /**
              * New Words
-             * @description Topic words to teach first: 0, or 2-10.
+             * @description Topic words to teach first: 0, or 2-20.
              * @default 0
              */
             new_words: number;
@@ -239,6 +265,10 @@ export interface components {
             topic: string | null;
             /** Lessons */
             lessons: components["schemas"]["LessonOut"][];
+            /** Requested Words */
+            requested_words: number;
+            /** Shortfall */
+            shortfall: string | null;
             opening: components["schemas"]["TurnOut"];
         };
         /** SessionSummary */
@@ -263,14 +293,47 @@ export interface components {
             words_taught: number;
             /** Words Used */
             words_used: number;
+            /** Ended At */
+            ended_at: string | null;
             /** Active */
             active: boolean;
+        };
+        /**
+         * SummaryOut
+         * @description The end-of-conversation summary: stats computed from the log, and the tutor's notes.
+         */
+        SummaryOut: {
+            /** Minutes */
+            minutes: number | null;
+            /** Messages */
+            messages: number;
+            /** How To Say */
+            how_to_say: number;
+            /** Corrections */
+            corrections: number;
+            /** Words Used */
+            words_used: number;
+            /** Words Taught */
+            words_taught: number;
+            /** First Time */
+            first_time: string[];
+            /** Pre Taught */
+            pre_taught: string[];
+            /** Pre Taught Used */
+            pre_taught_used: string[];
+            /** Went Well En */
+            went_well_en: string | null;
+            /** Work On */
+            work_on: string[];
+            /** Notes Error */
+            notes_error?: string | null;
         };
         /** Transcript */
         Transcript: {
             session: components["schemas"]["SessionSummary"];
             /** Turns */
             turns: components["schemas"]["TranscriptTurn"][];
+            summary: components["schemas"]["SummaryOut"] | null;
         };
         /** TranscriptTurn */
         TranscriptTurn: {
@@ -294,6 +357,8 @@ export interface components {
             created_at: string;
             /** Taught */
             taught: string[];
+            /** Pre Taught */
+            pre_taught: string[];
             /** Used */
             used: string[];
         };
@@ -322,6 +387,11 @@ export interface components {
              * @default []
              */
             not_words: string[];
+            /**
+             * Used
+             * @default []
+             */
+            used: string[];
             /** Pending */
             pending?: string | null;
         };
@@ -444,6 +514,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MessageReply"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    end_session_api_sessions__session_id__end_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Ended"];
                 };
             };
             /** @description Validation Error */

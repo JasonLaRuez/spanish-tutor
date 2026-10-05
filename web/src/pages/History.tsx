@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { api, type SessionSummary, type Transcript } from '../api/client'
 import { LearnerMessage, Note } from '../components/Messages'
+import { SummaryCard } from '../components/SummaryCard'
 import { when } from '../lib/text'
 
 export function HistoryList() {
@@ -31,7 +32,7 @@ export function HistoryList() {
                 <th className="px-3 py-2.5 text-right font-medium">Corrections</th>
                 <th className="px-3 py-2.5 text-right font-medium">Words taught</th>
                 <th className="px-3 py-2.5 text-right font-medium">Words used</th>
-                <th className="px-4 py-2.5" />
+                <th className="px-4 py-2.5 font-medium">Status</th>
               </tr>
             </thead>
             <tbody className="tabular">
@@ -49,6 +50,8 @@ export function HistoryList() {
                   <td className="px-3 py-2.5 text-right">{s.words_taught}</td>
                   <td className="px-3 py-2.5 text-right">{s.words_used}</td>
                   <td className="px-4 py-2.5 text-right">
+                    {s.ended_at && <span className="text-muted">Ended</span>}
+                    {!s.ended_at && !s.active && <span className="text-muted">Left open</span>}
                     {s.active && (
                       <Link
                         to={`/chat/${s.session_id}`}
@@ -94,7 +97,7 @@ export function TranscriptPage() {
 
   if (error) return <p className="p-8 text-danger">{error}</p>
   if (!transcript) return <p className="p-8 text-muted">Loading…</p>
-  const { session, turns } = transcript
+  const { session, turns, summary } = transcript
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-10">
@@ -137,6 +140,7 @@ export function TranscriptPage() {
             </div>
           ),
         )}
+        {summary && <SummaryCard summary={summary} />}
       </div>
     </div>
   )

@@ -17,7 +17,14 @@ export function ConversationsProvider({ children }: { children: ReactNode }) {
   const start = useCallback(async (topic: string | null, newWords: number) => {
     const started = await api.start(topic, newWords)
     const items: ChatItem[] = []
-    if (started.lessons.length) items.push({ kind: 'lessons', id: id(), lessons: started.lessons })
+    if (started.lessons.length || started.shortfall)
+      items.push({
+        kind: 'lessons',
+        id: id(),
+        lessons: started.lessons,
+        requested: started.requested_words,
+        shortfall: started.shortfall,
+      })
     items.push({ kind: 'tutor', id: id(), turn: started.opening })
     setChats((all) => ({
       ...all,
@@ -29,6 +36,9 @@ export function ConversationsProvider({ children }: { children: ReactNode }) {
           ...started.lessons.map((lesson) => lesson.lemma),
           ...started.opening.lessons.map((lesson) => lesson.lemma),
         ],
+        // One checklist entry per word: trabajador ADJ and NOUN are both taught, used as one.
+        focus: [...new Set(started.lessons.map((lesson) => lesson.lemma))],
+        used: [],
         pending: false,
         closed: false,
       },
@@ -50,12 +60,16 @@ export function ConversationsProvider({ children }: { children: ReactNode }) {
           ...chat,
           pending: false,
           taught: reply.taught,
+          used: [...new Set([...chat.used, ...reply.turn.used])],
+          // A goodbye ends the conversation: the reply carries its summary.
+          closed: chat.closed || Boolean(reply.summary),
           items: [
             // Show the text as the server read it (accent markers expanded).
             ...chat.items.map((item) =>
               item.id === learnerId ? { ...item, text: reply.written } : item,
             ),
             { kind: 'tutor', id: id(), turn: reply.turn },
+            ...(reply.summary ? [{ kind: 'summary' as const, id: id(), summary: reply.summary }] : []),
           ],
         }))
       } catch (error) {
@@ -72,6 +86,34 @@ export function ConversationsProvider({ children }: { children: ReactNode }) {
     [update],
   )
 
+  const end = useCallback(
+    async (sessionId: number) => {
+      update(sessionId, (chat) => ({ ...chat, pending: true }))
+      try {
+        const ended = await api.end(sessionId)
+        update(sessionId, (chat) => ({
+          ...chat,
+          pending: false,
+          closed: true,
+          items: [
+            ...chat.items,
+            { kind: 'tutor', id: id(), turn: ended.turn },
+            { kind: 'summary', id: id(), summary: ended.summary },
+          ],
+        }))
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        update(sessionId, (chat) => ({
+          ...chat,
+          pending: false,
+          closed: chat.closed || (error instanceof ApiError && error.status === 404),
+          items: [...chat.items, { kind: 'error', id: id(), text: message }],
+        }))
+      }
+    },
+    [update],
+  )
+
   // A looked-up word the learner didn't know is taught on the server; the session's
   // taught list catches up with the next reply.
   const lookUp = useCallback(
@@ -80,7 +122,7 @@ export function ConversationsProvider({ children }: { children: ReactNode }) {
   )
 
   const adopt = useCallback((transcript: Transcript) => {
-    const { session, turns } = transcript
+    const { session, turns, summary } = transcript
     const items: ChatItem[] = turns.map((turn) =>
       turn.role === 'learner'
         ? { kind: 'learner', id: id(), text: turn.text_es }
@@ -96,10 +138,12 @@ export function ConversationsProvider({ children }: { children: ReactNode }) {
               note_en: turn.note_en,
               lessons: [],
               not_words: [],
+              used: [],
               pending: null,
             },
           },
     )
+    if (summary) items.push({ kind: 'summary', id: id(), summary })
     setChats((all) => ({
       ...all,
       [session.session_id]: {
@@ -107,6 +151,8 @@ export function ConversationsProvider({ children }: { children: ReactNode }) {
         topic: session.topic,
         items,
         taught: turns.flatMap((turn) => turn.taught),
+        focus: [...new Set(turns.flatMap((turn) => turn.pre_taught))],
+        used: [...new Set(turns.flatMap((turn) => turn.used))],
         pending: false,
         closed: !session.active,
       },
@@ -114,8 +160,8 @@ export function ConversationsProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const value = useMemo(
-    () => ({ chats, start, send, lookUp, adopt }),
-    [chats, start, send, lookUp, adopt],
+    () => ({ chats, start, send, lookUp, end, adopt }),
+    [chats, start, send, lookUp, end, adopt],
   )
   return <Context.Provider value={value}>{children}</Context.Provider>
 }

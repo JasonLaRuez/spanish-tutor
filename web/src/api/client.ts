@@ -15,6 +15,8 @@ export type Progress = Schemas['Progress']
 export type Band = Schemas['Band']
 export type Growth = Schemas['Growth']
 export type GapWord = Schemas['GapWord']
+export type Summary = Schemas['SummaryOut']
+export type Ended = Schemas['Ended']
 
 /** An HTTP error from the API, with the server's message (FastAPI's `detail`). */
 export class ApiError extends Error {
@@ -58,4 +60,5 @@ export const api = {
     post<MessageReply>(`/api/sessions/${sessionId}/messages`, { text }),
   lookUp: (sessionId: number, word: string) =>
     post<Lesson>(`/api/sessions/${sessionId}/lookup`, { word }),
+  end: (sessionId: number) => post<Ended>(`/api/sessions/${sessionId}/end`, {}),
 }

@@ -7,7 +7,12 @@ junk like "xyzzy" reaches the lexicon lookup and must be rejected there.
 
 import re
 
+from langchain_core.embeddings import DeterministicFakeEmbedding
+
 from spanish_tutor.conversation import Generation, TutorReply
+from spanish_tutor.ingest.index_tatoeba import index_sentences
+from spanish_tutor.ingest.tatoeba import AnalyzedSentence
+from spanish_tutor.vectorstore import open_store
 
 FORMS = {
     "yo": ("yo", "PRON"),
@@ -64,6 +69,19 @@ class Scripted:
         self.requests.append(prompt)
         return self.replies.pop(0)
 
+    def summarize(self, prompt):
+        self.requests.append(prompt)
+        reply = self.replies.pop(0)
+        if isinstance(reply, Exception):
+            raise reply
+        return Generation(reply, input_tokens=800, cache_read_tokens=0, output_tokens=120)
+
+
+def notes(went_well="You asked good questions.", *work_on):
+    from spanish_tutor.conversation import SessionNotes
+
+    return SessionNotes(went_well_en=went_well, work_on=list(work_on) or ["Practice estar."])
+
 
 def said(reply_es, misused=(), correction=None):
     return TutorReply(reply_es=reply_es, reply_en="(en)", misused=list(misused), note_en=correction)
@@ -85,3 +103,27 @@ def seed_bank(conn):
         KNOWN,
     )
     conn.commit()
+
+
+def make_topic_store(conn, directory):
+    """A vector store of sentences about a dog swimming in a river, with frequencies for the
+    candidate scoring: perro, nadar and río (unknown to the seeded bank) are the candidates."""
+    conn.executemany(
+        "UPDATE lexemes SET frequency_per_million = ? WHERE lemma = ?",
+        [(30.0, "perro"), (5.0, "nadar"), (20.0, "río"), (5000.0, "el"), (900.0, "casa")],
+    )
+    conn.commit()
+    store = open_store(directory, embeddings=DeterministicFakeEmbedding(size=32))
+    vocab = [FORMS[w] for w in ["el", "perro", "nada", "río"]]
+    sentences = [
+        AnalyzedSentence(
+            id=i,
+            es="El perro nada en el río.",
+            en="The dog swims.",
+            author=None,
+            tokens=[(lemma, [(lemma, pos)]) for lemma, pos in vocab],
+        )
+        for i in range(4)
+    ]
+    index_sentences(store, sentences, report=lambda _: None)
+    return store

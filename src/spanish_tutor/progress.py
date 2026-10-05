@@ -48,3 +48,28 @@ def sessions(conn: sqlite3.Connection) -> list[dict]:
 
 def transcript(conn: sqlite3.Connection, session_id: int) -> list[dict]:
     return rows(conn, "session_transcript", session_id=session_id)
+
+
+def session_stats(conn: sqlite3.Connection, session_id: int) -> dict | None:
+    """The stats for a session's end-of-conversation summary; None if there's no session.
+
+    The word lists (first_time, pre_taught, pre_taught_used) come back as lists.
+    """
+    found = rows(conn, "session_stats", session_id=session_id)
+    if not found:
+        return None
+    stats = found[0]
+    for key in ("first_time", "pre_taught", "pre_taught_used"):
+        stats[key] = stats[key].split(", ") if stats[key] else []
+    return stats
+
+
+def summary(conn: sqlite3.Connection, session_id: int) -> dict | None:
+    """The tutor's stored notes on a session, or None if it has none."""
+    row = conn.execute(
+        "SELECT went_well_en, work_on_en FROM session_summaries WHERE session_id = ?",
+        (session_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    return {"went_well_en": row[0], "work_on": [line for line in row[1].splitlines() if line]}

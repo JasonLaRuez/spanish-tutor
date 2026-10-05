@@ -9,10 +9,23 @@ Before a topic conversation the tutor teaches a handful of words the learner wil
    overall frequency predicts. Common words that turn up everywhere ("lleno") sink;
    topic words ("regar", "césped") rise.
 
-Claude then chooses the most useful few for talking about the topic, but only from these
+Claude then chooses the most useful for talking about the topic, but only from these
 candidates: it can rank, not invent. Measured on "el jardín" (2026-10-02), the top
 candidates included planta, regar, jardinero, hierba, hoja, césped, plantar, florecer;
 hierba and hoja were words Jason had to look up in his first conversation.
+
+How deep to search (measured 2026-10-05, 8 topics, top 40 candidates labeled by hand as
+on-topic or noise): the 300 nearest sentences left most topics with 5-15 candidates, and a
+word needed only 3 chance appearances to get in (posponer for "el tiempo"). Deeper search
+is cleaner, because real topic words pile up counts while coincidences fall back:
+
+    sentences   noise in top 20   noise in top 40   on-topic words offered
+    300         29%               29%                49
+    1,000       18%               26%               212
+    2,000       12%               22%               250
+
+Broad topics stay noisy at any depth ("el trabajo": 16 of 40 on-topic), so Claude may
+choose fewer words than asked for, and says why.
 """
 
 import math
@@ -30,7 +43,14 @@ from spanish_tutor.vectorstore import decode_vocab
 CONTENT_POS = frozenset(["NOUN", "VERB", "ADJ", "ADV"])
 MIN_OCCURRENCES = 3  # in the retrieved sentences: fewer is coincidence
 WORDS_PER_SENTENCE = 7.3  # Tatoeba average (3.22M tokens / 442k sentences)
-MIN_WORDS, MAX_WORDS, DEFAULT_WORDS = 2, 10, 5
+MIN_WORDS, MAX_WORDS, DEFAULT_WORDS = 2, 20, 5
+SENTENCES = 2000  # nearest sentences searched for candidates (see above)
+MIN_CANDIDATES = 25
+
+
+def candidate_count(n: int) -> int:
+    """How many candidates Claude chooses n words from: twice n, so it still has a choice."""
+    return max(MIN_CANDIDATES, 2 * n)
 
 
 @dataclass(frozen=True)
@@ -56,8 +76,8 @@ def topic_candidates(
     topic: str,
     known: set[Analysis],
     *,
-    k: int = 300,
-    limit: int = 25,
+    k: int = SENTENCES,
+    limit: int = MIN_CANDIDATES,
 ) -> list[Candidate]:
     """Unknown content words associated with `topic`, best first."""
     counts: Counter[Analysis] = Counter()
@@ -85,40 +105,71 @@ class TopicWords(BaseModel):
     """Claude's choice of words to pre-teach."""
 
     words: list[str] = Field(
-        description="The chosen words, most useful first, each exactly as listed (lemma|POS)."
+        description="The chosen words, most useful first, each exactly as listed (lemma|POS). "
+        "Fewer than asked for if not enough candidates are really about the topic."
     )
+    # Required but nullable, like TutorReply.note_en: the schema the API already accepts.
+    fewer_because: str | None = Field(
+        description="Only if you chose fewer words than asked for: one short sentence in "
+        "English, addressed to the learner, saying why. Null otherwise."
+    )
+
+
+@dataclass(frozen=True)
+class TopicChoice:
+    words: list[Candidate]
+    requested: int
+    shortfall: str | None  # why fewer words than requested, for the learner; else None
 
 
 def selection_prompt(topic: str, candidates: list[Candidate], n: int) -> str:
     listing = "\n".join(f"- {c.key}: {c.definition_en or '(no definition)'}" for c in candidates)
     return (
         f"A Spanish learner is about to have a conversation about: {topic}. Before it starts, "
-        f"they will learn {n} new words. From the candidates below (each with its English "
-        f"meaning), choose the {n} that will be most useful for understanding and talking "
-        "about this topic: words central to it and common in everyday speech. Skip words "
-        "that only seem to appear by coincidence. Return them exactly as written "
-        "(lemma|POS), most useful first.\n\n" + listing
+        f"they will learn up to {n} new words, so they have the vocabulary the topic needs. "
+        f"From the candidates below (each with its English meaning), choose up to {n} that "
+        "will be most useful for understanding and talking about this topic: words central "
+        "to it and common in everyday speech. Choose fewer rather than include words that "
+        "aren't really about the topic or only seem to appear by coincidence; if you do, say "
+        "why in one short sentence. Return the words exactly as written (lemma|POS), most "
+        "useful first.\n\n" + listing
     )
 
 
 def choose_words(
     select: Callable[[str], TopicWords], topic: str, candidates: list[Candidate], n: int
-) -> list[Candidate]:
-    """The n candidates Claude finds most useful, validated against the list.
+) -> TopicChoice:
+    """Up to n candidates Claude finds most useful, validated against the list.
 
     Anything not on the list is dropped, so every taught word is grounded in real
-    sentences. If fewer than two valid choices remain, the top n by score are used.
+    sentences. Claude may choose fewer than n; if it named words but none were on the
+    list, the top n by score are used instead. Whenever fewer than n words result, the
+    choice says why, for the learner.
     """
+    if not candidates:
+        return TopicChoice([], n, f"No words about “{topic}” turned up that you don't know yet.")
     by_key = {c.key: c for c in candidates}
-    chosen = select(selection_prompt(topic, candidates, n)).words
-    valid = [by_key[w.strip()] for w in dict.fromkeys(chosen) if w.strip() in by_key][:n]
-    if len(valid) < min(MIN_WORDS, len(candidates)):
-        return candidates[:n]
-    return valid
+    reply = select(selection_prompt(topic, candidates, n))
+    valid = [by_key[w.strip()] for w in dict.fromkeys(reply.words) if w.strip() in by_key][:n]
+    words = candidates[:n] if reply.words and not valid else valid
+    return TopicChoice(words, n, shortfall(topic, n, len(candidates), len(words), reply))
+
+
+def shortfall(
+    topic: str, requested: int, available: int, chosen: int, reply: TopicWords
+) -> str | None:
+    """Why fewer words than requested were chosen, for the learner; None if none are missing."""
+    if chosen >= requested:
+        return None
+    found = f"Only {available} words about “{topic}” turned up that you don't know yet."
+    if chosen == available:
+        return found
+    why = (reply.fewer_because or "").strip() or "The rest weren't really about the topic."
+    return f"{found} {why}" if available < requested else why
 
 
 def word_count(answer: str) -> int:
-    """The learner's answer to "how many new words?", clamped to 2-10 (Enter = 5)."""
+    """The learner's answer to "how many new words?", clamped to 2-20 (Enter = 5)."""
     try:
         n = int(answer.strip())
     except ValueError:

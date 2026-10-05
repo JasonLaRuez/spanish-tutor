@@ -76,7 +76,25 @@ CREATE TABLE IF NOT EXISTS sessions (
     skill      TEXT NOT NULL CHECK (skill IN ('conversation', 'lyrics', 'reading')),
     topic      TEXT,
     model      TEXT NOT NULL,                -- LLM model id used for the session
-    started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    -- When the learner ended it. NULL: still open, or left without ending (abandoned, or
+    -- cut off by a server restart).
+    ended_at   TEXT
+);
+
+
+-- The tutor's end-of-conversation notes: zero or one row per session. The summary's stats
+-- are not stored; sql/queries/session_stats.sql computes them from turns and word_events.
+CREATE TABLE IF NOT EXISTS session_summaries (
+    session_id        INTEGER PRIMARY KEY REFERENCES sessions (session_id),
+    went_well_en      TEXT NOT NULL,   -- what the learner did well (a sentence or two)
+    work_on_en        TEXT NOT NULL,   -- what to practice next: 2-3 points, one per line
+    model             TEXT NOT NULL,
+    input_tokens      INTEGER,         -- the same cost columns turns has
+    cache_read_tokens INTEGER,
+    output_tokens     INTEGER,
+    latency_ms        INTEGER,
+    created_at        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 

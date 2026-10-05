@@ -349,7 +349,7 @@ def test_pending_migrations_lists_only_what_an_old_database_needs(conn):
     old = connect(":memory:")
     old.executescript((FIXTURES / "schema_v1.sql").read_text(encoding="utf-8"))
     old.execute("PRAGMA user_version = 1")
-    assert pending_migrations(old) == [2, 3]
+    assert pending_migrations(old) == [2, 3, 4]
 
 
 def test_version_2_database_upgrades_to_version_3_keeping_notes(conn):
@@ -368,6 +368,37 @@ def test_version_2_database_upgrades_to_version_3_keeping_notes(conn):
     assert table_shapes(old) == table_shapes(conn)
     row = old.execute("SELECT note_en, kind FROM turns").fetchone()
     assert (row["note_en"], row["kind"]) == ("Use estar.", "conversation")
+
+
+def test_existing_sessions_upgrade_to_version_4_as_not_ended(conn):
+    old = connect(":memory:")
+    old.executescript((FIXTURES / "schema_v2.sql").read_text(encoding="utf-8"))
+    old.execute("PRAGMA user_version = 2")
+    session = add_session(old)
+
+    init_schema(old)
+
+    assert table_shapes(old) == table_shapes(conn)
+    assert old.execute("SELECT ended_at FROM sessions").fetchone()["ended_at"] is None
+    assert old.execute("SELECT COUNT(*) FROM session_summaries").fetchone()[0] == 0
+    assert session == 1
+
+
+def test_a_session_has_at_most_one_summary_and_it_must_exist(conn):
+    from spanish_tutor.db import add_summary, end_session
+
+    session = add_session(conn)
+    end_session(conn, session)
+    first_end = conn.execute("SELECT ended_at FROM sessions").fetchone()["ended_at"]
+    end_session(conn, session)  # ending twice keeps the first time
+    assert first_end and conn.execute("SELECT ended_at FROM sessions").fetchone()[0] == first_end
+    add_summary(conn, session, "Good.", ["Practice ser/estar.", "Use regar."], "m", output_tokens=9)
+    row = conn.execute("SELECT work_on_en, output_tokens FROM session_summaries").fetchone()
+    assert tuple(row) == ("Practice ser/estar.\nUse regar.", 9)
+    with pytest.raises(sqlite3.IntegrityError):  # one summary per session
+        add_summary(conn, session, "Again.", [], "m")
+    with pytest.raises(sqlite3.IntegrityError):  # for a session that exists
+        add_summary(conn, 99, "Nobody.", [], "m")
 
 
 def test_turn_kind_is_checked(conn):
