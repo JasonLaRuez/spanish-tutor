@@ -61,6 +61,12 @@ PERSONAL_PRONOUN_LEMMAS = frozenset(
 # prepositional forms. Articles (la, lo, los...) are left out: they're ambiguous.
 PERSONAL_PRONOUN_FORMS = PERSONAL_PRONOUN_LEMMAS | {"mí", "ti", "conmigo", "contigo", "consigo"}
 
+# Single-word fixes for frequent tagger errors: (form, tagger lemma) -> lemma, keeping the
+# tagger's POS. A general rule is always preferred; these are measured exceptions (Jason's
+# call). gracias: the transformer files the thanks under gracia ("grace") in 451 of 1,127
+# Tatoeba tokens (2026-10-05), and the plural of gracia in that sense is vanishingly rare.
+LEMMA_FIXES = {("gracias", "gracia"): "gracias"}
+
 # Closed-class parts of speech: a word's function-word reading wins over a noun sense.
 FUNCTION_POS = frozenset(["ADP", "CCONJ", "DET", "PRON", "SCONJ"])
 
@@ -402,6 +408,7 @@ def normalize(
             return [found] if (found := corrector.retag_proper_noun(form)) else []
         return []
     lemma = normalize_text(lemma)
+    lemma = LEMMA_FIXES.get((form, lemma), lemma)
     pos = POS_FOLDS.get(pos, pos)
     # Checked on the form too: the transformer lemmatizes "vos" as "vo" (2026-10-02).
     if pos == "PRON" and (lemma in PERSONAL_PRONOUN_LEMMAS or form in PERSONAL_PRONOUN_FORMS):

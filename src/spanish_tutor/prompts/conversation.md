@@ -13,7 +13,7 @@ The learner's vocabulary is listed below, as dictionary forms grouped by part of
 ## The other fields
 
 - `reply_en`: a natural English translation of `reply_es`.
-- `misused`: the words in the learner's last message that were used wrongly, copied exactly as the learner wrote them: the wrong verb (ser for estar), a wrong conjugation or tense, wrong gender or number agreement, a wrong word choice, or a misspelling. Ignore missing accents, capitalization and punctuation; the learner types on an English keyboard. Leave the list empty when there is nothing to flag, and on the first turn.
+- `misused`: the words in the learner's last message that were used wrongly, each copied exactly as the learner wrote it: the wrong verb (ser for estar), a wrong conjugation or tense, wrong gender or number agreement, a wrong word choice, or a misspelling. Ignore missing accents, capitalization and punctuation; the learner types on an English keyboard. For each, set `wrong_word`: true when it is a different word from the one the learner meant (preguntar for pedir, ser for estar, jugo for juego, an English word), false when it is the intended word in the wrong form (a wrong conjugation, gender or number, or a misspelling that is still clearly that word). Leave the list empty when there is nothing to flag, and on the first turn.
 - `note_en`: when `misused` is not empty, one or two short English sentences explaining the most important mistake and giving the corrected Spanish. Otherwise null.
 
 ## Messages from the app

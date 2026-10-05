@@ -22,7 +22,7 @@ from spanish_tutor.ingest.index_tatoeba import index_sentences
 from spanish_tutor.ingest.tatoeba import AnalyzedSentence
 from spanish_tutor.topics import TopicWords
 from spanish_tutor.vectorstore import open_store
-from spanish_tutor.words import GRADE_LOOKED_UP, GRADE_MISUSED, GRADE_USED, LexiconIndex
+from spanish_tutor.words import GRADE_MISUSED, GRADE_USED, LexiconIndex
 
 
 @pytest.fixture
@@ -196,6 +196,40 @@ def test_misused_phrases_and_punctuation_still_match(make_tutor, bank):
     assert grades["ser"] == GRADE_MISUSED
 
 
+def test_a_wrong_word_the_learner_didnt_know_is_neither_credited_nor_taught(make_tutor, bank):
+    # "jugo" (juice) for "juego": the learner meant another word.
+    tutor, _ = make_tutor("Hola.", said("¡Qué bien!", wrong_words=["perro"]))
+    tutor.open()
+    tutor.respond("El perro come.")
+    assert [e for e in events(bank) if e[0] == "perro"] == []
+    assert "perro" not in recognized(bank)
+    assert {"comer"} <= {e[0] for e in events(bank, event_type="used")}  # the rest counts
+
+
+def test_a_wrong_word_never_creates_a_production_entry(make_tutor, bank):
+    tutor, _ = make_tutor("Hola.", said("¡Bien!", wrong_words=["gato"]))  # known, not produced
+    tutor.open()
+    tutor.respond("El gato come.")
+    assert [e for e in events(bank, event_type="used") if e[0] == "gato"] == []
+    produced = bank.execute(
+        "SELECT COUNT(*) FROM word_bank JOIN lexemes USING (lexeme_id) "
+        "WHERE lemma = 'gato' AND mode = 'production'"
+    ).fetchone()[0]
+    assert produced == 0
+
+
+def test_a_wrong_word_already_produced_gets_the_low_grade(make_tutor, bank):
+    bank.execute(
+        "INSERT INTO word_events (lexeme_id, mode, event_type, source, grade) "
+        "SELECT lexeme_id, 'production', 'used', 'seed', 4 FROM lexemes WHERE lemma = 'ser'"
+    )
+    tutor, _ = make_tutor("Hola.", said("Yo estoy cansado.", wrong_words=["soy"]))  # ser/estar
+    tutor.open()
+    tutor.respond("Yo soy cansado.")
+    grades = {lemma: grade for lemma, _, _, grade, _ in events(bank, event_type="used")}
+    assert grades["ser"] == GRADE_MISUSED and grades["cansado"] == GRADE_USED
+
+
 def test_a_word_the_learner_uses_first_also_enters_recognition(make_tutor, bank):
     tutor, generator = make_tutor("Hola.", "El perro come en casa.")
     tutor.open()
@@ -225,13 +259,14 @@ def test_learner_non_words_are_reported_and_never_logged(make_tutor, bank):
 # --- Looking words up ---------------------------------------------------------------------
 
 
-def test_looking_up_a_known_word_is_a_recognition_miss(make_tutor, bank):
+def test_looking_up_a_known_word_is_a_free_reminder(make_tutor, bank):
+    # Not a recognition miss: the learner isn't penalized for using a reminder.
     tutor, _ = make_tutor("Hola.")
     tutor.open()
+    before = bank.execute("SELECT COUNT(*) FROM word_events").fetchone()[0]
     item = tutor.look_up("gato")
-    tutor_turn = turns(bank)[0]["turn_id"]
-    assert item.lemma == "gato"
-    assert ("gato", "recognition", "looked_up", GRADE_LOOKED_UP, tutor_turn) in events(bank)
+    assert item.lemma == "gato" and item.definition_en == "<gato>"
+    assert bank.execute("SELECT COUNT(*) FROM word_events").fetchone()[0] == before
 
 
 def test_looking_up_an_unknown_word_teaches_it(make_tutor, bank):

@@ -365,3 +365,10 @@ def test_typed_accents_are_never_changed():
 def test_capitalized_words_are_restored_only_at_a_sentence_start(text, restored):
     restorer = AccentRestorer({"después", "galés"}, {"después": 20000, "galés": 500})
     assert restorer.restore_text(text) == restored
+
+
+def test_gracias_is_never_the_plural_of_gracia():
+    # The transformer reads the thanks as gracia ("grace") in about 40% of Tatoeba tokens.
+    assert normalize("Gracias", "gracia", "NOUN") == [("gracias", "NOUN")]
+    assert normalize("gracias", "gracias", "INTJ") == [("gracias", "INTJ")]
+    assert normalize("gracia", "gracia", "NOUN") == [("gracia", "NOUN")]  # the singular stays

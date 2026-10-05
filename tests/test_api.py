@@ -138,12 +138,15 @@ def test_how_to_say_is_answered_as_a_translation_and_teaches_its_words(serve, db
     assert rows(db_path, "SELECT DISTINCT kind FROM turns WHERE turn_no > 1") == [("translation",)]
 
 
-def test_a_known_word_can_be_looked_up_and_a_non_word_is_404(serve):
+def test_a_known_word_can_be_looked_up_and_a_non_word_is_404(serve, db_path):
     client, _ = serve("Hola.")
     session = start(client)["session_id"]
 
     found = client.post(f"/api/sessions/{session}/lookup", json={"word": "gato"})
     assert (found.status_code, found.json()["definition_en"]) == (200, "<gato>")
+    assert rows(db_path, "SELECT COUNT(*) FROM word_events WHERE event_type = 'looked_up'") == [
+        (0,)
+    ]  # a reminder, not a miss
     assert client.post(f"/api/sessions/{session}/lookup", json={"word": "xyzzy"}).status_code == 404
 
 

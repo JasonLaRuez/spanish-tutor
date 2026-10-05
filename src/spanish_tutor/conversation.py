@@ -4,7 +4,8 @@
 
 Each turn:
 1. The learner's message is analyzed. Every real word in it is logged as `used`
-   (production); words Claude flags as misused get a lower grade. A word the learner
+   (production); words Claude flags as misused get a lower grade, and a wrong word (not
+   the one the learner meant: "jugo" for "juego") never enters production. A word the learner
    uses before it was ever taught also enters the recognition bank.
 2. Claude replies, constrained to the recognition vocabulary. Tatoeba sentences the
    learner can read, retrieved by similarity, are added as level and topic anchors (RAG).
@@ -52,7 +53,6 @@ from spanish_tutor.topics import (
 )
 from spanish_tutor.vectorstore import search_sentences
 from spanish_tutor.words import (
-    GRADE_LOOKED_UP,
     GRADE_MISUSED,
     GRADE_USED,
     Event,
@@ -84,6 +84,19 @@ POS_NAMES = {
 }
 
 
+class Misuse(BaseModel):
+    """A word the learner used wrongly, and whether it was the wrong word or the wrong form."""
+
+    written: str = Field(description="The word or short phrase exactly as the learner wrote it.")
+    wrong_word: bool = Field(
+        description="True when it is a different word from the one the learner meant: the "
+        "word for something else (preguntar for pedir, ser for estar), a misspelling that "
+        "made another real word (jugo for juego), or an English word. False when it is the "
+        "word they meant in the wrong form: a wrong conjugation, tense, gender or number, or "
+        "a misspelling that is still clearly that word."
+    )
+
+
 class TutorReply(BaseModel):
     """The structured output of every conversation request: replies and translations.
 
@@ -99,9 +112,9 @@ class TutorReply(BaseModel):
         "only the Spanish the learner asked for."
     )
     reply_en: str = Field(description="A natural English translation of reply_es.")
-    misused: list[str] = Field(
-        description="Words from the learner's last message that were used wrongly, "
-        "exactly as the learner wrote them. Empty if none, and for a translation request."
+    misused: list[Misuse] = Field(
+        description="Words from the learner's last message that were used wrongly. Empty "
+        "if none, and for a translation request."
     )
     note_en: str | None = Field(
         description="A short English note: the most important mistake with the corrected "
@@ -686,7 +699,11 @@ class Tutor:
         )
 
     def look_up(self, word: str) -> Lesson | None:
-        """The learner asks what a word means: `looked_up` if it's known, else `taught`.
+        """The learner asks what a word means: a free reminder if it's known, else `taught`.
+
+        Looking up a known word logs nothing: the learner shouldn't be penalized for
+        using a reminder (Jason, 2026-10-05; until then it logged a grade-1 `looked_up`).
+        An unknown word is taught, as anywhere else.
 
         A dictionary form is matched directly (index.headword); an inflected form
         ("nada") goes through the analyzer. Returns None for anything that isn't a word
@@ -703,14 +720,12 @@ class Tutor:
             if not lexemes:
                 return None
             lex = lexemes[0]
-        turn_id = self.last_tutor_turn_id
-        if lex.analysis in self.known:
-            event = Event(lex.lexeme_id, "looked_up", SOURCE, GRADE_LOOKED_UP, turn_id)
-        else:
-            event = Event(lex.lexeme_id, "taught", SOURCE, turn_id=turn_id)
-        with self.conn:
-            log_events(self.conn, [event])
         if lex.analysis not in self.known:
+            with self.conn:
+                log_events(
+                    self.conn,
+                    [Event(lex.lexeme_id, "taught", SOURCE, turn_id=self.last_tutor_turn_id)],
+                )
             self.known.add(lex.analysis)
             self.taught.append(lex)
         return self._lesson(lex, met_in=self.last.reply_es if self.last else None)
@@ -731,19 +746,48 @@ class Tutor:
         return dict(words), not_words
 
     def _learner_events(
-        self, words: dict[Lexeme, set[str]], misused: list[str], turn_id: int
+        self, words: dict[Lexeme, set[str]], misused: list[Misuse], turn_id: int
     ) -> list[Event]:
-        # Claude sometimes flags a phrase ("soy cansado"): every word in it counts.
-        flagged = {
-            normalize_text(word).strip(PUNCTUATION) for phrase in misused for word in phrase.split()
-        }
+        """`used` events for the learner's words, graded by Claude's misuse flags.
+
+        A wrong form ("luchan" for luchar) is still the word the learner meant: credited,
+        with a lower grade. A wrong word ("jugo" for juego) isn't: it never enters the
+        production bank (Jason, 2026-10-05), and if the learner didn't know it, it isn't
+        taught either. If it's already in the production bank, the lower grade is logged
+        as a familiarity signal. Claude sometimes flags a phrase ("soy cansado"): every
+        word in it counts.
+        """
+
+        def words_of(flags: list[Misuse]) -> set[str]:
+            return {
+                normalize_text(word).strip(PUNCTUATION)
+                for flag in flags
+                for word in flag.written.split()
+            }
+
+        wrong_words = words_of([m for m in misused if m.wrong_word])
+        wrong_forms = words_of([m for m in misused if not m.wrong_word])
         events = []
         for lex, surfaces in words.items():
-            grade = GRADE_MISUSED if surfaces & flagged else GRADE_USED
+            if surfaces & wrong_words:
+                if self._produced(lex):
+                    events.append(Event(lex.lexeme_id, "used", SOURCE, GRADE_MISUSED, turn_id))
+                continue
+            grade = GRADE_MISUSED if surfaces & wrong_forms else GRADE_USED
             events.append(Event(lex.lexeme_id, "used", SOURCE, grade, turn_id))
             if lex.analysis not in self.known:
                 events.append(Event(lex.lexeme_id, "taught", SOURCE, turn_id=turn_id))
         return events
+
+    def _produced(self, lex: Lexeme) -> bool:
+        """Whether the word is in the production bank."""
+        return (
+            self.conn.execute(
+                "SELECT 1 FROM word_bank WHERE lexeme_id = ? AND mode = 'production'",
+                (lex.lexeme_id,),
+            ).fetchone()
+            is not None
+        )
 
     def _reply_words(self, text: str) -> list[Lexeme]:
         """Distinct real words in a reply, in order. Non-words (tagger junk) are dropped."""

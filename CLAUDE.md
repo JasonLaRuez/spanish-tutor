@@ -301,11 +301,22 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
       tal?* came back as "not recognized" (an unresolved corrector tie, *tal* is listed
       among them); in a clean message it resolved. Measure how often learner turns hit
       this before deciding anything.
-    - ***gracias* is taught as *gracia* (found 2026-10-05):** the transformer tags the
-      thanks *gracias* as the plural noun *gracia* ("grace, charm"; 235 Tatoeba tokens
-      changed in the tagger comparison). Harmless in the corpus, but tutor replies say
-      *gracias* all the time, so it gets taught as a new word. Measure, then fix (likely
-      in the lemma correction, e.g. treat *gracias* as INTJ).
+    - ***gracias* taught as *gracia*: fixed in code 2026-10-05, corpus pending.** The
+      transformer files the thanks under *gracia* ("grace") in 451 of 1,127 Tatoeba tokens.
+      `lexicon.LEMMA_FIXES` (a single-word rule, Jason's call: the plural of *gracia* in
+      that sense is vanishingly rare) fixes the lemma and keeps the tagger's POS, so it
+      maps onto *gracias* INTJ/NOUN, both in Jason's bank. Live text is fixed now; the
+      corpus needs the next re-analysis (bundled with expressions).
+    - **Session 2 review (2026-10-05), decided by Jason:**
+      - Wrong words vs wrong forms (done, below under Grading).
+      - Lookups of known words are free reminders (done, below).
+      - Detect multi-word expressions (planned: Wiktionary entries, rule filters, then an
+        Opus 5.5 Batch review; one unit per match; a seed review of the top ones).
+      - Cache the conversation history with a 5-minute breakpoint (planned; replayed on
+        sessions 1–2: −23% and −28% per session) and add `turns.cache_write_tokens`
+        (migration 005, SQL to be shown first).
+      - Also seen: *sin embargo* taught *embargo* (expressions fix it); *cuatros* taught
+        *cuatro* NOUN (tagger artifact, left).
     - **Resuming a conversation after a server restart** isn't built: the transcript is
       shown read-only. It would mean rebuilding `Tutor.history` from `turns`.
     - Then roadmap Phase 3 (difficulty index and recommender). Pre-teaching, the core
@@ -337,8 +348,16 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
     - Rules decide *which* words the learner used: the lexicon, plus the accent fallback
       below. Claude, in the same reply call, flags which used words were misused
       (ser/estar, agreement, tense).
-    - `used` correctly = 4, misused = 2. `looked_up` = 1. `seen` = NULL (an encounter, not
-      evidence of recall). `taught` = NULL.
+    - `used` correctly = 4, misused = 2. `seen` = NULL (an encounter, not evidence of
+      recall). `taught` = NULL.
+    - **Wrong word vs wrong form (Jason, 2026-10-05).** Each misuse flag (`Misuse`) says
+      whether it's a wrong *form* of the intended word (*luchan*, *videojuegoes*: credited,
+      grade 2) or a *wrong word* (*jugo* for *juego*, *preguntar* for *pedir*, *hay* →
+      *hace*: never enters production; not taught if unknown; grade 2 only if already
+      produced). Checked live on session 2's real mistakes: all classified as intended.
+    - **Lookups of known words log nothing (Jason, 2026-10-05):** a reminder isn't a miss.
+      Before this, a lookup logged `looked_up` grade 1; session 2 has 8 such events from
+      testing the click feature (append-only, they stay). Unknown words are still taught.
     - Measured reason for hybrid: the lemmatizer credits *Soy cansado* as a correct use of
       *ser*, and it can't see grammar errors.
   - **Corrections:** recast plus note. The tutor reuses the correct form naturally in its

@@ -83,8 +83,13 @@ def notes(went_well="You asked good questions.", *work_on):
     return SessionNotes(went_well_en=went_well, work_on=list(work_on) or ["Practice estar."])
 
 
-def said(reply_es, misused=(), correction=None):
-    return TutorReply(reply_es=reply_es, reply_en="(en)", misused=list(misused), note_en=correction)
+def said(reply_es, misused=(), correction=None, wrong_words=()):
+    """A scripted reply. `misused` are wrong forms; `wrong_words` are different words."""
+    from spanish_tutor.conversation import Misuse
+
+    flags = [Misuse(written=w, wrong_word=False) for w in misused]
+    flags += [Misuse(written=w, wrong_word=True) for w in wrong_words]
+    return TutorReply(reply_es=reply_es, reply_en="(en)", misused=flags, note_en=correction)
 
 
 def seed_bank(conn):
