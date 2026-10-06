@@ -378,12 +378,13 @@ footer{margin-top:3rem;padding-top:1.5rem;border-top:0.5px solid var(--line);fon
       <div class="head"><div class="name"><span class="idx">Phase 3</span><strong>Content-difficulty index + recommender</strong></div><span class="when">Weeks 5&ndash;7</span></div>
       <p class="goal">The novel subsystem: rank any candidate content by how many new words it costs against the live word bank, and default to the minimum.</p>
       <ul class="tasks">
-        <li><input type="checkbox" id="p3-1"><label for="p3-1">Design the difficulty-index schema: content id, type, full vocabulary set, book id + chapter sequence where relevant</label></li>
-        <li><input type="checkbox" id="p3-2"><label for="p3-2">Compute vocabulary sets for existing content (topics, any test songs/stories)</label></li>
-        <li><input type="checkbox" id="p3-3"><label for="p3-3">Implement the "fewest new words" ranking as a real SQL query &mdash; join content vocabulary against the word bank, aggregate the unmatched words per item, order ascending</label></li>
+        <li><input type="checkbox" id="p3-1"><label for="p3-1">Design the difficulty-index schema: content id, type, full vocabulary set, book id + chapter sequence where relevant (migration 6: books, content items, per-item vocabulary with counts, an append-only reading log)</label></li>
+        <li><input type="checkbox" id="p3-2"><label for="p3-2">Compute vocabulary sets for songs, stories and book chapters (topics stay free text), tested on an 18-story Gutenberg collection</label></li>
+        <li><input type="checkbox" id="p3-3"><label for="p3-3">Implement the "fewest new words" ranking as a real SQL query &mdash; join content vocabulary against the word bank, aggregate the unmatched words per item, order ascending (songs and stories); books ranked separately by new-word density across the whole book</label></li>
         <li><input type="checkbox" id="p3-4"><label for="p3-4">Add the book-sequence constraint: only the next unread chapter of a started book is eligible</label></li>
         <li><input type="checkbox" id="p3-5"><label for="p3-5">Add the explicit-request override for a specific song/story/topic</label></li>
         <li><input type="checkbox" id="p3-6"><label for="p3-6">Confirm the recommender's default suggestion actually has the lowest new-word count among candidates</label></li>
+        <li><input type="checkbox" id="p3-7"><label for="p3-7">Words no dictionary knows (old spellings, regional words, English) resolved by Claude, every claim checked before writing; model-written definitions labeled</label></li>
         <li><input type="checkbox" id="p3-ui"><label for="p3-ui">UI: a &ldquo;what next?&rdquo; screen &mdash; ranked items with their new-word counts, a surprise-me pick, and the explicit-request override</label></li>
       </ul>
     </div>

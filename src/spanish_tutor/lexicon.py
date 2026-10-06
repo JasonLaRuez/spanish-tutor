@@ -123,14 +123,29 @@ class AccentRestorer:
     tie is never guessed. A restored word must also occur at least `min_count` times in
     the subtitles: measured on Tatoeba (2026-10-02), rarer restorations were mostly junk
     (ana -> aña, canadá -> cañada), while common ones were right (traeme -> tráeme).
+
+    The opposite case, accents a 1952 spelling reform removed, is fixed the same way:
+    `respellings` maps superseded spellings to modern ones (fué -> fue, dió -> dio;
+    Wiktionary.reform_1952_spellings), so an old book's "fué" is analyzed exactly like a
+    modern "fue" instead of becoming a word of its own (74 times in a 1917 story
+    collection, measured 2026-10-05). Known tagger limit, the same for both spellings:
+    es_dep_news_trf lemmatizes "fue"/"fueron" as ser even when they mean "went" (all
+    7,098 Tatoeba tokens), and "fui"/"fuimos" as ir.
     """
 
     MIN_COUNT = 20  # SUBTLEX-ESP occurrences, about 0.5 per million words
 
-    def __init__(self, words: Iterable[str], counts: Mapping[str, int], min_count: int = MIN_COUNT):
+    def __init__(
+        self,
+        words: Iterable[str],
+        counts: Mapping[str, int],
+        min_count: int = MIN_COUNT,
+        respellings: Mapping[str, str] | None = None,
+    ):
         self.words = set(words)
         self.counts = counts
         self.min_count = min_count
+        self.respellings = respellings or {}
         self.by_fold: dict[str, list[str]] = {}
         for word in self.words:
             if word.isalpha():
@@ -140,9 +155,12 @@ class AccentRestorer:
     def restore(self, form: str) -> str | None:
         """The accented word a lowercase `form` stands for, or None.
 
-        Only forms typed without any marks are restored: the restorer adds missing
-        accents, it never changes ones that were typed (sudán must not become sudan).
+        Apart from superseded spellings (`respellings`), only forms typed without any marks
+        are restored: the restorer adds missing accents, it never changes ones that were
+        typed (sudán must not become sudan).
         """
+        if (modern := self.respellings.get(form)) is not None:
+            return modern
         if form in self.words or not form.isalpha() or form != form.translate(_FOLD):
             return None
         candidates = sorted(
@@ -402,7 +420,9 @@ def load_corrector() -> LemmaCorrector:
         prior=prior,
         parts_of_speech=wiktionary.parts_of_speech,
         misspellings=misspellings,
-        restorer=AccentRestorer(words | set(form_links), prior),
+        restorer=AccentRestorer(
+            words | set(form_links), prior, respellings=wiktionary.reform_1952_spellings()
+        ),
         expressions=load_expression_matcher(),
     )
 

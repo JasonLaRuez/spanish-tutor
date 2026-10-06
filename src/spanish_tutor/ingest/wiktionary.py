@@ -132,6 +132,30 @@ class Wiktionary:
             )
         }
 
+    def reform_1952_spellings(self) -> dict[str, str]:
+        """Spellings the RAE's 1952 reform superseded -> the modern spelling (fué -> fue).
+
+        Texts from before 1952, which is most public-domain books, wrote accents the reform
+        dropped: fué, dió, fuí, vió. Wiktionary keeps them as entries ("superseded spelling
+        of fue, deprecated in 1952 by the Royal Spanish Academy"), so without this they'd
+        be words of their own. The year appears only in the gloss. Later reforms are left
+        alone: the 2010 spellings (sólo, guión) are still common in modern text, and the
+        learner's word bank uses them.
+        """
+        by_word: dict[str, list[dict]] = defaultdict(list)
+        for (word, _), senses in self.senses.items():
+            by_word[word].extend(senses)
+        respellings = {}
+        for word, senses in by_word.items():
+            targets = {s.get("alt_of") for s in senses}
+            if (
+                len(targets) == 1
+                and None not in targets
+                and all("deprecated in 1952" in s.get("gloss", "") for s in senses)
+            ):
+                respellings[word] = targets.pop()
+        return respellings
+
     def definition(self, lemma: str, pos: str, *, follow_alt: bool = True) -> str | None:
         senses = self.lookup(lemma, pos)
         if not senses:

@@ -121,10 +121,35 @@ with Claude Opus 5.5. Every turn is logged in the `sessions` and `turns` tables 
 token counts, cache reads and writes), and each word event links to the turn that caused
 it.
 
+## Songs, stories and books: what to read next
+
+Content is indexed once by its full vocabulary, so the recommender can rank everything
+against your word bank with a single SQL query. Songs and short stories are ranked by how
+many new words each would teach, fewest first. Books are ranked by the share of unknown
+words across the whole book, and a book you've started always offers its next chapter
+first. You can always pick something else instead.
+
+```sh
+uv run python -m spanish_tutor.ingest.gutenberg 13507       # a public-domain book, one file per chapter
+uv run python -m spanish_tutor.content add-book data/raw/gutenberg/13507 \
+    --title "Cuentos de amor de locura y de muerte" --author "Horacio Quiroga" --source gutenberg:13507
+uv run python -m spanish_tutor.content add-song private/lyrics/song.txt --title "..."  # stays local
+uv run python -m spanish_tutor.content index                 # index everything not yet indexed
+uv run python -m spanish_tutor.content list
+```
+
+Words neither the lexicon nor Wiktionary knows (old spellings, regional words, English
+lines) are sent to Claude Opus 5.5 with the sentence each appears in. It decides whether
+each one is a spelling of a known word, a real word the dictionaries miss, or not Spanish,
+and every answer is checked before anything is stored. `index` shows the estimated cost
+and asks before each call (an 18-story book cost $0.62); `--no-resolve` skips the model.
+Definitions written by the model are labeled as such when the word is taught.
+
 ## Tests
 
 `uv run pytest` runs the fast suite. `uv run pytest -m slow` also loads the real embedding
-model, and `uv run pytest -m live` calls the Claude API (two turns, about a cent). The web
+model, and `uv run pytest -m live` calls the Claude API (a short conversation and one
+word-resolution request, a few cents). The web
 UI's component tests run with `npm test` in `web/`.
 
 ## Layout
@@ -150,6 +175,8 @@ under their own terms:
   133–143. [osf.io/xp6sz](https://osf.io/xp6sz/). CC BY-NC-SA 4.0.
 - **Tatoeba**: example sentences and translations from [tatoeba.org](https://tatoeba.org),
   CC BY 2.0 FR. Each example is stored with its sentence id and author for attribution.
+- **Project Gutenberg**: public-domain books from [gutenberg.org](https://www.gutenberg.org),
+  downloaded on demand into `data/raw/gutenberg/`.
 - **Wiktionary**: English definitions via [kaikki.org](https://kaikki.org) (Ylonen, T.
   (2022). Wiktextract: Wiktionary as Machine-Readable Structured Data. *LREC 2022*).
   CC BY-SA 4.0.

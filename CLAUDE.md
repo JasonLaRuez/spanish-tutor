@@ -261,15 +261,18 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
 
 - **Status (as of 2026-10-05):** Phase 0 is complete. Phase 1 has 5 of 7 roadmap steps
   done (the ~20 real conversations are in progress: 2 so far). Phase 2's core
-  (pre-teaching) and the new **Phase 2.5 web UI** are done. Next: more real conversations,
-  each reviewed in SQL afterwards; then Phase 3 (difficulty index + recommender).
-  - **Built so far:** word bank schema + migrations 001–005; seed (1,030 recognized / 762
+  (pre-teaching) and the new **Phase 2.5 web UI** are done. **Phase 3's core is built**
+  (schema, indexer, model resolver, both ranking queries; see "Content index and
+  recommender" below), tested on a Gutenberg book on a copy of the word bank. Next: the
+  Phase 3 API + "what next?" screen (U2); more real conversations, each reviewed in SQL.
+  - **Built so far:** word bank schema + migrations 001–006; seed (1,030 recognized / 762
     produced after the seed-gap marks; grows with sessions); general lexicon; Tatoeba in
     Chroma (261k sentences); the conversation skill with write-back, topic pre-teaching
     (up to 20 words), "¿cómo se dice?", typed accent markers, accent restoration, wrong-
     word vs wrong-form grading, free lookups, conversation endings with a stored summary,
     conversation-history caching; the web app (FastAPI + React/TypeScript); multi-word
-    expressions (2,352 approved, in the corpus from the 2026-10-05 re-analysis).
+    expressions (2,352 approved, in the corpus from the 2026-10-05 re-analysis); the
+    content-difficulty index, the model resolver and the recommender queries (Phase 3).
   - **Sessions:** 1 (2026-10-02, "el jardin", 15 turns) and 2 (2026-10-05, "videogames",
     23 turns, 8 learner messages). Every reply stayed inside the word bank except allowed
     i+1 words (4 in session 1, 1 in session 2); no retries. Each session's review drove
@@ -295,7 +298,19 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
       clean one. Measure how often learner turns hit this before deciding anything.
     - **Resuming a conversation after a server restart** isn't built: the transcript is
       shown read-only. It would mean rebuilding `Tutor.history` from `turns`.
-    - Then roadmap Phase 3 (difficulty index and recommender).
+    - **The real word bank is still at migration 5.** Migration 6 (content tables) is
+      additive and was verified on a copy (word bank unchanged row for row). The server
+      and every CLI apply pending migrations at startup (after a backup), so the next
+      `spanish-tutor serve` applies it.
+    - **Phase 3 remaining:** API endpoints and the "what next?" screen (U2: ranked
+      items with new-word counts, surprise-me, explicit request); then real content
+      (Phase 4).
+    - ***fue* is always *ser*:** the transformer lemmatizes *fue*/*fueron* as *ser* even
+      meaning "went" (all 7,098 Tatoeba tokens), *fui*/*fuimos* always as *ir*. A
+      learner's "fue al cine" is credited as *ser*. Predates Phase 3; not yet discussed.
+    - **The 1952 respelling isn't in the Tatoeba cache yet** (36 sentences with *fué*/
+      *dió*/*fuí*/*vió*). `analysis_setup()` records the tagger and expression list, not
+      code, so delete the cache to re-analyze (~90 min) at the next rebuild.
   - Build log, published (private): https://claude.ai/artifact/NAheU5cpSBdxY7QpoeQbHQ.
     Republish it after milestones. The local copy lived in a session's temp folder, so in
     a new session `Artifact read` the URL first, edit that HTML, then republish with
@@ -676,6 +691,73 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
       `test_shared_loaders_are_cached` guards it. The corrections CSV was restored from
       the previous run (the analyses are identical), and the accent restorations were
       regenerated from the text.
+- **Content index and recommender (roadmap Phase 3, built 2026-10-05; Jason's decisions):**
+  - **Schema (migration 006; Jason approved the SQL as proposed):** `books`;
+    `content_items` (song / story / chapter; a chapter has `book_id` + `chapter_no` and
+    takes author, source and `is_private` from its book, enforced by a CASE check; the
+    text in `text_es`, last column); `content_vocab` (the difficulty index: content_id,
+    lexeme_id, occurrences; WITHOUT ROWID); `content_events` (append-only started /
+    finished, `chosen_via` recommended/requested on starts, optional session_id);
+    `word_resolutions` (append-only model/human decisions on unknown forms, also the
+    cache); `lexemes.example_en_source` (who translated the example; NULL = Tatoeba's
+    human translation). No change to `sessions`.
+  - **Two recommenders (Jason):** songs and stories by **distinct new words** (the
+    pre-teaching burden), ties by coverage; books by **new-word density over the whole
+    book** (unknown running words / all), so an easy preface can't make a hard book look
+    easy (a test). A started book's next chapter (first after the highest *finished*)
+    always comes before a new book; among started books the most recently read leads;
+    finished and partly indexed books are left out. "Known" = recognition word bank.
+    Queries: `sql/queries/recommend_items.sql`, `recommend_books.sql`,
+    `item_new_words.sql`; wrappers in `recommend.py`. `SUM(CASE …)`, not `FILTER`, for
+    portability.
+  - **Topics stay out of Phase 3 (Jason):** free text with on-the-fly pre-teaching.
+  - **Indexing (`content.py`):** `analyze()` on sentences (songs by line; prose by
+    paragraph with hard-wrapped lines rejoined, split after final punctuation and before
+    an opening ¿/¡ that follows it). Counts are per analysis (*del* = *de* + *el*; an
+    expression once; names not counted). Resolution order: lexicon (accent fallback) →
+    Wiktionary or an approved expression (added) → latest `word_resolutions` row for
+    (form, tagged lemma, POS) → pending, sent to the resolver. Nothing is written until
+    analysis and the model call are done; then one transaction replaces the item's
+    index. CLI: `python -m spanish_tutor.content add-song|add-story|add-book|index|list`;
+    `index` shows a cost estimate and asks before each model call (`--yes`,
+    `--no-resolve`), and writes `data/processed/content_resolutions.csv` (overwritten
+    per run).
+  - **The resolver (`resolve.py`; Jason: Opus 5.5, variants map to existing words,
+    model-written definitions labeled):** one structured call per item (60 forms per
+    request), each form with its sentence and the tagger's guess. Verdicts: `variant`
+    (counted as the existing word), `word` (added with `definition_source =
+    'model:<id>'`, the real sentence as example, Claude's translation with
+    `example_en_source`), `not_spanish` (excluded). Every claim is checked: forms not
+    asked about are ignored; a POS outside the schema is rejected (AUX folded to VERB
+    first); a variant of a word that exists nowhere is rejected; a "new" word that
+    already exists is recorded as a variant. Rejected forms aren't stored, so a re-index
+    asks again. Lesson cards show a "model-written" tag (`Lesson.model_written`,
+    `LessonOut`).
+  - **Pre-1952 spellings (Jason):** Wiktionary lists *fué*, *dió*, *fuí*, *vió* (11
+    headwords, "deprecated in 1952") as their own entries, so they became words.
+    `AccentRestorer` now respells them in the text before tagging
+    (`Wiktionary.reform_1952_spellings`). 2010-reform spellings (*sólo*, *guión*) are left
+    alone: still common, and in the word bank.
+  - **Books from Gutenberg:** `python -m spanish_tutor.ingest.gutenberg <ebook>` downloads
+    to `data/raw/gutenberg/` and writes one file per chapter. The splitter reads the
+    `#HEADING#` markup of 13507; other books may need another splitter (Phase 4).
+  - **Measured on Quiroga, *Cuentos de amor de locura y de muerte* (Gutenberg 13507,
+    18 stories), on a DB copy (2026-10-05):**
+    - ~47k counted running words, indexed in ~2 min (CPU, nearly all tagging).
+    - Before the model: 249 distinct unknown forms (0.69% of running words). Model run:
+      **$0.62** (estimate $0.57–0.70; 45k in / 22k out tokens): 143 variants, 77 new
+      words, 9 not Spanish, 20 rejected; unresolved fell to 0.08%. A random 30 of the
+      accepted verdicts all checked out by hand.
+    - The book is far above the word bank: 28% of running words unknown, 4,284 distinct
+      new words (comfortable reading needs ~98% coverage).
+    - Ranking: 12 ms on the book; under 1 s at 6,000 items × 500 words (3M index rows).
+    - Live resolver test (`tests/test_resolve_live.py`, ~1.2¢): *fué* → *ser*, *pa'* →
+      *para*, *yeah* not Spanish, *parrandeo* a new word. The estimate constants in
+      `content.py` come from it.
+  - **Also fixed:** approved expressions missing from the lexicon (43, never in
+    Tatoeba) couldn't be added anywhere, since Wiktionary has no EXPR entries;
+    `ensure_lexeme` / `LexiconIndex` now take the expressions' reviewed definitions
+    (`ingest.expressions.definitions()`), also in conversations.
 - **Lemma correction** (`lexicon.LemmaCorrector`, added 2026-10-01):
   - When spaCy's `(lemma, pos)` isn't a Wiktionary word, it's repaired from Wiktionary's
     form-of table (`data/raw/wiktionary_es_forms.tsv`).

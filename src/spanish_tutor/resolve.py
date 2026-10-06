@@ -24,7 +24,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from spanish_tutor.lexicon import VOCAB_POS, normalize_text
+from spanish_tutor.lexicon import POS_FOLDS, VOCAB_POS, normalize_text
 from spanish_tutor.words import LexiconIndex
 
 POS_TAGS = sorted(VOCAB_POS | {"EXPR"})
@@ -191,9 +191,12 @@ def _apply_one(conn, index, content_id, p: Pending, r: WordResolution, reviewer)
         return Outcome(p, "not_spanish", None, None, None, r.reason)
 
     lemma = normalize_text(r.lemma or "")
-    if not lemma or r.pos not in POS_TAGS:
+    # Folded like the tagger's tags (AUX -> VERB): the model answers "habíase" with haber|AUX.
+    pos = POS_FOLDS.get(r.pos or "", r.pos)
+    if not lemma or pos not in POS_TAGS:
         return Outcome(p, "rejected", None, lemma, r.pos, f"invalid lemma or POS: {r.reason}")
-    analysis = (lemma, r.pos)
+    r = r.model_copy(update={"lemma": lemma, "pos": pos})
+    analysis = (lemma, pos)
     existing = index.find(analysis) or (
         index.resolve(analysis) if index.in_dictionary(analysis) else None
     )

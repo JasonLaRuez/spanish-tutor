@@ -348,6 +348,21 @@ def test_model_restores_accents_before_tagging(corrector):
     assert tokens[0][0] == "después" and tokens[0][1]
 
 
+def test_spellings_a_reform_superseded_are_modernized_in_the_text():
+    restorer = AccentRestorer({"fue", "fué", "dio"}, {}, respellings={"fué": "fue", "dió": "dio"})
+    text = "Fué allá. Aquello fué lo mejor, y se lo dió."
+    assert restorer.restore_text(text) == "Fue allá. Aquello fue lo mejor, y se lo dio."
+    assert restorer.restored[("fué", "fue")] == 2
+
+
+def test_model_analyzes_a_respelled_fue_like_a_modern_one(corrector):
+    """An old book's "fué" gets the same analysis as "fue", not a word of its own. (The
+    tagger reads "fue" as ser even when it means "went": a known limit, same for both.)"""
+    corrector.restorer = AccentRestorer(set(), {}, respellings={"fué": "fue"})
+    old, modern = analyze(["Aquello fué lo mejor.", "Aquello fue lo mejor."], corrector=corrector)
+    assert old[1] == modern[1] == ("fue", [("ser", "VERB")])
+
+
 def test_typed_accents_are_never_changed():
     restorer = AccentRestorer({"sudan"}, {"sudan": 300})
     assert restorer.restore("sudán") is None  # only missing marks are added

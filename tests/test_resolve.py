@@ -114,6 +114,14 @@ def test_a_claim_that_fails_its_check_leaves_the_form_unresolved_and_unstored(
     assert resolutions(conn) == []  # not stored: a later run asks again
 
 
+def test_an_auxiliary_answer_is_folded_into_the_verb_like_the_tagger_does(conn, lexicon):
+    """The real run's "habíase" came back as haber|AUX; the pipeline has no AUX lexemes."""
+    item = story(conn, "Fué.")
+    index(conn, item, resolver=scripted(verdict(1, "variant", "ser", "AUX")))
+    assert vocab(conn, item) == {"ser": 1}
+    assert resolutions(conn) == [("fué", "variant", "ser", "model:test")]
+
+
 def test_answers_to_unasked_or_repeated_numbers_are_ignored(conn, lexicon):
     item = story(conn, "Fué.")
     result = index(

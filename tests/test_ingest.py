@@ -263,6 +263,36 @@ def test_misspelling_only_entries_redirect_to_the_correct_word(tmp_path):
     assert wiktionary.misspellings() == {("dia", "NOUN"): ("día", "NOUN")}
 
 
+def superseded(word, pos, target, year):
+    return {
+        "word": word,
+        "pos": pos,
+        "senses": [
+            {
+                "gloss": f"superseded spelling of {target}, deprecated in {year} by the RAE",
+                "tags": ["alt-of", "archaic"],
+                "alt_of": target,
+            }
+        ],
+    }
+
+
+def test_only_spellings_the_1952_reform_superseded_are_respelled(tmp_path):
+    wiktionary = wiktionary_of(
+        tmp_path,
+        [
+            superseded("fué", "verb", "fue", 1952),
+            superseded("dió", "verb", "dio", 1952),
+            superseded("guión", "noun", "guion", 2010),  # still common: left alone
+            {"word": "sólo", "pos": "adv", "senses": [{"gloss": "superseded spelling of solo",
+                                                       "tags": ["alt-of"], "alt_of": "solo"}]},
+            superseded("buho", "noun", "búho", 1952),
+            {"word": "buho", "pos": "verb", "senses": [{"gloss": "a real sense", "tags": []}]},
+        ],
+    )  # fmt: skip
+    assert wiktionary.reform_1952_spellings() == {"fué": "fue", "dió": "dio"}
+
+
 def test_alternative_forms_and_words_with_real_senses_are_not_redirected(tmp_path):
     wiktionary = wiktionary_of(
         tmp_path,
@@ -340,3 +370,50 @@ def test_candidates_are_found_in_a_corpus_already_analyzed_with_expressions():
     candidate = Candidate("sin embargo", "adv", ["however"], lemmas=("sin", "embargo"))
     find_in_corpus([candidate], [sentence], approved)
     assert candidate.sentences == 1
+
+
+# --- Project Gutenberg books ------------------------------------------------------------
+
+GUTENBERG_BOOK = """Project Gutenberg header, license...
+*** START OF THE PROJECT GUTENBERG EBOOK CUENTOS ***
+
+#Cuentos#
+
+#INDICE#
+
+La gallina degollada
+A la deriva
+
+#LA GALLINA DEGOLLADA#
+
+#Primavera#
+
+Todo el día --dijo-- estaban sentados.
+
+#A LA DERIVA#
+
+El hombre pisó algo blando.
+
+*** END OF THE PROJECT GUTENBERG EBOOK CUENTOS ***
+License text.
+"""
+
+
+def test_a_gutenberg_book_splits_into_titled_chapters(tmp_path):
+    from spanish_tutor.ingest.gutenberg import body, split_chapters, write_chapters
+
+    chapters = split_chapters(body(GUTENBERG_BOOK))
+    assert chapters == [
+        # The section heading is a plain line; the dialogue dash is spaced out.
+        ("La gallina degollada", "Primavera\n\nTodo el día  — dijo —  estaban sentados."),
+        ("A la deriva", "El hombre pisó algo blando."),
+    ]
+    paths = write_chapters(chapters, tmp_path / "book")
+    assert [p.name for p in paths] == ["01 La gallina degollada.txt", "02 A la deriva.txt"]
+
+
+def test_a_book_whose_headings_dont_match_its_contents_is_refused():
+    from spanish_tutor.ingest.gutenberg import split_chapters
+
+    with pytest.raises(ValueError, match="1 chapter headings, but 2 titles"):
+        split_chapters("#INDICE#\n\nUno\nDos\n\n#UNO#\n\nTexto.\n")
