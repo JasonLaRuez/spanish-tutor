@@ -7,8 +7,10 @@ Two rankings, both plain SQL over the difficulty index and the word bank
 - books, by new-word density across the whole book, with the next chapter of a started
   book always ahead of starting another one.
 
-The first row of each is the default suggestion. The learner can always ask for anything
-else instead (content.start(..., 'requested')), and that choice is logged.
+The first row of each is the default suggestion. Items more than MAX_UNKNOWN_SHARE unknown
+are never suggested (Jason, 2026-10-05); they're listed apart as too hard for now. The
+learner can always ask for anything instead (content.start(..., 'requested')), and that
+choice is logged.
 """
 
 import random
@@ -17,16 +19,24 @@ import sqlite3
 from spanish_tutor.progress import rows
 
 SURPRISE_FROM = 5  # "Surprise me" picks among this many of the easiest songs and stories
+# The ceiling: more than this share of an item's running words unknown, and it's too hard to
+# suggest (books: across the whole book). With every new word pre-taught, 90% known is
+# workable; reading research puts the usual minimum for assisted reading at 95%.
+MAX_UNKNOWN_SHARE = 0.10
 
 
-def items(conn: sqlite3.Connection, limit: int = 10) -> list[dict]:
-    """Songs and stories not finished yet, fewest new words first."""
-    return rows(conn, "recommend_items", limit=limit)
+def items(conn: sqlite3.Connection, limit: int = 10, *, too_hard: bool = False) -> list[dict]:
+    """Songs and stories not finished yet, fewest new words first: those within the ceiling,
+    or with too_hard=True, those above it."""
+    return rows(
+        conn, "recommend_items", limit=limit, max_unknown=MAX_UNKNOWN_SHARE, too_hard=too_hard
+    )
 
 
-def books(conn: sqlite3.Connection) -> list[dict]:
-    """Unfinished books, each with its next chapter: started books first, then by density."""
-    return rows(conn, "recommend_books")
+def books(conn: sqlite3.Connection, *, too_hard: bool = False) -> list[dict]:
+    """Unfinished books, each with its next chapter: started books first, then by density.
+    Within the ceiling, or with too_hard=True, above it."""
+    return rows(conn, "recommend_books", max_unknown=MAX_UNKNOWN_SHARE, too_hard=too_hard)
 
 
 def surprise(conn: sqlite3.Connection, rng: random.Random | None = None) -> dict | None:
@@ -34,7 +44,8 @@ def surprise(conn: sqlite3.Connection, rng: random.Random | None = None) -> dict
 
     The candidates are the SURPRISE_FROM easiest songs and stories, plus the next chapter of
     every book in progress (never the start of a new book, and never a chapter out of
-    order). Returns {content_id, kind, title, new_words}, or None when there is nothing.
+    order), all within the ceiling. Returns {content_id, kind, title, new_words}, or None
+    when there is nothing.
     """
     candidates = [
         {k: row[k] for k in ("content_id", "kind", "title", "new_words")}

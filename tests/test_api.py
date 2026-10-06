@@ -283,6 +283,14 @@ def test_an_open_conversation_has_no_summary(serve):
 # --- Content and recommendations ---------------------------------------------------------
 
 
+@pytest.fixture
+def no_ceiling(monkeypatch):
+    """These tests use mostly unknown words; the ceiling is tested in test_recommend."""
+    from spanish_tutor import recommend
+
+    monkeypatch.setattr(recommend, "MAX_UNKNOWN_SHARE", 1.0)
+
+
 def add_indexed(db_path, title, lemmas, kind="song", book=None):
     """An indexed item whose vocabulary is `lemmas` (each once); a chapter if `book` is
     (title, chapter_no). Returns its content_id."""
@@ -325,7 +333,9 @@ def add_indexed(db_path, title, lemmas, kind="song", book=None):
     return content_id
 
 
-def test_recommendations_rank_songs_by_new_words_and_books_with_their_next_chapter(serve, db_path):
+def test_recommendations_rank_songs_by_new_words_and_books_with_their_next_chapter(
+    serve, db_path, no_ceiling
+):
     add_indexed(db_path, "Difícil", ["gato", "perro", "nadar"])
     add_indexed(db_path, "Fácil", ["gato", "casa", "perro"])
     add_indexed(db_path, "Capítulo uno", ["gato"], book=("Libro", 1))
@@ -344,7 +354,7 @@ def test_recommendations_rank_songs_by_new_words_and_books_with_their_next_chapt
     assert libro["density"] == pytest.approx(0.5)
 
 
-def test_starting_and_finishing_moves_a_book_to_its_next_chapter(serve, db_path):
+def test_starting_and_finishing_moves_a_book_to_its_next_chapter(serve, db_path, no_ceiling):
     first = add_indexed(db_path, "Capítulo uno", ["gato"], book=("Libro", 1))
     add_indexed(db_path, "Capítulo dos", ["río"], book=("Libro", 2))
     client, _ = serve()
@@ -385,7 +395,7 @@ def test_an_item_comes_with_its_text_and_new_words(serve, db_path):
     assert client.get("/api/content/99").status_code == 404
 
 
-def test_the_catalog_and_a_surprise(serve, db_path):
+def test_the_catalog_and_a_surprise(serve, db_path, no_ceiling):
     client, _ = serve()
     assert client.get("/api/recommend/surprise").status_code == 404  # nothing to read yet
     assert client.get("/api/content").json() == []
@@ -395,3 +405,18 @@ def test_the_catalog_and_a_surprise(serve, db_path):
     assert (pick["content_id"], pick["kind"], pick["new_words"]) == (song, "song", 1)
     (entry,) = client.get("/api/content").json()
     assert (entry["title"], entry["new_words"], entry["state"]) == ("Canción", 1, None)
+
+
+def test_items_over_the_ceiling_are_listed_apart(serve, db_path):
+    add_indexed(db_path, "Conocida", ["gato", "casa"])  # all known
+    add_indexed(db_path, "Difícil", ["gato", "perro"])  # half unknown: over 10%
+    add_indexed(db_path, "Capítulo uno", ["perro"], book=("Libro", 1))
+    client, _ = serve()
+
+    found = client.get("/api/recommend").json()
+
+    assert [i["title"] for i in found["items"]] == ["Conocida"]
+    assert [i["title"] for i in found["too_hard_items"]] == ["Difícil"]
+    assert found["too_hard_items"][0]["unknown_share"] == pytest.approx(0.5)
+    assert (found["books"], [b["title"] for b in found["too_hard_books"]]) == ([], ["Libro"])
+    assert found["max_unknown_share"] == pytest.approx(0.10)

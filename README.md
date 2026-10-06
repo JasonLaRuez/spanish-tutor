@@ -130,7 +130,9 @@ Content is indexed once by its full vocabulary, so the recommender can rank ever
 against your word bank with a single SQL query. Songs and short stories are ranked by how
 many new words each would teach, fewest first. Books are ranked by the share of unknown
 words across the whole book, and a book you've started always offers its next chapter
-first. You can always pick something else instead.
+first. Anything with more than 10% unknown words is never suggested; it's listed as "too
+hard for now" until your vocabulary catches up. You can always pick something else
+instead.
 
 ```sh
 uv run python -m spanish_tutor.ingest.gutenberg 13507       # a public-domain book, one file per chapter

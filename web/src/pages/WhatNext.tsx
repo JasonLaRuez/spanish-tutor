@@ -56,6 +56,10 @@ export function WhatNext() {
   const empty = recs && catalog && catalog.length === 0
   const topItem = recs?.items[0]
   const topBook = recs?.books[0]
+  // Surprise me only draws from what's within reach: easy songs and stories, or the next
+  // chapter of a book in progress.
+  const canSurprise = !!recs && (recs.items.length > 0 || recs.books.some((b) => b.state === 'in progress'))
+  const known = recs ? percent(1 - recs.max_unknown_share) : ''
 
   return (
     <div className="mx-auto max-w-5xl space-y-8 px-6 py-10">
@@ -71,7 +75,8 @@ export function WhatNext() {
           <button
             type="button"
             onClick={surprise}
-            disabled={busy || !recs}
+            disabled={busy || !canSurprise}
+            title={canSurprise ? undefined : `Nothing is within reach yet: everything has more than ${percent(recs?.max_unknown_share)} new words.`}
             className="rounded-lg border border-line bg-surface px-4 py-2 text-sm font-medium text-ink hover:border-accent disabled:opacity-50"
           >
             Surprise me
@@ -96,7 +101,14 @@ export function WhatNext() {
                 onStart={() => open(topItem.content_id, 'recommended')}
               />
             ) : (
-              <NothingCard label="Song or story" text="No unfinished songs or stories." />
+              <NothingCard
+                label="Song or story"
+                text={
+                  recs.too_hard_items.length
+                    ? `None is within reach yet: each has more than ${percent(recs.max_unknown_share)} new words. See “Too hard for now” below.`
+                    : 'No unfinished songs or stories.'
+                }
+              />
             )}
             {topBook ? (
               <SuggestionCard
@@ -108,7 +120,14 @@ export function WhatNext() {
                 onStart={() => open(topBook.next_content_id, 'recommended')}
               />
             ) : (
-              <NothingCard label="Book" text="No unfinished books." />
+              <NothingCard
+                label="Book"
+                text={
+                  recs.too_hard_books.length
+                    ? `None is within reach yet: each has more than ${percent(recs.max_unknown_share)} new words across the book. See “Too hard for now” below.`
+                    : 'No unfinished books.'
+                }
+              />
             )}
           </div>
 
@@ -117,6 +136,9 @@ export function WhatNext() {
           )}
           {recs.books.length > 0 && (
             <BookTable books={recs.books} disabled={busy} onOpen={open} />
+          )}
+          {(recs.too_hard_items.length > 0 || recs.too_hard_books.length > 0) && (
+            <TooHard recs={recs} known={known} disabled={busy} onOpen={(id) => open(id, 'requested')} />
           )}
           {catalog && <Catalog items={catalog} disabled={busy} onOpen={(id) => open(id, 'requested')} />}
         </>
@@ -256,6 +278,67 @@ function BookTable(props: {
                   {book.new_words.toLocaleString()}{' '}
                   <span className="text-muted">({percent(book.density)})</span>
                 </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  )
+}
+
+function TooHard(props: {
+  recs: Recommendations
+  known: string
+  disabled: boolean
+  onOpen: (id: number) => void
+}) {
+  const entries = [
+    ...props.recs.too_hard_items.map((item) => ({
+      key: `item-${item.content_id}`,
+      id: item.content_id,
+      title: item.title,
+      from: KIND[item.kind],
+      share: item.unknown_share,
+      newWords: item.new_words,
+    })),
+    ...props.recs.too_hard_books.map((book) => ({
+      key: `book-${book.book_id}`,
+      id: book.next_content_id,
+      title: book.title,
+      from: `Book · next: chapter ${book.next_chapter_no}`,
+      share: book.density ?? 1,
+      newWords: book.new_words,
+    })),
+  ].sort((a, b) => a.share - b.share)
+  return (
+    <section aria-label="Too hard for now" className="space-y-2">
+      <h2 className="font-semibold text-ink">Too hard for now</h2>
+      <p className="text-sm text-ink-2">
+        Never suggested until you know {props.known} of their words. You can still open one
+        yourself.
+      </p>
+      <div className="overflow-x-auto rounded-lg border border-line bg-surface">
+        <table className="w-full text-sm">
+          <thead className="border-b border-line text-left text-xs uppercase tracking-wide text-muted">
+            <tr>
+              <th className={th}>Title</th>
+              <th className={th}>Kind</th>
+              <th className={`${th} text-right`}>Words known</th>
+              <th className={`${th} text-right`}>New words</th>
+            </tr>
+          </thead>
+          <tbody className="tabular">
+            {entries.map((entry) => (
+              <tr key={entry.key} className={row} onClick={() => !props.disabled && props.onOpen(entry.id)}>
+                <td lang="es" className="px-3 py-2.5 text-ink">
+                  {entry.title}
+                </td>
+                <td className="px-3 py-2.5 text-ink-2">{entry.from}</td>
+                <td className="px-3 py-2.5 text-right">
+                  {percent(1 - entry.share)} <span className="text-muted">(needs {props.known})</span>
+                </td>
+                <td className="px-3 py-2.5 text-right">{entry.newWords.toLocaleString()}</td>
               </tr>
             ))}
           </tbody>

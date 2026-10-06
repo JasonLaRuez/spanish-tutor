@@ -10,8 +10,8 @@ afterEach(() => vi.restoreAllMocks())
 
 const recommendations: Recommendations = {
   items: [
-    { content_id: 1, kind: 'song', title: 'Fácil', author: null, new_words: 3, tokens: 100, coverage: 0.97 },
-    { content_id: 2, kind: 'story', title: 'Difícil', author: null, new_words: 40, tokens: 400, coverage: 0.8 },
+    { content_id: 1, kind: 'song', title: 'Fácil', author: null, new_words: 3, tokens: 100, unknown_share: 0.03, coverage: 0.97 },
+    { content_id: 2, kind: 'story', title: 'Difícil', author: null, new_words: 8, tokens: 400, unknown_share: 0.09, coverage: 0.91 },
   ],
   books: [
     {
@@ -28,6 +28,9 @@ const recommendations: Recommendations = {
       next_chapter_new_words: 323,
     },
   ],
+  too_hard_items: [],
+  too_hard_books: [],
+  max_unknown_share: 0.1,
 }
 
 const catalog: CatalogItem[] = [
@@ -93,7 +96,7 @@ describe('What next?', () => {
   it('opens a surprise pick as a recommendation', async () => {
     vi.spyOn(api, 'recommend').mockResolvedValue(recommendations)
     vi.spyOn(api, 'catalog').mockResolvedValue(catalog)
-    vi.spyOn(api, 'surprise').mockResolvedValue({ content_id: 2, kind: 'story', title: 'Difícil', new_words: 40 })
+    vi.spyOn(api, 'surprise').mockResolvedValue({ content_id: 2, kind: 'story', title: 'Difícil', new_words: 8 })
     const start = vi.spyOn(api, 'startReading').mockResolvedValue({ ok: true })
     renderWhatNext()
 
@@ -101,8 +104,33 @@ describe('What next?', () => {
     await waitFor(() => expect(start).toHaveBeenCalledWith(2, 'recommended'))
   })
 
+  it('lists items over the ceiling apart, and opens one as your own choice', async () => {
+    const quiroga = { ...recommendations.books[0], state: 'new' as const, next_content_id: 1, next_chapter_no: 1 }
+    vi.spyOn(api, 'recommend').mockResolvedValue({
+      items: [],
+      books: [],
+      too_hard_items: [{ ...recommendations.items[1], unknown_share: 0.2, coverage: 0.8 }],
+      too_hard_books: [quiroga],
+      max_unknown_share: 0.1,
+    })
+    vi.spyOn(api, 'catalog').mockResolvedValue(catalog)
+    const start = vi.spyOn(api, 'startReading').mockResolvedValue({ ok: true })
+    renderWhatNext()
+
+    const table = await screen.findByRole('region', { name: 'Too hard for now' })
+    const rows = within(table).getAllByRole('row').slice(1)
+    expect(rows.map((r) => r.textContent)).toEqual([
+      'DifícilStory80% (needs 90%)8',
+      'CuentosBook · next: chapter 172% (needs 90%)4,284',
+    ])
+    expect(screen.getByText(/None is within reach yet: each has more than 10% new words\. See/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Surprise me' })).toBeDisabled()
+    await userEvent.click(within(table).getByRole('cell', { name: 'Difícil' }))
+    expect(start).toHaveBeenCalledWith(2, 'requested')
+  })
+
   it('explains how to add content when there is none', async () => {
-    vi.spyOn(api, 'recommend').mockResolvedValue({ items: [], books: [] })
+    vi.spyOn(api, 'recommend').mockResolvedValue({ items: [], books: [], too_hard_items: [], too_hard_books: [], max_unknown_share: 0.1 })
     vi.spyOn(api, 'catalog').mockResolvedValue([])
     renderWhatNext()
 

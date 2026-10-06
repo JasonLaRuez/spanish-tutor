@@ -460,13 +460,20 @@ export interface components {
         };
         /**
          * Recommendations
-         * @description Two rankings; the first of each is the default suggestion.
+         * @description Two rankings; the first of each is the default suggestion. Items with more than
+         *     max_unknown_share of their running words unknown are listed apart, never suggested.
          */
         Recommendations: {
             /** Items */
             items: components["schemas"]["RecommendedItem"][];
             /** Books */
             books: components["schemas"]["RecommendedBook"][];
+            /** Too Hard Items */
+            too_hard_items: components["schemas"]["RecommendedItem"][];
+            /** Too Hard Books */
+            too_hard_books: components["schemas"]["RecommendedBook"][];
+            /** Max Unknown Share */
+            max_unknown_share: number;
         };
         /** RecommendedBook */
         RecommendedBook: {
@@ -513,6 +520,8 @@ export interface components {
             new_words: number;
             /** Tokens */
             tokens: number;
+            /** Unknown Share */
+            unknown_share: number;
             /** Coverage */
             coverage: number | null;
         };

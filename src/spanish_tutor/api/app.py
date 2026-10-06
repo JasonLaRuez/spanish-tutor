@@ -255,6 +255,7 @@ class RecommendedItem(BaseModel):
     author: str | None
     new_words: int  # distinct words it would teach
     tokens: int  # running words counted as vocabulary
+    unknown_share: float  # share of running words not known yet
     coverage: float | None  # share of running words already known
 
 
@@ -273,10 +274,14 @@ class RecommendedBook(BaseModel):
 
 
 class Recommendations(BaseModel):
-    """Two rankings; the first of each is the default suggestion."""
+    """Two rankings; the first of each is the default suggestion. Items with more than
+    max_unknown_share of their running words unknown are listed apart, never suggested."""
 
     items: list[RecommendedItem]
     books: list[RecommendedBook]
+    too_hard_items: list[RecommendedItem]
+    too_hard_books: list[RecommendedBook]
+    max_unknown_share: float
 
 
 class Pick(BaseModel):
@@ -479,7 +484,13 @@ def create_app(
     @app.get("/api/recommend")
     def get_recommendations(limit: int = 10) -> Recommendations:
         with reader() as conn:
-            return Recommendations(items=recommend.items(conn, limit), books=recommend.books(conn))
+            return Recommendations(
+                items=recommend.items(conn, limit),
+                books=recommend.books(conn),
+                too_hard_items=recommend.items(conn, limit, too_hard=True),
+                too_hard_books=recommend.books(conn, too_hard=True),
+                max_unknown_share=recommend.MAX_UNKNOWN_SHARE,
+            )
 
     @app.get("/api/recommend/surprise")
     def get_surprise() -> Pick:

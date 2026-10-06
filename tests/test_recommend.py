@@ -9,6 +9,12 @@ import pytest
 from spanish_tutor import content, recommend
 
 
+@pytest.fixture(autouse=True)
+def no_ceiling(monkeypatch):
+    """The ranking tests use mostly unknown words; the ceiling has its own tests below."""
+    monkeypatch.setattr(recommend, "MAX_UNKNOWN_SHARE", 1.0)
+
+
 @pytest.fixture
 def words(conn):
     """60 lexemes, w0..w59: lemma -> lexeme_id."""
@@ -267,3 +273,49 @@ def test_one_item_has_its_text_book_position_and_state(conn, words):
     assert (detail["author"], detail["source"], detail["text_es"]) == (None, "gutenberg:1", "...")
     assert (detail["started"], detail["finished"], detail["indexed"]) == (True, False, True)
     assert recommend.item(conn, 999) is None
+
+
+# --- The ceiling: more than 10% unknown is too hard to suggest ---------------------------
+
+
+@pytest.fixture
+def ceiling(monkeypatch):
+    monkeypatch.setattr(recommend, "MAX_UNKNOWN_SHARE", 0.10)
+
+
+def known_and_new(words, known, new):
+    """A vocabulary of `known` running words of w0 and `new` of w1 (unknown)."""
+    return {words["w0"]: known, words["w1"]: new}
+
+
+def test_an_item_exactly_at_the_ceiling_is_suggested_and_just_above_is_not(conn, words, ceiling):
+    know(conn, words["w0"])
+    item(conn, "at", known_and_new(words, 90, 10))  # 10% unknown: allowed
+    item(conn, "above", known_and_new(words, 89, 11))  # 11%: too hard
+    assert titles(recommend.items(conn)) == ["at"]
+    (hard,) = recommend.items(conn, too_hard=True)
+    assert (hard["title"], hard["unknown_share"]) == ("above", pytest.approx(0.11))
+
+
+def test_a_book_over_the_ceiling_is_too_hard_even_when_started(conn, words, ceiling):
+    know(conn, words["w0"])
+    _, hard = book(conn, "Hard", [known_and_new(words, 5, 5), known_and_new(words, 5, 5)])
+    book(conn, "Easy", [known_and_new(words, 95, 5)])
+    content.start(conn, hard[0], "requested")
+    assert titles(recommend.books(conn)) == ["Easy"]
+    (too_hard,) = recommend.books(conn, too_hard=True)
+    assert (too_hard["title"], too_hard["state"], too_hard["density"]) == (
+        "Hard",
+        "in progress",
+        pytest.approx(0.5),
+    )
+
+
+def test_a_surprise_never_picks_a_too_hard_item(conn, words, ceiling):
+    know(conn, words["w0"])
+    item(conn, "easy", known_and_new(words, 99, 1))
+    item(conn, "hard", known_and_new(words, 50, 50))
+    _, hard = book(conn, "Hard book", [known_and_new(words, 1, 9), known_and_new(words, 1, 9)])
+    content.start(conn, hard[0], "requested")
+    picks = {recommend.surprise(conn, random.Random(seed))["title"] for seed in range(50)}
+    assert picks == {"easy"}

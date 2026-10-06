@@ -9,6 +9,10 @@
 -- moves the pointer past it. Finished books, and books with a chapter not yet indexed (no
 -- density for the whole book), are left out. One row per book; the first row is the
 -- default suggestion.
+--
+-- The ceiling (Jason, 2026-10-05): a book whose running words are more than :max_unknown
+-- unknown (0.10) across the whole book is too hard to suggest, started or not. :too_hard
+-- picks the side: 0 for the suggestions, 1 for the "too hard for now" list.
 WITH known AS (
     SELECT lexeme_id FROM word_bank WHERE mode = 'recognition'
 ),
@@ -90,6 +94,7 @@ JOIN chapters AS ch ON ch.book_id = n.book_id AND ch.chapter_no = n.chapter_no
 LEFT JOIN chapter_cost AS cc ON cc.content_id = ch.content_id
 LEFT JOIN progress AS p ON p.book_id = b.book_id
 LEFT JOIN book_new_words AS bw ON bw.book_id = b.book_id
+WHERE (COALESCE(bc.new_tokens * 1.0 / NULLIF(bc.tokens, 0), 0) > :max_unknown) = :too_hard
 ORDER BY p.book_id IS NULL,   -- started books first (FALSE sorts before TRUE)
          p.last_event DESC,   -- the most recently read of them leads
          density,

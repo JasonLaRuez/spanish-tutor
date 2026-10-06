@@ -264,8 +264,9 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
   (pre-teaching) and the new **Phase 2.5 web UI** are done. **Phase 3 is built**
   (schema, indexer, model resolver, both ranking queries, the API and the "what next?"
   screen with a simple reader; see "Content index and recommender" below). Quiroga's
-  story collection is in the real database. Next: more real conversations, each
-  reviewed in SQL; then Phase 4 (lyrics and reading skills, evaluation).
+  story collection is in the real database. **Phase 4 is planned** (see "Phase 4 plan"
+  below); slice 4.0 (the 10% difficulty ceiling) is built. Next: slice 4.1 (easier
+  public-domain texts), alongside more real conversations reviewed in SQL.
   - **Built so far:** word bank schema + migrations 001–006; seed (1,030 recognized / 762
     produced after the seed-gap marks; grows with sessions); general lexicon; Tatoeba in
     Chroma (261k sentences); the conversation skill with write-back, topic pre-teaching
@@ -688,6 +689,40 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
       `test_shared_loaders_are_cached` guards it. The corrections CSV was restored from
       the previous run (the analyses are identical), and the accent restorations were
       regenerated from the text.
+- **Phase 4 plan (approved by Jason 2026-10-05).** Slices, in order; each starts with a
+  short detailed plan, and new SQL is proposed for approval:
+  - **4.0 Ceiling (built):** an item with more than `recommend.MAX_UNKNOWN_SHARE` = 10% of
+    its running words unknown (books: whole-book density, started or not) is never
+    suggested or surprised; it's listed under "Too hard for now" with its % known, and can
+    still be opened. The queries take `:max_unknown` and `:too_hard` (one ranking, either
+    side). Jason chose 10% because every new word is pre-taught; reading research puts
+    assisted reading at 95% known. Measured: Quiroga is 28% unknown, so it's too hard now.
+  - **4.1 Easier public-domain texts:** fables (Samaniego, Iriarte), children's stories,
+    early-1900s school readers from Gutenberg; per-book JSON manifests for splitting
+    (committed; text never); measure coverage with `--no-resolve` on a DB copy first, Jason
+    picks what to add. No generated stories (Jason's choice).
+  - **4.2 Reading skill:** pre-teach **every** new word in batches of ~20 in order of
+    **first appearance** (Jason), logged `taught` (source `reading`) as each batch is
+    studied; read anytime with click-to-lookup (unknown taught, known free); finishing logs
+    `seen` for the known words; then discuss the text with the tutor (generalized `Tutor`
+    with skill/source/document; RAG over the text's passages, embedded in memory). Text
+    analyzed once per session (first appearances, contexts). Migration 7 widens
+    `turns.kind` (`study`, `reading`, `attempt`) by table rebuild so every event keeps its
+    turn. Books library page.
+  - **4.3 Lyrics skill:** study batches, then **try first** (Jason translates chosen lines
+    Spanish → English; comprehension, not graded), then compare natural and literal
+    translations side by side with figurative notes and a comment on his attempt;
+    expressions grounded in their reviewed sense plus a Tatoeba example. One structured
+    call per song, stored in `song_translations` (local DB). Bécquer's *Rimas* for the
+    public demo; Jason's songs in `private/lyrics/`. Songs library page.
+  - **4.4 Evaluation:** adherence, teaching completeness (first make lookup events
+    distinguishable: they currently log `taught` on the last tutor turn, showing as false
+    gaps), translation naturalness (LLM-as-judge with **Sonnet 5.5**, Jason's choice;
+    validated against his hand ratings), recommendation quality (predicted vs. taught,
+    default take-rate, abandonment around the ceiling); RAGAS baseline on the expression
+    and Tatoeba retrievals (check install compatibility first; else implement the two
+    metrics directly). Notebook 03, Progress-page panel, written case study.
+  - **4.5 Readiness rings:** only after researching the PCIC license with Jason.
 - **Content index and recommender (roadmap Phase 3, built 2026-10-05; Jason's decisions):**
   - **Schema (migration 006; Jason approved the SQL as proposed):** `books`;
     `content_items` (song / story / chapter; a chapter has `book_id` + `chapter_no` and
