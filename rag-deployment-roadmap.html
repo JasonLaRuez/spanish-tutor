@@ -319,7 +319,7 @@ footer{margin-top:3rem;padding-top:1.5rem;border-top:0.5px solid var(--line);fon
 
   <section id="phases">
     <h2>Phased plan</h2>
-    <p>~11&ndash;13 weeks, part-time &mdash; longer than a single-skill RAG demo, since there are three skills, a recommender, and a state layer. Check items off as you go &mdash; progress is saved in this browser.</p>
+    <p>~11&ndash;13 weeks, part-time &mdash; longer than a single-skill RAG demo, since there are three skills, a recommender, and a state layer. Phase 9 (lessons where you rebuild the pieces yourself) follows the finished project. Check items off as you go &mdash; progress is saved in this browser.</p>
 
     <div class="phase" data-phase="0">
       <div class="head"><div class="name"><span class="idx">Phase 0</span><strong>Learning sprint</strong></div><span class="when">Week 1</span></div>
@@ -404,6 +404,10 @@ footer{margin-top:3rem;padding-top:1.5rem;border-top:0.5px solid var(--line);fon
         <li><input type="checkbox" id="p4-8"><label for="p4-8">Write up the eval results &mdash; this becomes the future cover-letter evidence block</label></li>
         <li><input type="checkbox" id="p4-ui1"><label for="p4-ui1">UI: song view (natural and literal translations side by side), chapter reader, libraries of learned songs and read books, adherence metrics on the progress page</label></li>
         <li><input type="checkbox" id="p4-ui2"><label for="p4-ui2">UI: vocabulary-readiness rings per level (A1&ndash;C2, recognize vs. produce) &mdash; after checking the PCIC license and filling <code class="mono">lexemes.cefr_level</code>; never labeled as a CEFR level</label></li>
+        <li><input type="checkbox" id="p4-ls1"><label for="p4-ls1">Listening, step 1 &mdash; the voices: Piper (open-source, runs offline on the CPU, free), so anyone can run the project without a paid service. An accent setting the learner toggles: Mexican Spanish (<code class="mono">es_MX</code>) by default, Spain (<code class="mono">es_ES</code>) as the alternative, applied everywhere audio plays; check each voice model&rsquo;s license before shipping it</label></li>
+        <li><input type="checkbox" id="p4-ls2"><label for="p4-ls2">Listening, step 2 &mdash; a speech endpoint with a cache: audio made once per sentence or word (keyed by text and voice), stored under <code class="mono">data/processed/audio/</code> (gitignored; audio of private lyrics stays local like the lyrics)</label></li>
+        <li><input type="checkbox" id="p4-ls3"><label for="p4-ls3">Listening, step 3 &mdash; conversations: the tutor speaks each reply after its text appears (autoplay setting, replay, speed control); clicking any word says it (the form clicked; lesson cards say the dictionary form; expressions as a whole phrase)</label></li>
+        <li><input type="checkbox" id="p4-ls4"><label for="p4-ls4">Listening, step 4 &mdash; books, stories, songs and poems narrated sentence by sentence (poems line by line, with pauses), the sentence being read highlighted; pause, resume, start from any sentence</label></li>
       </ul>
     </div>
 
@@ -448,6 +452,19 @@ footer{margin-top:3rem;padding-top:1.5rem;border-top:0.5px solid var(--line);fon
         <li><input type="checkbox" id="p8-2"><label for="p8-2">One-page architecture note (the flow diagram above is a starting point)</label></li>
         <li><input type="checkbox" id="p8-3"><label for="p8-3">Written case study of the custom evaluation framework and findings from Phase 4</label></li>
         <li><input type="checkbox" id="p8-4"><label for="p8-4">Only now: add the honest resume bullets this earns, and a new cover-letter evidence block</label></li>
+      </ul>
+    </div>
+
+    <div class="phase" data-phase="9">
+      <div class="head"><div class="name"><span class="idx">Phase 9</span><strong>Structured learning &mdash; rebuild it yourself</strong></div><span class="when">After Phase 8</span></div>
+      <p class="goal">The decisions in this project were yours; most of the code wasn&rsquo;t. A series of Jupyter notebook lessons in which you write toy versions of each subsystem yourself, so you can defend the code, not only the design, in a coding interview.</p>
+      <ul class="tasks">
+        <li><input type="checkbox" id="p9-1"><label for="p9-1">Lesson format: one notebook per subsystem, each with a short brief, scaffolding, tasks you write yourself, assert-based checks that tell you when a task works, hints you open on purpose, and the real project code shown only after you&rsquo;ve tried. Every lesson runs on a sandbox copy of the database</label></li>
+        <li><input type="checkbox" id="p9-2"><label for="p9-2">SQL: the word bank schema, the append-only event log and its trigger, a <code class="mono">word_bank</code> rebuild with window functions, the recommender&rsquo;s ranking queries, session stats</label></li>
+        <li><input type="checkbox" id="p9-3"><label for="p9-3">Python and data: lemmatize text with spaCy and map it to <code class="mono">(lemma, pos)</code> keys; build a small lexicon; score topic association with pandas</label></li>
+        <li><input type="checkbox" id="p9-4"><label for="p9-4">RAG: embed sentences, store them in Chroma, retrieve with a known-words filter; call Claude with structured output, prompt caching and a vocabulary constraint; detect and teach new words</label></li>
+        <li><input type="checkbox" id="p9-5"><label for="p9-5">Services and evaluation: a FastAPI endpoint with pytest tests; an evaluation metric computed from the logs; an LLM-as-judge with a consistency check</label></li>
+        <li><input type="checkbox" id="p9-6"><label for="p9-6">Interview drills: timed SQL and Python exercises without help, and explaining a design choice and its measured trade-off out loud</label></li>
       </ul>
     </div>
   </section>
