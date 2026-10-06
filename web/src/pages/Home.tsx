@@ -22,7 +22,7 @@ const SKILLS = [
   {
     name: 'Books',
     description: 'Stories and books chapter by chapter, in order, at your level.',
-    phase: 'Phase 4',
+    to: '/books',
   },
 ]
 

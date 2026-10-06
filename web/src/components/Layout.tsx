@@ -32,10 +32,7 @@ const navClass = ({ isActive }: { isActive: boolean }) =>
     isActive ? 'bg-accent-soft font-medium text-ink' : 'text-ink-2 hover:bg-surface-2 hover:text-ink'
   }`
 
-const LATER = [
-  { name: 'Songs', phase: 'Phase 4' },
-  { name: 'Books', phase: 'Phase 4' },
-]
+const LATER = [{ name: 'Songs', phase: 'Phase 4' }]
 
 export function Layout() {
   const location = useLocation()
@@ -85,6 +82,9 @@ export function Layout() {
           </NavLink>
           <NavLink to="/next" className={navClass}>
             What next?
+          </NavLink>
+          <NavLink to="/books" className={navClass}>
+            Books
           </NavLink>
           {LATER.map((item) => (
             <span

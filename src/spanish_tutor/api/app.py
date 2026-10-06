@@ -39,6 +39,7 @@ from spanish_tutor.conversation import (
     reply_to,
 )
 from spanish_tutor.keyboard import expand_markers
+from spanish_tutor.reading import STUDY_BATCH, ReadingSession
 from spanish_tutor.teaching import Lesson
 from spanish_tutor.topics import MAX_WORDS, MIN_WORDS
 
@@ -230,7 +231,7 @@ class SessionSummary(BaseModel):
 class TranscriptTurn(BaseModel):
     turn_no: int
     role: Literal["learner", "tutor"]
-    kind: Literal["conversation", "translation"]
+    kind: Literal["conversation", "translation", "study", "reading", "attempt"]
     text_es: str
     note_en: str | None
     created_at: str
@@ -341,6 +342,53 @@ class StartReading(BaseModel):
     )
 
 
+# --- Reading (Phase 4) -----------------------------------------------------------------
+
+
+class StartReadingSession(BaseModel):
+    content_id: int
+    chosen_via: Literal["recommended", "requested"]
+
+
+class ReadingState(BaseModel):
+    """Where a reading session stands: the text, and how much of it is studied."""
+
+    session_id: int
+    content_id: int
+    kind: Literal["song", "story", "chapter"]
+    title: str
+    author: str | None
+    book_title: str | None
+    chapter_no: int | None
+    chapters: int
+    paragraphs: list[list[str]]  # paragraphs (stanzas) of sentences (lines), as analyzed
+    total_new: int  # words new to the learner when the session started
+    remaining: int  # ... still to study
+    readable_until: int  # sentences, from the start, with every word studied or known
+    unstudied: list[str]  # surface forms still to study, to mark in the text
+    finished: bool
+
+
+class StudyWord(BaseModel):
+    lexeme_id: int
+    lesson: LessonOut
+    context: str  # the sentence where it first appears
+
+
+class StudyBatch(BaseModel):
+    words: list[StudyWord]
+    state: ReadingState
+
+
+class StudyRequest(BaseModel):
+    lexeme_ids: list[int]
+
+
+class ReadingLookUp(BaseModel):
+    lesson: LessonOut
+    state: ReadingState
+
+
 # --- The app ----------------------------------------------------------------------------
 
 
@@ -351,6 +399,7 @@ def create_app(
 ) -> FastAPI:
     """The app. Tests pass their own `load` (a scripted model, a temporary database)."""
     tutors: dict[int, Tutor] = {}
+    readings: dict[int, ReadingSession] = {}
     lock = threading.Lock()
     state: dict[str, Resources] = {}
 
@@ -480,6 +529,120 @@ def create_app(
                 growth=progress.growth_by_session(conn),
                 try_using=progress.try_using(conn, try_using),
             )
+
+    def reading_for(session_id: int) -> ReadingSession:
+        if (session := readings.get(session_id)) is None:
+            raise HTTPException(
+                404, "This reading session isn't open (the server may have restarted)."
+            )
+        return session
+
+    def reading_state(session: ReadingSession) -> ReadingState:
+        item = session.item
+        return ReadingState(
+            session_id=session.session_id,
+            content_id=session.content_id,
+            kind=item["kind"],
+            title=item["title"],
+            author=item["author"],
+            book_title=item["book_title"],
+            chapter_no=item["chapter_no"],
+            chapters=item["chapters"],
+            paragraphs=session.paragraphs,
+            total_new=len(session.new_words),
+            remaining=len(session.remaining),
+            readable_until=session.readable_until(),
+            unstudied=sorted(session.unstudied_forms()),
+            finished=session.finished,
+        )
+
+    @app.post("/api/reading")
+    def start_reading_session(request: StartReadingSession) -> ReadingState:
+        """Start reading an item: analyzes its text (a few seconds for a long chapter)."""
+        resources = state["resources"]
+        with lock:
+            try:
+                session = ReadingSession(
+                    resources.conn,
+                    resources.generate,
+                    resources.index,
+                    resources.analyze,
+                    request.content_id,
+                    request.chosen_via,
+                    store=resources.store,
+                )
+            except KeyError as error:
+                raise HTTPException(404, "No such song, story or chapter.") from error
+            readings[session.session_id] = session
+            return reading_state(session)
+
+    @app.get("/api/reading/{session_id}")
+    def get_reading(session_id: int) -> ReadingState:
+        return reading_state(reading_for(session_id))
+
+    @app.get("/api/reading/{session_id}/batch")
+    def next_batch(session_id: int, n: int = STUDY_BATCH) -> StudyBatch:
+        session = reading_for(session_id)
+        with lock:
+            batch = session.next_batch(n)
+            return StudyBatch(
+                words=[
+                    StudyWord(
+                        lexeme_id=w.lexeme.lexeme_id, lesson=LessonOut.of(lesson), context=w.context
+                    )
+                    for w, lesson in batch
+                ],
+                state=reading_state(session),
+            )
+
+    @app.post("/api/reading/{session_id}/study")
+    def study(session_id: int, request: StudyRequest) -> ReadingState:
+        session = reading_for(session_id)
+        with lock:
+            session.study(request.lexeme_ids)
+            return reading_state(session)
+
+    @app.post("/api/reading/{session_id}/lookup")
+    def reading_look_up(session_id: int, request: LookUp) -> ReadingLookUp:
+        session = reading_for(session_id)
+        with lock:
+            found = session.look_up(request.word)
+            if found is None:
+                raise HTTPException(404, f"“{request.word}” isn't a word the dictionary knows.")
+            return ReadingLookUp(lesson=LessonOut.of(found), state=reading_state(session))
+
+    @app.post("/api/reading/{session_id}/finish")
+    def finish_reading_session(session_id: int) -> ReadingState:
+        session = reading_for(session_id)
+        with lock:
+            session.finish()
+            return reading_state(session)
+
+    @app.post("/api/reading/{session_id}/discuss")
+    def discuss(session_id: int) -> SessionStarted:
+        """Talk about the text: the conversation tutor, continuing the reading session. Its
+        messages and ending then go through the conversation endpoints."""
+        session = reading_for(session_id)
+        if not session.finished:
+            raise HTTPException(409, "Finish reading first, then talk about it.")
+        resources = state["resources"]
+        with lock:
+            if session_id not in tutors:
+                store = resources.store
+                tutor = session.discuss(store.embeddings if store is not None else None)
+                opening = tutor.open()
+                tutors[session_id] = tutor
+            else:
+                tutor = tutors[session_id]
+                opening = tutor.last
+        return SessionStarted(
+            session_id=session_id,
+            topic=tutor.topic,
+            lessons=[],
+            requested_words=0,
+            shortfall=None,
+            opening=TurnOut.of(opening),
+        )
 
     @app.get("/api/recommend")
     def get_recommendations(limit: int = 10) -> Recommendations:

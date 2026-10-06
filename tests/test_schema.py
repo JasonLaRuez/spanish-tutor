@@ -349,7 +349,7 @@ def test_pending_migrations_lists_only_what_an_old_database_needs(conn):
     old = connect(":memory:")
     old.executescript((FIXTURES / "schema_v1.sql").read_text(encoding="utf-8"))
     old.execute("PRAGMA user_version = 1")
-    assert pending_migrations(old) == [2, 3, 4, 5, 6]
+    assert pending_migrations(old) == [2, 3, 4, 5, 6, 7]
 
 
 def test_version_2_database_upgrades_to_version_3_keeping_notes(conn):
@@ -438,6 +438,8 @@ def database_at(version):
 
 
 def test_version_5_database_upgrades_to_version_6_keeping_its_words(conn):
+    from spanish_tutor.db import migrations
+
     old = database_at(5)
     casa = add_lexeme(old, "casa")
     add_event(old, casa, "taught", source="seed")
@@ -445,7 +447,7 @@ def test_version_5_database_upgrades_to_version_6_keeping_its_words(conn):
     init_schema(old)
 
     assert table_shapes(old) == table_shapes(conn)
-    assert old.execute("PRAGMA user_version").fetchone()[0] == 6
+    assert old.execute("PRAGMA user_version").fetchone()[0] == migrations()[-1][0]
     row = old.execute("SELECT lemma, example_en_source FROM lexemes").fetchone()
     assert tuple(row) == ("casa", None)
     assert old.execute("SELECT COUNT(*) FROM word_bank").fetchone()[0] == 1
@@ -547,3 +549,82 @@ def test_a_resolution_names_a_word_unless_the_form_is_not_spanish(conn):
     ]:
         with pytest.raises(sqlite3.IntegrityError):
             conn.execute(sql, (form, form, verdict, lexeme_id))
+
+
+# --- Migration 7: turns.kind widened by a table rebuild -----------------------------------
+
+
+def test_version_6_database_rebuilds_turns_keeping_every_turn_and_event(conn):
+    old = database_at(6)
+    session = add_session(old)
+    first = add_turn(old, session, 1, role="tutor", text="Hola.")
+    old.execute(
+        "UPDATE turns SET kind = 'translation', note_en = 'a note', output_tokens = 7 "
+        "WHERE turn_id = ?",
+        (first,),
+    )
+    second = add_turn(old, session, 2)
+    casa = add_lexeme(old, "casa")
+    old.execute(
+        "INSERT INTO word_events (lexeme_id, mode, event_type, source, turn_id) "
+        "VALUES (?, 'recognition', 'taught', 'conversation', ?)",
+        (casa, second),
+    )
+    old.commit()
+    before = old.execute("SELECT * FROM turns ORDER BY turn_id").fetchall()
+
+    init_schema(old)
+
+    assert table_shapes(old) == table_shapes(conn)
+    assert old.execute("PRAGMA user_version").fetchone()[0] == 7
+    # Same rows, compared by column: the rebuilt table has schema.sql's column order, while
+    # an old database had later columns (kind, the cache writes) at the end.
+    assert [dict(r) for r in old.execute("SELECT * FROM turns ORDER BY turn_id")] == [
+        dict(r) for r in before
+    ]
+    assert old.execute("PRAGMA foreign_key_check").fetchall() == []
+    assert old.execute("PRAGMA foreign_keys").fetchone()[0] == 1  # switched back on
+    assert old.execute("SELECT turn_id FROM word_events").fetchone()[0] == second
+    # The new kinds are allowed, and foreign keys still hold on the rebuilt table.
+    add_turn(old, session, 3, role="tutor", text="perro, gato")
+    old.execute("UPDATE turns SET kind = 'study' WHERE turn_no = 3")
+    with pytest.raises(sqlite3.IntegrityError):
+        old.execute(
+            "INSERT INTO turns (session_id, turn_no, role, text_es) VALUES (99, 1, 'tutor', 'x')"
+        )
+
+
+def test_new_turn_kinds_are_accepted_and_others_refused(conn):
+    session = add_session(conn)
+    for n, kind in enumerate(("study", "reading", "attempt"), 1):
+        conn.execute(
+            "INSERT INTO turns (session_id, turn_no, role, kind, text_es) VALUES (?, ?, 'tutor', ?, 'x')",
+            (session, n, kind),
+        )
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute(
+            "INSERT INTO turns (session_id, turn_no, role, kind, text_es) VALUES (?, 9, 'tutor', 'quiz', 'x')",
+            (session,),
+        )
+
+
+def test_a_migration_that_would_break_a_reference_is_rolled_back(conn):
+    from spanish_tutor.db import _migrate_without_foreign_keys
+
+    session = add_session(conn)
+    turn = add_turn(conn, session, 1)
+    casa = add_lexeme(conn, "casa")
+    conn.execute(
+        "INSERT INTO word_events (lexeme_id, mode, event_type, source, turn_id) "
+        "VALUES (?, 'recognition', 'taught', 'conversation', ?)",
+        (casa, turn),
+    )
+    conn.commit()
+    version = conn.execute("PRAGMA user_version").fetchone()[0]
+
+    with pytest.raises(sqlite3.IntegrityError, match="would break 1 foreign keys"):
+        _migrate_without_foreign_keys(conn, 99, "DELETE FROM turns;")
+
+    assert conn.execute("SELECT COUNT(*) FROM turns").fetchone()[0] == 1  # rolled back
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == version
+    assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1

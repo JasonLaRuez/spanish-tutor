@@ -24,6 +24,10 @@ export type Pick = Schemas['Pick']
 export type CatalogItem = Schemas['CatalogItem']
 export type ContentDetail = Schemas['ContentDetail']
 export type NewWord = Schemas['NewWord']
+export type ReadingState = Schemas['ReadingState']
+export type StudyBatch = Schemas['StudyBatch']
+export type StudyWord = Schemas['StudyWord']
+export type ReadingLookUp = Schemas['ReadingLookUp']
 /** How an item was chosen: the default suggestion (or a surprise), or the learner's own pick. */
 export type ChosenVia = Schemas['StartReading']['chosen_via']
 
@@ -78,4 +82,16 @@ export const api = {
     post<{ ok: boolean }>(`/api/content/${contentId}/start`, { chosen_via: chosenVia }),
   finishReading: (contentId: number) =>
     post<{ ok: boolean }>(`/api/content/${contentId}/finish`, {}),
+  // A reading session: study the new words in batches, read, finish, then talk about it.
+  readingStart: (contentId: number, chosenVia: ChosenVia) =>
+    post<ReadingState>('/api/reading', { content_id: contentId, chosen_via: chosenVia }),
+  reading: (sessionId: number) => request<ReadingState>(`/api/reading/${sessionId}`),
+  readingBatch: (sessionId: number, n = 20) =>
+    request<StudyBatch>(`/api/reading/${sessionId}/batch?n=${n}`),
+  readingStudy: (sessionId: number, lexemeIds: number[]) =>
+    post<ReadingState>(`/api/reading/${sessionId}/study`, { lexeme_ids: lexemeIds }),
+  readingLookUp: (sessionId: number, word: string) =>
+    post<ReadingLookUp>(`/api/reading/${sessionId}/lookup`, { word }),
+  readingFinish: (sessionId: number) => post<ReadingState>(`/api/reading/${sessionId}/finish`, {}),
+  discuss: (sessionId: number) => post<SessionStarted>(`/api/reading/${sessionId}/discuss`, {}),
 }

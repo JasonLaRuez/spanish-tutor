@@ -5,7 +5,8 @@ import { HistoryList, TranscriptPage } from './pages/History'
 import { Home } from './pages/Home'
 import { NewConversation } from './pages/NewConversation'
 import { ProgressPage } from './pages/ProgressPage'
-import { Reader } from './pages/Reader'
+import { Books } from './pages/Books'
+import { ReadingPage } from './pages/ReadingPage'
 import { WhatNext } from './pages/WhatNext'
 import { ConversationsProvider } from './state/conversations'
 
@@ -22,7 +23,8 @@ export default function App() {
             <Route path="history/:sessionId" element={<TranscriptPage />} />
             <Route path="progress" element={<ProgressPage />} />
             <Route path="next" element={<WhatNext />} />
-            <Route path="read/:contentId" element={<Reader />} />
+            <Route path="reading/:sessionId" element={<ReadingPage />} />
+            <Route path="books" element={<Books />} />
           </Route>
         </Routes>
       </BrowserRouter>

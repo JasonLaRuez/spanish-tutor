@@ -113,8 +113,12 @@ CREATE TABLE IF NOT EXISTS turns (
     role              TEXT NOT NULL CHECK (role IN ('learner', 'tutor')),
     -- conversation: an ordinary exchange.
     -- translation:  the learner asked "¿cómo se dice ...?", pausing the conversation.
+    -- study:        words taught before or during reading (a batch, or one looked-up word).
+    -- reading:      the learner finished reading an item (carries its 'seen' events).
+    -- attempt:      the lyrics skill: the learner's own translation, and the tutor's comment.
     kind              TEXT NOT NULL DEFAULT 'conversation'
-                      CHECK (kind IN ('conversation', 'translation')),
+                      CHECK (kind IN ('conversation', 'translation', 'study', 'reading',
+                                      'attempt')),
     text_es           TEXT NOT NULL,
     note_en           TEXT,              -- a correction, or a translation's explanation
     draft_out_of_bank INTEGER CHECK (draft_out_of_bank >= 0),  -- words outside the bank, first draft

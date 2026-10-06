@@ -127,6 +127,132 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/reading": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Reading Session
+         * @description Start reading an item: analyzes its text (a few seconds for a long chapter).
+         */
+        post: operations["start_reading_session_api_reading_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/reading/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Reading */
+        get: operations["get_reading_api_reading__session_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/reading/{session_id}/batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Next Batch */
+        get: operations["next_batch_api_reading__session_id__batch_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/reading/{session_id}/study": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Study */
+        post: operations["study_api_reading__session_id__study_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/reading/{session_id}/lookup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reading Look Up */
+        post: operations["reading_look_up_api_reading__session_id__lookup_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/reading/{session_id}/finish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Finish Reading Session */
+        post: operations["finish_reading_session_api_reading__session_id__finish_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/reading/{session_id}/discuss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Discuss
+         * @description Talk about the text: the conversation tutor, continuing the reading session. Its
+         *     messages and ending then go through the conversation endpoints.
+         */
+        post: operations["discuss_api_reading__session_id__discuss_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/recommend": {
         parameters: {
             query?: never;
@@ -458,6 +584,48 @@ export interface components {
             /** Try Using */
             try_using: components["schemas"]["GapWord"][];
         };
+        /** ReadingLookUp */
+        ReadingLookUp: {
+            lesson: components["schemas"]["LessonOut"];
+            state: components["schemas"]["ReadingState"];
+        };
+        /**
+         * ReadingState
+         * @description Where a reading session stands: the text, and how much of it is studied.
+         */
+        ReadingState: {
+            /** Session Id */
+            session_id: number;
+            /** Content Id */
+            content_id: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "song" | "story" | "chapter";
+            /** Title */
+            title: string;
+            /** Author */
+            author: string | null;
+            /** Book Title */
+            book_title: string | null;
+            /** Chapter No */
+            chapter_no: number | null;
+            /** Chapters */
+            chapters: number;
+            /** Paragraphs */
+            paragraphs: string[][];
+            /** Total New */
+            total_new: number;
+            /** Remaining */
+            remaining: number;
+            /** Readable Until */
+            readable_until: number;
+            /** Unstudied */
+            unstudied: string[];
+            /** Finished */
+            finished: boolean;
+        };
         /**
          * Recommendations
          * @description Two rankings; the first of each is the default suggestion. Items with more than
@@ -575,6 +743,35 @@ export interface components {
              */
             chosen_via: "recommended" | "requested";
         };
+        /** StartReadingSession */
+        StartReadingSession: {
+            /** Content Id */
+            content_id: number;
+            /**
+             * Chosen Via
+             * @enum {string}
+             */
+            chosen_via: "recommended" | "requested";
+        };
+        /** StudyBatch */
+        StudyBatch: {
+            /** Words */
+            words: components["schemas"]["StudyWord"][];
+            state: components["schemas"]["ReadingState"];
+        };
+        /** StudyRequest */
+        StudyRequest: {
+            /** Lexeme Ids */
+            lexeme_ids: number[];
+        };
+        /** StudyWord */
+        StudyWord: {
+            /** Lexeme Id */
+            lexeme_id: number;
+            lesson: components["schemas"]["LessonOut"];
+            /** Context */
+            context: string;
+        };
         /**
          * SummaryOut
          * @description The end-of-conversation summary: stats computed from the log, and the tutor's notes.
@@ -625,7 +822,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "conversation" | "translation";
+            kind: "conversation" | "translation" | "study" | "reading" | "attempt";
             /** Text Es */
             text_es: string;
             /** Note En */
@@ -919,6 +1116,235 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Progress"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_reading_session_api_reading_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StartReadingSession"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReadingState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_reading_api_reading__session_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReadingState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    next_batch_api_reading__session_id__batch_get: {
+        parameters: {
+            query?: {
+                n?: number;
+            };
+            header?: never;
+            path: {
+                session_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudyBatch"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    study_api_reading__session_id__study_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StudyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReadingState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reading_look_up_api_reading__session_id__lookup_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LookUp"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReadingLookUp"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    finish_reading_session_api_reading__session_id__finish_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReadingState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    discuss_api_reading__session_id__discuss_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionStarted"];
                 };
             };
             /** @description Validation Error */

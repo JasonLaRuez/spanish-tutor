@@ -422,3 +422,89 @@ def test_items_over_the_ceiling_are_listed_apart(serve, db_path):
     assert found["too_hard_items"][0]["unknown_share"] == pytest.approx(0.5)
     assert (found["books"], [b["title"] for b in found["too_hard_books"]]) == ([], ["Libro"])
     assert found["max_unknown_share"] == recommend.MAX_UNKNOWN_SHARE
+
+
+# --- Reading -----------------------------------------------------------------------------
+
+
+def add_story(db_path, text):
+    from spanish_tutor import content
+
+    conn = db.connect(db_path)
+    with conn:
+        content_id = content.add_item(
+            conn, "story", "Cuento", text, source="gutenberg:1", is_private=False
+        )
+    conn.close()
+    return content_id
+
+
+STORY = "El gato come en casa.\n\nEl perro nada en el río."
+
+
+def test_a_reading_session_studies_the_new_words_then_reads(serve, db_path):
+    story = add_story(db_path, STORY)
+    client, _ = serve()
+
+    started = client.post("/api/reading", json={"content_id": story, "chosen_via": "recommended"})
+    assert started.status_code == 200, started.text
+    state = started.json()
+    session = state["session_id"]
+    assert state["paragraphs"] == [["El gato come en casa."], ["El perro nada en el río."]]
+    assert (state["total_new"], state["remaining"], state["readable_until"]) == (3, 3, 1)
+    assert set(state["unstudied"]) == {"perro", "nada", "río"}
+
+    batch = client.get(f"/api/reading/{session}/batch", params={"n": 2}).json()
+    assert [w["lesson"]["lemma"] for w in batch["words"]] == ["perro", "nadar"]
+    assert batch["words"][0]["context"] == "El perro nada en el río."
+    state = client.post(
+        f"/api/reading/{session}/study",
+        json={"lexeme_ids": [w["lexeme_id"] for w in batch["words"]]},
+    ).json()
+    assert (state["remaining"], state["unstudied"]) == (1, ["río"])
+
+    looked = client.post(f"/api/reading/{session}/lookup", json={"word": "río"}).json()
+    assert looked["lesson"]["lemma"] == "río"
+    assert (looked["state"]["remaining"], looked["state"]["readable_until"]) == (0, 2)
+    assert client.post(f"/api/reading/{session}/lookup", json={"word": "xyzzy"}).status_code == 404
+    assert rows(
+        db_path, "SELECT kind, text_es FROM turns WHERE session_id = 1 ORDER BY turn_no"
+    ) == [("study", "perro, nadar"), ("study", "río")]
+
+
+def test_talking_about_a_text_needs_it_finished_then_continues_as_a_conversation(serve, db_path):
+    story = add_story(db_path, STORY)
+    client, _ = serve("¿Te gustó el cuento?", "Sí, el gato come en casa.")
+    session = client.post(
+        "/api/reading", json={"content_id": story, "chosen_via": "requested"}
+    ).json()["session_id"]
+
+    assert client.post(f"/api/reading/{session}/discuss").status_code == 409
+    assert client.post(f"/api/reading/{session}/finish").json()["finished"] is True
+    started = client.post(f"/api/reading/{session}/discuss").json()
+    assert (started["session_id"], started["opening"]["reply_es"]) == (
+        session,
+        "¿Te gustó el cuento?",
+    )
+    reply = client.post(f"/api/sessions/{session}/messages", json={"text": "Sí, me gustó."})
+    assert reply.status_code == 200, reply.text
+
+    transcript = client.get(f"/api/sessions/{session}").json()
+    assert [t["kind"] for t in transcript["turns"]] == [
+        "reading", "conversation", "conversation", "conversation",
+    ]  # fmt: skip
+    assert transcript["session"]["skill"] == "reading"
+    assert rows(db_path, "SELECT event, chosen_via, session_id FROM content_events") == [
+        ("started", "requested", session),
+        ("finished", None, session),
+    ]
+
+
+def test_reading_endpoints_name_real_items_and_open_sessions(serve, db_path):
+    client, _ = serve()
+    assert (
+        client.post("/api/reading", json={"content_id": 99, "chosen_via": "requested"}).status_code
+        == 404
+    )
+    assert client.get("/api/reading/99").status_code == 404
+    assert client.get("/api/reading/99/batch").status_code == 404

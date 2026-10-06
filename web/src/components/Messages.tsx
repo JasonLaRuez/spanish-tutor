@@ -5,8 +5,17 @@ import { LessonCard, LessonList } from './LessonCard'
 
 type LookUp = (word: string) => Promise<Lesson>
 
-/** Spanish text whose words can be clicked to look them up (when `onLookUp` is given). */
-function SpanishText({ text, onLookUp }: { text: string; onLookUp?: LookUp }) {
+/** Spanish text whose words can be clicked to look them up (when `onLookUp` is given).
+ *  Words in `marked` (lowercase) are underlined: in the reader, the words still to study. */
+export function SpanishText({
+  text,
+  onLookUp,
+  marked,
+}: {
+  text: string
+  onLookUp?: LookUp
+  marked?: Set<string>
+}) {
   const [lookup, setLookup] = useState<
     { word: string; lesson?: Lesson; error?: string; loading?: boolean } | null
   >(null)
@@ -30,7 +39,11 @@ function SpanishText({ text, onLookUp }: { text: string; onLookUp?: LookUp }) {
               key={i}
               type="button"
               onClick={() => open(part.text)}
-              className="cursor-help rounded-sm decoration-dotted decoration-1 underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-accent"
+              className={`cursor-help rounded-sm underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-accent ${
+                marked?.has(part.text.toLowerCase())
+                  ? 'underline decoration-accent decoration-2'
+                  : 'decoration-dotted decoration-1'
+              }`}
               title={`Look up “${part.text}”`}
             >
               {part.text}

@@ -1,0 +1,273 @@
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Link, useNavigate, useParams } from 'react-router'
+import { api, type Lesson, type ReadingState, type StudyWord } from '../api/client'
+import { LessonCard } from '../components/LessonCard'
+import { SpanishText } from '../components/Messages'
+import { useConversations } from '../state/context'
+
+type Step = 'study' | 'read'
+
+/** The reading skill: study the text's new words in batches (in the order they appear),
+ *  read it with click-to-look-up, mark it finished, then talk about it with the tutor. */
+export function ReadingPage() {
+  const sessionId = Number(useParams().sessionId)
+  const navigate = useNavigate()
+  const { discuss } = useConversations()
+  const [state, setState] = useState<ReadingState | null>(null)
+  const [batch, setBatch] = useState<StudyWord[] | null>(null)
+  const [step, setStep] = useState<Step>('study')
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  const fail = (err: unknown) => setError(err instanceof Error ? err.message : String(err))
+
+  useEffect(() => {
+    api
+      .reading(sessionId)
+      .then((loaded) => {
+        setState(loaded)
+        setStep(loaded.remaining > 0 && !loaded.finished ? 'study' : 'read')
+      })
+      .catch(fail)
+  }, [sessionId])
+
+  // The next batch, whenever the study step needs one.
+  useEffect(() => {
+    if (step !== 'study' || !state || state.remaining === 0 || batch) return
+    api
+      .readingBatch(sessionId)
+      .then((next) => {
+        setBatch(next.words)
+        setState(next.state)
+      })
+      .catch(fail)
+  }, [step, state, batch, sessionId])
+
+  const run = async (action: () => Promise<void>) => {
+    setBusy(true)
+    try {
+      await action()
+    } catch (err) {
+      fail(err)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const studyBatch = () =>
+    run(async () => {
+      setState(await api.readingStudy(sessionId, (batch ?? []).map((w) => w.lexeme_id)))
+      setBatch(null)
+    })
+
+  const lookUp = useCallback(
+    async (word: string) => {
+      const found = await api.readingLookUp(sessionId, word)
+      setState(found.state)
+      return found.lesson
+    },
+    [sessionId],
+  )
+
+  const finish = () => run(async () => setState(await api.readingFinish(sessionId)))
+  const talk = () => run(async () => navigate(`/chat/${await discuss(sessionId)}`))
+
+  if (error && !state) return <p className="p-8 text-danger">{error}</p>
+  if (!state) return <p className="p-8 text-muted">Opening the text…</p>
+
+  const studied = state.total_new - state.remaining
+  const where =
+    state.kind === 'chapter'
+      ? `${state.book_title} · chapter ${state.chapter_no} of ${state.chapters}`
+      : state.kind === 'song'
+        ? 'Song'
+        : 'Story'
+
+  return (
+    <div className="mx-auto max-w-3xl space-y-6 px-6 py-10">
+      <div>
+        <Link to="/next" className="text-sm text-accent-text hover:underline">
+          ← What next?
+        </Link>
+        <h1 lang="es" className="mt-3 text-2xl font-semibold text-ink">
+          {state.title}
+        </h1>
+        <p className="mt-1 text-sm text-muted">
+          {where}
+          {state.author ? ` · ${state.author}` : ''}
+          {state.finished ? ' · finished' : ''}
+        </p>
+      </div>
+
+      <section aria-label="Study progress" className="space-y-1.5">
+        <div className="flex items-baseline justify-between text-sm">
+          <span className="text-ink-2">
+            {state.total_new === 0
+              ? 'You know every word in it.'
+              : `Studied ${studied.toLocaleString()} of ${state.total_new.toLocaleString()} new words`}
+          </span>
+          {state.total_new > 0 && <span className="tabular text-muted">{Math.round((studied / state.total_new) * 100)}%</span>}
+        </div>
+        {state.total_new > 0 && (
+          <div className="h-1.5 overflow-hidden rounded-full bg-surface-2" aria-hidden>
+            <div className="h-full rounded-full bg-accent" style={{ width: `${(studied / state.total_new) * 100}%` }} />
+          </div>
+        )}
+      </section>
+
+      <div role="tablist" className="flex gap-1 border-b border-line">
+        {(['study', 'read'] as const).map((tab) => (
+          <button
+            key={tab}
+            type="button"
+            role="tab"
+            aria-selected={step === tab}
+            onClick={() => setStep(tab)}
+            className={`-mb-px border-b-2 px-3 py-2 text-sm ${
+              step === tab ? 'border-accent font-medium text-ink' : 'border-transparent text-ink-2 hover:text-ink'
+            }`}
+          >
+            {tab === 'study' ? `Study${state.remaining ? ` (${state.remaining.toLocaleString()})` : ''}` : 'Read'}
+          </button>
+        ))}
+      </div>
+
+      {error && <p className="text-danger">{error}</p>}
+
+      {step === 'study' ? (
+        <Study state={state} batch={batch} busy={busy} onStudy={studyBatch} onRead={() => setStep('read')} />
+      ) : (
+        <Read state={state} onLookUp={lookUp} />
+      )}
+
+      <div className="flex flex-wrap items-center gap-3 border-t border-line pt-5">
+        {!state.finished ? (
+          <>
+            <button
+              type="button"
+              onClick={finish}
+              disabled={busy}
+              className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-ink disabled:opacity-50"
+            >
+              Finished
+            </button>
+            <span className="text-sm text-ink-2">Mark it read; then you can talk about it.</span>
+          </>
+        ) : (
+          <>
+            <button
+              type="button"
+              onClick={talk}
+              disabled={busy}
+              className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-ink disabled:opacity-50"
+            >
+              Talk about it
+            </button>
+            <Link to="/next" className="text-sm text-accent-text hover:underline">
+              Back to your suggestions
+            </Link>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function Study(props: {
+  state: ReadingState
+  batch: StudyWord[] | null
+  busy: boolean
+  onStudy: () => void
+  onRead: () => void
+}) {
+  if (props.state.remaining === 0) {
+    return (
+      <section className="space-y-3 rounded-xl border border-line bg-surface p-5">
+        <h2 className="font-semibold text-ink">Every new word is studied</h2>
+        <p className="text-sm text-ink-2">You can read the whole text with words you know.</p>
+        <button
+          type="button"
+          onClick={props.onRead}
+          className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-ink"
+        >
+          Read it now
+        </button>
+      </section>
+    )
+  }
+  if (!props.batch) return <p className="text-muted">Preparing the next words…</p>
+  return (
+    <section aria-label="Words to study" className="space-y-4">
+      <p className="text-sm text-ink-2">
+        The next {props.batch.length} new words, in the order they appear in the text. Studying
+        them adds them to the words you recognize. You can start reading at any time.
+      </p>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {props.batch.map((word) => (
+          <div key={word.lexeme_id} className="min-w-0 space-y-1">
+            <LessonCard lesson={word.lesson} />
+            <p lang="es" className="px-1 text-xs text-muted">
+              In the text: {word.context}
+            </p>
+          </div>
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-3">
+        <button
+          type="button"
+          onClick={props.onStudy}
+          disabled={props.busy}
+          className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-ink disabled:opacity-50"
+        >
+          I’ve studied these
+        </button>
+        <button
+          type="button"
+          onClick={props.onRead}
+          className="rounded-lg border border-line bg-surface px-4 py-2 text-sm font-medium text-ink hover:border-accent"
+        >
+          Start reading
+        </button>
+      </div>
+    </section>
+  )
+}
+
+function Read({
+  state,
+  onLookUp,
+}: {
+  state: ReadingState
+  onLookUp: (word: string) => Promise<Lesson>
+}) {
+  const marked = useMemo(() => new Set(state.unstudied), [state.unstudied])
+  // Where the fully studied part ends: before the first paragraph with a sentence past it.
+  let sentence = 0
+  let markerBefore = -1
+  state.paragraphs.forEach((paragraph, i) => {
+    if (markerBefore < 0 && sentence + paragraph.length > state.readable_until) markerBefore = i
+    sentence += paragraph.length
+  })
+  const join = state.kind === 'song' ? '\n' : ' '
+  return (
+    <section aria-label="Text" className="space-y-4">
+      <p className="text-sm text-ink-2">
+        {state.remaining > 0
+          ? 'Underlined: words you haven’t studied yet. Click any word to look it up.'
+          : 'Click any word to look it up.'}
+      </p>
+      <article className="space-y-4 text-[1.05rem] leading-relaxed text-ink">
+        {state.paragraphs.map((paragraph, i) => (
+          <div key={i}>
+            {i === markerBefore && i > 0 && (
+              <p role="separator" className="mb-4 border-t border-dashed border-accent pt-1 text-xs text-accent-text">
+                Every word above is studied
+              </p>
+            )}
+            <SpanishText text={paragraph.join(join)} onLookUp={onLookUp} marked={marked} />
+          </div>
+        ))}
+      </article>
+    </section>
+  )
+}

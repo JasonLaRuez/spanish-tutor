@@ -137,8 +137,10 @@ def main() -> None:
     paths = write_chapters(chapters, GUTENBERG_DIR / str(args.ebook))
     for path, (_, text) in zip(paths, chapters, strict=True):
         print(f"{path.name}: {len(text.split()):,} words")
-    print(f"add it: python -m spanish_tutor.content add-book {GUTENBERG_DIR / str(args.ebook)} "
-          f'--title "{manifest.title}" --author "{manifest.author}" --source gutenberg:{args.ebook}')
+    print(
+        f"add it: python -m spanish_tutor.content add-book {GUTENBERG_DIR / str(args.ebook)} "
+        f'--title "{manifest.title}" --author "{manifest.author}" --source gutenberg:{args.ebook}'
+    )
 
 
 if __name__ == "__main__":

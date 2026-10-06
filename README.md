@@ -143,6 +143,11 @@ uv run python -m spanish_tutor.content index                 # index everything 
 uv run python -m spanish_tutor.content list
 ```
 
+Starting an item opens it for **reading**: first study its new words, in batches of 20 in
+the order they appear in the text, then read it (words you haven't studied yet are
+underlined, and any word can be clicked to look it up), mark it finished, and then talk
+about it with the tutor, who keeps to your vocabulary and draws on passages of the text.
+
 Words neither the lexicon nor Wiktionary knows (old spellings, regional words, English
 lines) are sent to Claude Opus 5.5 with the sentence each appears in. It decides whether
 each one is a spelling of a known word, a real word the dictionaries miss, or not Spanish,

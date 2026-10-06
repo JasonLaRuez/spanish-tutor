@@ -265,9 +265,10 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
   (schema, indexer, model resolver, both ranking queries, the API and the "what next?"
   screen with a simple reader; see "Content index and recommender" below). Quiroga's
   story collection is in the real database. **Phase 4 is planned** (see "Phase 4 plan"
-  below); slices 4.0 (the difficulty ceiling, now 20%) and 4.1 (book manifests, older
-  accent respellings, candidate measurement) are built. Next: slice 4.2 (the reading
-  skill), alongside more real conversations reviewed in SQL.
+  below); slices 4.0 (the difficulty ceiling, now 20%), 4.1 (book manifests, older
+  accent respellings, candidate measurement) and 4.2 (the reading skill) are built. The
+  real database holds Quiroga (too hard) and *An Elementary Spanish Reader* (suggested).
+  Next: slice 4.3 (the lyrics skill), alongside more real conversations reviewed in SQL.
   - **Built so far:** word bank schema + migrations 001–006; seed (1,030 recognized / 762
     produced after the seed-gap marks; grows with sessions); general lexicon; Tatoeba in
     Chroma (261k sentences); the conversation skill with write-back, topic pre-teaching
@@ -731,6 +732,37 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
     analyzed once per session (first appearances, contexts). Migration 7 widens
     `turns.kind` (`study`, `reading`, `attempt`) by table rebuild so every event keeps its
     turn. Books library page.
+    - **Built 2026-10-06.** `reading.ReadingSession` (one per started item, in memory like
+      tutors; skill `reading`, `content_events.session_id` set): `next_batch` (logs
+      nothing), `study` (one `study` turn, role tutor, `text_es` = the words, `taught`
+      events), `look_up` (unknown → a one-word study turn; known → free), `finish` (a
+      `reading` turn, role learner, with `seen` for every known word; ends the session;
+      finishes the item), `discuss` (a `Tutor` continuing the session: `skill`/`source`
+      'reading', `first_turn_no`, its own opening, `prompts/reading.md` appended to the
+      instructions, `TextPassages` = the text in 3-sentence passages in an
+      `InMemoryVectorStore` with the jina embeddings; the top 3 go in each turn's note).
+      Words resolve as the indexer resolved them (lexicon, dictionary, `word_resolutions`).
+    - The talk is offered after Finished, not automatic (Jason). It's registered as an
+      open conversation, so the chat endpoints and page serve it unchanged.
+    - **Migration 7 (approved):** `turns` rebuilt (create, copy, drop, rename) with the
+      wider CHECK. `db.init_schema` runs a migration marked `-- foreign_keys: off` with
+      foreign keys off and checks `PRAGMA foreign_key_check` before committing (rolls back
+      on a broken reference). Verified on a copy: 54 turns and 2,417 events kept, word
+      bank unchanged. The real DB migrates at the next startup.
+    - `content.paragraphs` gives the text as paragraphs (a song's stanzas) of sentences
+      (lines); `content.sentences` flattens it (identical units on all 39 real chapters).
+    - API: `POST /api/reading` (start; analyzes the text, a few seconds for a long
+      chapter), `GET /api/reading/{id}`, `GET …/batch?n=`, `POST …/study`,
+      `POST …/lookup`, `POST …/finish`, `POST …/discuss` (409 before finishing). Web: the
+      reading page (`/reading/:sessionId`: Study / Read tabs, progress bar, unstudied
+      words underlined, a "studied up to here" marker), the Books page, and "What next?"
+      starting reading sessions. The plain Phase 3 reader is gone (its endpoints stay).
+    - Checked in headless Edge on a copy: chapter 1 of the reader had 14 new words in one
+      batch; studying them moved the book from 19% to 18% unknown; finishing moved it to
+      chapter 2. The talk itself was not exercised in the browser (it calls the model);
+      the API tests and notebook 02 cover it.
+    - Known gaps: the sidebar's word counts refresh on page changes only; inflected forms
+      of old spellings (*órdenes*) aren't respelled (4 tokens in the corpus).
   - **4.3 Lyrics skill:** study batches, then **try first** (Jason translates chosen lines
     Spanish → English; comprehension, not graded), then compare natural and literal
     translations side by side with figurative notes and a comment on his attempt;

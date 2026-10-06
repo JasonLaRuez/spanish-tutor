@@ -2,8 +2,9 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { api, type CatalogItem, type ContentDetail, type Recommendations } from '../api/client'
-import { Reader } from '../pages/Reader'
+import { api, type CatalogItem, type Lesson, type ReadingState, type Recommendations } from '../api/client'
+import { ReadingPage } from '../pages/ReadingPage'
+import { ConversationsProvider } from '../state/conversations'
 import { WhatNext } from '../pages/WhatNext'
 
 afterEach(() => vi.restoreAllMocks())
@@ -45,12 +46,15 @@ const catalog: CatalogItem[] = [
   },
 ]
 
+// What a started reading session returns; the page only needs its id.
+const readingStarted = { session_id: 77 } as ReadingState
+
 function renderWhatNext() {
   render(
     <MemoryRouter initialEntries={['/next']}>
       <Routes>
         <Route path="/next" element={<WhatNext />} />
-        <Route path="/read/:contentId" element={<p>reader page</p>} />
+        <Route path="/reading/:sessionId" element={<p>reader page</p>} />
       </Routes>
     </MemoryRouter>,
   )
@@ -73,7 +77,7 @@ describe('What next?', () => {
   it('logs the default suggestion as recommended and opens the reader', async () => {
     vi.spyOn(api, 'recommend').mockResolvedValue(recommendations)
     vi.spyOn(api, 'catalog').mockResolvedValue(catalog)
-    const start = vi.spyOn(api, 'startReading').mockResolvedValue({ ok: true })
+    const start = vi.spyOn(api, 'readingStart').mockResolvedValue(readingStarted)
     renderWhatNext()
 
     const book = await screen.findByRole('region', { name: 'Suggested book' })
@@ -86,7 +90,7 @@ describe('What next?', () => {
   it('logs any other pick as the learner’s own request', async () => {
     vi.spyOn(api, 'recommend').mockResolvedValue(recommendations)
     vi.spyOn(api, 'catalog').mockResolvedValue(catalog)
-    const start = vi.spyOn(api, 'startReading').mockResolvedValue({ ok: true })
+    const start = vi.spyOn(api, 'readingStart').mockResolvedValue(readingStarted)
     renderWhatNext()
 
     await userEvent.click(await screen.findByRole('cell', { name: 'Difícil' }))
@@ -97,7 +101,7 @@ describe('What next?', () => {
     vi.spyOn(api, 'recommend').mockResolvedValue(recommendations)
     vi.spyOn(api, 'catalog').mockResolvedValue(catalog)
     vi.spyOn(api, 'surprise').mockResolvedValue({ content_id: 2, kind: 'story', title: 'Difícil', new_words: 8 })
-    const start = vi.spyOn(api, 'startReading').mockResolvedValue({ ok: true })
+    const start = vi.spyOn(api, 'readingStart').mockResolvedValue(readingStarted)
     renderWhatNext()
 
     await userEvent.click(await screen.findByRole('button', { name: 'Surprise me' }))
@@ -114,7 +118,7 @@ describe('What next?', () => {
       max_unknown_share: 0.1,
     })
     vi.spyOn(api, 'catalog').mockResolvedValue(catalog)
-    const start = vi.spyOn(api, 'startReading').mockResolvedValue({ ok: true })
+    const start = vi.spyOn(api, 'readingStart').mockResolvedValue(readingStarted)
     renderWhatNext()
 
     const table = await screen.findByRole('region', { name: 'Too hard for now' })
@@ -139,75 +143,130 @@ describe('What next?', () => {
   })
 })
 
-const chapter = (overrides: Partial<ContentDetail> = {}): ContentDetail => ({
-  content_id: 12,
+const lessonFor = (lexeme_id: number, lemma: string): Lesson => ({
+  lexeme_id,
+  lemma,
+  pos: 'NOUN',
+  definition_en: `meaning of ${lemma}`,
+  example: null,
+  model_written: false,
+})
+
+const readingState = (overrides: Partial<ReadingState> = {}): ReadingState => ({
+  session_id: 7,
+  content_id: 30,
   kind: 'chapter',
-  title: 'Los ojos sombríos',
-  author: 'Horacio Quiroga',
-  source: 'gutenberg:13507',
-  book_id: 1,
-  book_title: 'Cuentos',
-  chapter_no: 2,
-  chapters: 18,
-  tokens: 2092,
-  unresolved_tokens: 0,
-  indexed: true,
-  started: true,
+  title: 'El cuento del pollo',
+  author: 'E. S. Harrison',
+  book_title: 'An Elementary Spanish Reader',
+  chapter_no: 1,
+  chapters: 21,
+  paragraphs: [['Un día un pollo entra en un bosque.'], ['Una bellota cae en su cabeza.']],
+  total_new: 3,
+  remaining: 3,
+  readable_until: 0,
+  unstudied: ['bosque', 'bellota', 'cae'],
   finished: false,
-  text_es: 'Primera línea\nsigue el párrafo.\n\n\nSegundo párrafo.',
-  new_words: Array.from({ length: 25 }, (_, i) => ({
-    lexeme_id: i + 1,
-    lemma: i === 0 ? 'cocotaje' : `palabra${i}`,
-    pos: 'NOUN',
-    definition_en: `meaning ${i}`,
-    occurrences: 25 - i,
-    model_written: i === 0,
-  })),
   ...overrides,
 })
 
-function renderReader() {
+function renderReading() {
   render(
-    <MemoryRouter initialEntries={['/read/12']}>
-      <Routes>
-        <Route path="/read/:contentId" element={<Reader />} />
-        <Route path="/next" element={<p>what next page</p>} />
-      </Routes>
-    </MemoryRouter>,
+    <ConversationsProvider>
+      <MemoryRouter initialEntries={['/reading/7']}>
+        <Routes>
+          <Route path="/reading/:sessionId" element={<ReadingPage />} />
+          <Route path="/chat/:sessionId" element={<p>chat page</p>} />
+        </Routes>
+      </MemoryRouter>
+    </ConversationsProvider>,
   )
 }
 
-describe('Reader', () => {
-  it('shows the new words first, then the text in paragraphs', async () => {
-    vi.spyOn(api, 'content').mockResolvedValue(chapter())
-    renderReader()
+describe('Reading', () => {
+  it('studies a batch of new words, in order, and then offers the next', async () => {
+    vi.spyOn(api, 'reading').mockResolvedValue(readingState())
+    const batch = vi
+      .spyOn(api, 'readingBatch')
+      .mockResolvedValueOnce({
+        words: [
+          { lexeme_id: 1, lesson: lessonFor(1, 'bosque'), context: 'Un día un pollo entra en un bosque.' },
+          { lexeme_id: 2, lesson: lessonFor(2, 'bellota'), context: 'Una bellota cae en su cabeza.' },
+        ],
+        state: readingState(),
+      })
+      .mockResolvedValueOnce({
+        words: [{ lexeme_id: 3, lesson: lessonFor(3, 'caer'), context: 'Una bellota cae en su cabeza.' }],
+        state: readingState({ remaining: 1, readable_until: 1, unstudied: ['cae'] }),
+      })
+    const study = vi
+      .spyOn(api, 'readingStudy')
+      .mockResolvedValue(readingState({ remaining: 1, readable_until: 1, unstudied: ['cae'] }))
+    renderReading()
 
-    expect(await screen.findByText('Cuentos · chapter 2 of 18 · Horacio Quiroga')).toBeInTheDocument()
-    const words = screen.getByRole('region', { name: 'New words' })
-    expect(within(words).getByText('25 new words')).toBeInTheDocument()
-    expect(within(words).getByText('model-written')).toBeInTheDocument()
-    expect(within(words).queryByText('palabra24')).not.toBeInTheDocument() // first 20 only
-    await userEvent.click(within(words).getByRole('button', { name: 'Show all 25' }))
-    expect(within(words).getByText('palabra24')).toBeInTheDocument()
-    // A hard-wrapped line is joined into its paragraph.
-    expect(screen.getByText('Primera línea sigue el párrafo.')).toBeInTheDocument()
-    expect(screen.getByText('Segundo párrafo.')).toBeInTheDocument()
+    const words = await screen.findByRole('region', { name: 'Words to study' })
+    expect(within(words).getByText('In the text: Un día un pollo entra en un bosque.')).toBeInTheDocument()
+    expect(screen.getByText('Studied 0 of 3 new words')).toBeInTheDocument()
+    await userEvent.click(within(words).getByRole('button', { name: 'I’ve studied these' }))
+
+    expect(study).toHaveBeenCalledWith(7, [1, 2])
+    expect(await screen.findByText('Studied 2 of 3 new words')).toBeInTheDocument()
+    expect(await screen.findByText('meaning of caer')).toBeInTheDocument()
+    expect(batch).toHaveBeenCalledTimes(2)
   })
 
-  it('marks the item finished and returns to the suggestions', async () => {
-    vi.spyOn(api, 'content').mockResolvedValue(chapter())
-    const finish = vi.spyOn(api, 'finishReading').mockResolvedValue({ ok: true })
-    renderReader()
+  it('reads the text with unstudied words underlined and the studied part marked', async () => {
+    const partly = readingState({ remaining: 1, readable_until: 1, unstudied: ['cae'] })
+    vi.spyOn(api, 'reading').mockResolvedValue(partly)
+    vi.spyOn(api, 'readingBatch').mockResolvedValue({ words: [], state: partly })
+    const lookUp = vi.spyOn(api, 'readingLookUp').mockResolvedValue({
+      lesson: lessonFor(3, 'caer'),
+      state: readingState({ remaining: 0, readable_until: 2, unstudied: [] }),
+    })
+    renderReading()
 
-    expect(await screen.findByText('Your next suggestion will be the next chapter.')).toBeInTheDocument()
+    await userEvent.click(await screen.findByRole('tab', { name: 'Read' }))
+    const text = screen.getByRole('region', { name: 'Text' })
+    expect(within(text).getByRole('button', { name: 'cae' })).toHaveClass('decoration-accent')
+    expect(within(text).getByRole('button', { name: 'bosque' })).not.toHaveClass('decoration-accent')
+    expect(within(text).getByRole('separator')).toHaveTextContent('Every word above is studied')
+
+    await userEvent.click(within(text).getByRole('button', { name: 'cae' }))
+    expect(lookUp).toHaveBeenCalledWith(7, 'cae')
+    expect(await within(text).findByText('meaning of caer')).toBeInTheDocument()
+    expect(within(text).getByRole('button', { name: 'cae' })).not.toHaveClass('decoration-accent')
+  })
+
+  it('offers the talk only once finished, and opens it as a chat', async () => {
+    vi.spyOn(api, 'reading').mockResolvedValue(readingState({ remaining: 0, unstudied: [], readable_until: 2 }))
+    vi.spyOn(api, 'readingFinish').mockResolvedValue(
+      readingState({ remaining: 0, unstudied: [], readable_until: 2, finished: true }),
+    )
+    const discuss = vi.spyOn(api, 'discuss').mockResolvedValue({
+      session_id: 7,
+      topic: '«El cuento del pollo»',
+      lessons: [],
+      requested_words: 0,
+      shortfall: null,
+      opening: {
+        kind: 'conversation',
+        reply_es: '¿Te gustó el cuento?',
+        reply_en: null,
+        note_en: null,
+        lessons: [],
+        not_words: [],
+        used: [],
+        pending: null,
+      },
+    })
+    renderReading()
+
+    // Every word studied: the page opens on the text.
+    expect(await screen.findByRole('region', { name: 'Text' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Talk about it' })).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Finished' }))
-    expect(finish).toHaveBeenCalledWith(12)
-    expect(await screen.findByText('what next page')).toBeInTheDocument()
-  })
-
-  it('says so when every word is known', async () => {
-    vi.spyOn(api, 'content').mockResolvedValue(chapter({ new_words: [] }))
-    renderReader()
-    expect(await screen.findByText('You know every word in this one.')).toBeInTheDocument()
+    await userEvent.click(await screen.findByRole('button', { name: 'Talk about it' }))
+    expect(discuss).toHaveBeenCalledWith(7)
+    expect(await screen.findByText('chat page')).toBeInTheDocument()
   })
 })

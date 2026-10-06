@@ -254,10 +254,10 @@ def vocabulary_block(known: set[Analysis]) -> str:
     return "# The learner's vocabulary\n\n" + "\n".join(lines)
 
 
-def system_message(known: set[Analysis]) -> SystemMessage:
+def system_message(known: set[Analysis], instructions: str = INSTRUCTIONS) -> SystemMessage:
     return SystemMessage(
         content=[
-            {"type": "text", "text": INSTRUCTIONS},
+            {"type": "text", "text": instructions},
             # The breakpoint caches instructions + vocabulary: the whole stable prefix. One
             # hour, not the default five minutes: learners pause to think (session 1 had a
             # 33-minute gap, after which ~5k tokens were re-sent at full price).
@@ -275,8 +275,14 @@ def turn_note(
     taught: list[str],
     avoid: list[str] | None = None,
     focus: list[str] | None = None,
+    passages: list[str] | None = None,
 ) -> str:
     parts = []
+    if passages:
+        parts.append(
+            "Passages from the text the learner read, closest to their last message:\n"
+            + "\n".join(f"- {p}" for p in passages)
+        )
     if examples:
         parts.append("Sentences the learner can read:\n" + "\n".join(f"- {s}" for s in examples))
     if focus:
@@ -461,8 +467,19 @@ class Ending:
     notes_error: str | None = None
 
 
+class Passages(Protocol):
+    def search(self, query: str, k: int = 3) -> list[str]:
+        """The passages of a text closest to `query`."""
+
+
 class Tutor:
-    """One conversation session. Reads and writes the word bank on every turn."""
+    """One conversation session. Reads and writes the word bank on every turn.
+
+    The reading skill reuses it for the discussion after a text (reading.py): its own
+    skill and event source, the reading session to continue (turn numbers carry on), its
+    own opening and instructions, and the text's `passages`, the closest of which go into
+    every turn's note (the retrieval step over the text).
+    """
 
     def __init__(
         self,
@@ -473,8 +490,20 @@ class Tutor:
         store: Chroma | None = None,
         topic: str | None = None,
         model: str = MODEL,
+        *,
+        skill: str = "conversation",
+        source: str = SOURCE,
+        session_id: int | None = None,
+        first_turn_no: int = 0,
+        opening: str | None = None,
+        instructions: str = INSTRUCTIONS,
+        passages: Passages | None = None,
     ):
         self.conn = conn
+        self.source = source
+        self.opening = opening
+        self.instructions = instructions
+        self.passages = passages
         self.generate = generate
         self.index = index
         self.analyze = analyze
@@ -492,17 +521,19 @@ class Tutor:
         self._pre_taught_unlogged: list[Lexeme] = []
         # Why fewer topic words were taught than requested (for the learner), if they were.
         self.pre_teach_shortfall: str | None = None
-        self.turn_no = 0
+        self.turn_no = first_turn_no
         self.last_tutor_turn_id: int | None = None
         self.last: TutorTurn | None = None
         self.ended = False
-        with conn:
-            self.session_id = db.start_session(conn, "conversation", model, topic)
+        if session_id is None:
+            with conn:
+                session_id = db.start_session(conn, skill, model, topic)
+        self.session_id = session_id
 
     @property
     def system(self) -> SystemMessage:
         if self._frozen_system is None:
-            self._frozen_system = system_message(self.known)
+            self._frozen_system = system_message(self.known, self.instructions)
         return self._frozen_system
 
     # --- Turns ---
@@ -534,7 +565,7 @@ class Tutor:
     def open(self) -> TutorTurn:
         """The tutor's first message."""
         focus = [lex.lemma for lex in self.focus]
-        return self._turn(opening_message(self.topic, focus), learner_text=None)
+        return self._turn(self.opening or opening_message(self.topic, focus), learner_text=None)
 
     def respond(self, text: str) -> TutorTurn:
         return self._turn(text, learner_text=text)
@@ -589,7 +620,8 @@ class Tutor:
         examples = self._examples(f"{self.topic or ''} {learner_text or ''}".strip(), known)
         taught_names = [lex.lemma for lex in self.taught if lex not in self.focus]
         focus = [lex.lemma for lex in self.focus]
-        note = turn_note(examples, taught_names, focus=focus)
+        passages = self.passages.search(learner_text or self.topic or "") if self.passages else []
+        note = turn_note(examples, taught_names, focus=focus, passages=passages)
         if farewell:
             note += "\n\n" + FAREWELL_NOTE
         messages = [
@@ -603,7 +635,7 @@ class Tutor:
         final, final_new, generations = first, draft_new, [first]
         if len(draft_new) > MAX_NEW_WORDS:
             avoid = [lex.lemma for lex in draft_new]
-            note = turn_note(examples, taught_names, avoid=avoid, focus=focus)
+            note = turn_note(examples, taught_names, avoid=avoid, focus=focus, passages=passages)
             if farewell:
                 note += "\n\n" + FAREWELL_NOTE
             final = self.generate([*messages[:-1], SystemMessage(note)])
@@ -641,9 +673,9 @@ class Tutor:
             self.known |= newly_known
             for lex in self._reply_words(reply.reply_es):
                 if lex in final_new:
-                    events.append(Event(lex.lexeme_id, "taught", SOURCE, turn_id=tutor_turn))
+                    events.append(Event(lex.lexeme_id, "taught", self.source, turn_id=tutor_turn))
                 else:
-                    events.append(Event(lex.lexeme_id, "seen", SOURCE, turn_id=tutor_turn))
+                    events.append(Event(lex.lexeme_id, "seen", self.source, turn_id=tutor_turn))
             # Pre-taught topic words: taught before the opening, logged with it.
             events += [
                 Event(lex.lexeme_id, "taught", "pre_teach", turn_id=tutor_turn)
@@ -718,7 +750,7 @@ class Tutor:
                     Event(
                         lex.lexeme_id,
                         "taught" if lex in new else "seen",
-                        SOURCE,
+                        self.source,
                         turn_id=tutor_turn,
                     )
                     for lex in self._reply_words(spanish)
@@ -761,7 +793,7 @@ class Tutor:
             with self.conn:
                 log_events(
                     self.conn,
-                    [Event(lex.lexeme_id, "taught", SOURCE, turn_id=self.last_tutor_turn_id)],
+                    [Event(lex.lexeme_id, "taught", self.source, turn_id=self.last_tutor_turn_id)],
                 )
             self.known.add(lex.analysis)
             self.taught.append(lex)
@@ -809,12 +841,12 @@ class Tutor:
             surfaces = {word for phrase in phrases for word in phrase.split()}  # expressions
             if surfaces & wrong_words:
                 if self._produced(lex):
-                    events.append(Event(lex.lexeme_id, "used", SOURCE, GRADE_MISUSED, turn_id))
+                    events.append(Event(lex.lexeme_id, "used", self.source, GRADE_MISUSED, turn_id))
                 continue
             grade = GRADE_MISUSED if surfaces & wrong_forms else GRADE_USED
-            events.append(Event(lex.lexeme_id, "used", SOURCE, grade, turn_id))
+            events.append(Event(lex.lexeme_id, "used", self.source, grade, turn_id))
             if lex.analysis not in self.known:
-                events.append(Event(lex.lexeme_id, "taught", SOURCE, turn_id=turn_id))
+                events.append(Event(lex.lexeme_id, "taught", self.source, turn_id=turn_id))
         return events
 
     def _produced(self, lex: Lexeme) -> bool:

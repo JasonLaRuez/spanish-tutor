@@ -17,8 +17,8 @@ const count = (n: number, noun: string) => `${n.toLocaleString()} ${noun}${n ===
 const KIND: Record<string, string> = { song: 'Song', story: 'Story', chapter: 'Chapter' }
 
 /** "What next?": the recommender's two rankings, a surprise pick, and everything else to
- *  choose from. Starting an item logs how it was chosen (the default suggestion, or the
- *  learner's own pick) before the reader opens. */
+ *  choose from. Starting an item opens a reading session, which logs how it was chosen
+ *  (the default suggestion, or the learner's own pick). */
 export function WhatNext() {
   const navigate = useNavigate()
   const [recs, setRecs] = useState<Recommendations | null>(null)
@@ -34,8 +34,9 @@ export function WhatNext() {
   const open = async (contentId: number, chosenVia: ChosenVia) => {
     setBusy(true)
     try {
-      await api.startReading(contentId, chosenVia)
-      navigate(`/read/${contentId}`)
+      // A reading session: it logs the start (and how the item was chosen) itself.
+      const started = await api.readingStart(contentId, chosenVia)
+      navigate(`/reading/${started.session_id}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
       setBusy(false)

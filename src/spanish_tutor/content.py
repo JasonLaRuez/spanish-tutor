@@ -113,8 +113,9 @@ _SENTENCE_END = re.compile(r"(?<=[.!?…])\s+|(?<=[.!?…])(?=[¿¡])")
 _PARAGRAPH_BREAK = re.compile(r"\n\s*\n")
 
 
-def sentences(text: str, kind: str) -> list[str]:
-    """The units a text is analyzed in: lines of a song, sentences of prose.
+def paragraphs(text: str, kind: str) -> list[list[str]]:
+    """The text as paragraphs (a song's stanzas), each a list of the units it's analyzed in:
+    lines of a song, sentences of prose.
 
     Lyrics often have no punctuation, and a line is their natural unit. Prose is split
     into paragraphs at blank lines, and a paragraph's own line breaks are joined: books
@@ -122,10 +123,18 @@ def sentences(text: str, kind: str) -> list[str]:
     sentence tags badly ("y le jura no" made "no" a particle). Each paragraph is then split
     after sentence-final punctuation.
     """
+    blocks = _PARAGRAPH_BREAK.split(text)
     if kind == "song":
-        return [line.strip() for line in text.splitlines() if line.strip()]
-    paragraphs = (" ".join(p.split()) for p in _PARAGRAPH_BREAK.split(text))
-    return [s.strip() for p in paragraphs if p for s in _SENTENCE_END.split(p) if s.strip()]
+        stanzas = [[line.strip() for line in b.splitlines() if line.strip()] for b in blocks]
+        return [stanza for stanza in stanzas if stanza]
+    joined = (" ".join(b.split()) for b in blocks)
+    split = ([s.strip() for s in _SENTENCE_END.split(p) if s.strip()] for p in joined if p)
+    return [p for p in split if p]
+
+
+def sentences(text: str, kind: str) -> list[str]:
+    """The units a text is analyzed in, in order (see `paragraphs`)."""
+    return [unit for paragraph in paragraphs(text, kind) for unit in paragraph]
 
 
 @dataclass

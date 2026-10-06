@@ -1,7 +1,7 @@
 // Open conversations, kept above the routes so a reply that arrives while the learner is
 // on another page (Progress, History) isn't lost, and the chat is still there on return.
 import { useCallback, useMemo, useState, type ReactNode } from 'react'
-import { api, ApiError, type Transcript } from '../api/client'
+import { api, ApiError, type SessionStarted, type Transcript } from '../api/client'
 import { Context, type Chat, type ChatItem } from './context'
 
 let nextId = 1
@@ -14,8 +14,8 @@ export function ConversationsProvider({ children }: { children: ReactNode }) {
     setChats((all) => (all[sessionId] ? { ...all, [sessionId]: change(all[sessionId]) } : all))
   }, [])
 
-  const start = useCallback(async (topic: string | null, newWords: number) => {
-    const started = await api.start(topic, newWords)
+  // A chat from its opening: a new conversation, or the talk after a reading session.
+  const open = useCallback((started: SessionStarted) => {
     const items: ChatItem[] = []
     if (started.lessons.length || started.shortfall)
       items.push({
@@ -45,6 +45,16 @@ export function ConversationsProvider({ children }: { children: ReactNode }) {
     }))
     return started.session_id
   }, [])
+
+  const start = useCallback(
+    async (topic: string | null, newWords: number) => open(await api.start(topic, newWords)),
+    [open],
+  )
+
+  const discuss = useCallback(
+    async (readingSessionId: number) => open(await api.discuss(readingSessionId)),
+    [open],
+  )
 
   const send = useCallback(
     async (sessionId: number, text: string) => {
@@ -123,7 +133,12 @@ export function ConversationsProvider({ children }: { children: ReactNode }) {
 
   const adopt = useCallback((transcript: Transcript) => {
     const { session, turns, summary } = transcript
-    const items: ChatItem[] = turns.map((turn) =>
+    // Only the conversation's own turns: a reading session's study and reading turns
+    // belong to the reading page, not the chat about the text.
+    const said = turns.flatMap((turn) =>
+      turn.kind === 'conversation' || turn.kind === 'translation' ? [{ ...turn, kind: turn.kind }] : [],
+    )
+    const items: ChatItem[] = said.map((turn) =>
       turn.role === 'learner'
         ? { kind: 'learner', id: id(), text: turn.text_es }
         : {
@@ -160,8 +175,8 @@ export function ConversationsProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const value = useMemo(
-    () => ({ chats, start, send, lookUp, end, adopt }),
-    [chats, start, send, lookUp, end, adopt],
+    () => ({ chats, start, discuss, send, lookUp, end, adopt }),
+    [chats, start, discuss, send, lookUp, end, adopt],
   )
   return <Context.Provider value={value}>{children}</Context.Provider>
 }

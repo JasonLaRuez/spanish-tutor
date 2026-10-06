@@ -43,6 +43,11 @@ def init_schema(conn: sqlite3.Connection) -> None:
     schema.sql describes the latest schema, so a new database is created from it and
     stamped with the latest migration number. An existing database gets each migration
     it hasn't had yet (tracked in PRAGMA user_version), each in its own transaction.
+
+    A migration that rebuilds a table other tables reference (SQLite can't alter a CHECK
+    constraint) says so with a "-- foreign_keys: off" line. Foreign keys can only be
+    switched off outside a transaction, so it runs with them off, and every foreign key
+    is checked before the transaction commits: a broken reference rolls it back.
     """
     is_new = (
         conn.execute(
@@ -55,10 +60,32 @@ def init_schema(conn: sqlite3.Connection) -> None:
     for number, path in pending:
         if number > applied:
             sql = path.read_text(encoding="utf-8")
-            conn.executescript(f"BEGIN;\n{sql}\nPRAGMA user_version = {number};\nCOMMIT;")
+            if FOREIGN_KEYS_OFF in sql:
+                _migrate_without_foreign_keys(conn, number, sql)
+            else:
+                conn.executescript(f"BEGIN;\n{sql}\nPRAGMA user_version = {number};\nCOMMIT;")
     conn.executescript((SQL_DIR / "schema.sql").read_text(encoding="utf-8"))
     if is_new and (all_migrations := migrations()):
         conn.execute(f"PRAGMA user_version = {all_migrations[-1][0]}")
+
+
+FOREIGN_KEYS_OFF = "-- foreign_keys: off"
+
+
+def _migrate_without_foreign_keys(conn: sqlite3.Connection, number: int, sql: str) -> None:
+    conn.execute("PRAGMA foreign_keys = OFF")
+    try:
+        # One transaction, left open by executescript (which only commits *before* it
+        # runs), so the check below sees the migrated tables and can still roll them back.
+        conn.executescript(f"BEGIN;\n{sql}\nPRAGMA user_version = {number};")
+        if broken := conn.execute("PRAGMA foreign_key_check").fetchall():
+            conn.execute("ROLLBACK")
+            raise sqlite3.IntegrityError(
+                f"migration {number} would break {len(broken)} foreign keys: {broken[:5]}"
+            )
+        conn.execute("COMMIT")
+    finally:
+        conn.execute("PRAGMA foreign_keys = ON")
 
 
 def statements(script: str) -> list[str]:

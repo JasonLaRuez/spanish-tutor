@@ -23,6 +23,8 @@ export interface Chat {
 export interface Conversations {
   chats: Record<number, Chat>
   start: (topic: string | null, newWords: number) => Promise<number>
+  /** Talk about a text just read: the reading session continues as a conversation. */
+  discuss: (readingSessionId: number) => Promise<number>
   send: (sessionId: number, text: string) => Promise<void>
   lookUp: (sessionId: number, word: string) => Promise<Lesson>
   /** End the conversation without a typed goodbye (the "Hasta luego" button). */
