@@ -75,6 +75,26 @@ For UI development, run `npm run dev` in `web/` alongside `serve` (hot reload on
 http://localhost:5173). The app listens on this machine only by default. Everything below
 also works from the terminal.
 
+### Listening
+
+The app speaks Spanish with [Piper](https://github.com/OHF-voice/piper1-gpl), which runs
+offline on the CPU and costs nothing:
+- the tutor reads each reply aloud once it appears (it can be turned off);
+- clicking any word says it;
+- lesson cards say the word and its example;
+- books, stories and poems can be narrated sentence by sentence (poems line by line),
+  with the sentence being read highlighted.
+
+The sidebar holds the settings: the accent (Mexican Spanish by default, or Spain), reading
+replies aloud, and the speed (1× or 0.75×). Download the two voices once (63 MB each):
+
+```sh
+uv run python -m spanish_tutor.speech download
+uv run python -m spanish_tutor.speech say "¿Qué tal?" --accent es --out test.wav   # a quick check
+```
+
+Without them, the app works as before, with no audio.
+
 ## Conversation
 
 Chat with Claude in Spanish, inside the vocabulary you know. Each reply may use at most
@@ -209,6 +229,11 @@ under their own terms:
   *PML4DC at ICLR 2020*). CC BY 4.0.
 - **Jina AI** [`jina-embeddings-v2-base-es`](https://huggingface.co/jinaai/jina-embeddings-v2-base-es)
   for sentence embeddings (Apache-2.0; downloaded to the Hugging Face cache, not bundled).
+- **Piper** text-to-speech ([OHF-voice/piper1-gpl](https://github.com/OHF-voice/piper1-gpl),
+  GPL-3.0; installed as a dependency, not bundled). Voices from
+  [rhasspy/piper-voices](https://huggingface.co/rhasspy/piper-voices), downloaded into
+  `data/raw/piper/` at a pinned revision: `es_MX-claude-high` (Apache-2.0) and
+  `es_ES-davefx-medium` (CC0).
 
 Song lyrics and copyrighted books are supported as local input under `private/` and
 never leave your machine.

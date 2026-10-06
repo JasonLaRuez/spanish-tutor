@@ -25,7 +25,7 @@ export function ConversationsProvider({ children }: { children: ReactNode }) {
         requested: started.requested_words,
         shortfall: started.shortfall,
       })
-    items.push({ kind: 'tutor', id: id(), turn: started.opening })
+    items.push({ kind: 'tutor', id: id(), turn: started.opening, live: true })
     setChats((all) => ({
       ...all,
       [started.session_id]: {
@@ -78,7 +78,7 @@ export function ConversationsProvider({ children }: { children: ReactNode }) {
             ...chat.items.map((item) =>
               item.id === learnerId ? { ...item, text: reply.written } : item,
             ),
-            { kind: 'tutor', id: id(), turn: reply.turn },
+            { kind: 'tutor', id: id(), turn: reply.turn, live: true },
             ...(reply.summary ? [{ kind: 'summary' as const, id: id(), summary: reply.summary }] : []),
           ],
         }))
@@ -107,7 +107,7 @@ export function ConversationsProvider({ children }: { children: ReactNode }) {
           closed: true,
           items: [
             ...chat.items,
-            { kind: 'tutor', id: id(), turn: ended.turn },
+            { kind: 'tutor', id: id(), turn: ended.turn, live: true },
             { kind: 'summary', id: id(), summary: ended.summary },
           ],
         }))

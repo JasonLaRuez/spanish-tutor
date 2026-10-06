@@ -231,3 +231,40 @@ def index_content(conn, content_id, wiktionary=None, resolver=None, analyzer="se
         resolver=resolver,
         reviewer="model:test",
     )
+
+
+# --- Speech (test_speech, test_api) -------------------------------------------------------
+
+
+class FakeVoice:
+    """Stands in for a Piper voice: 10 ms of silence per character, and a record of what
+    it was asked to say, with which settings."""
+
+    def __init__(self):
+        self.said = []
+
+    def synthesize_wav(self, text, wav_file, syn_config=None):
+        self.said.append((text, syn_config))
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(22050)
+        wav_file.writeframes(b"\0\0" * 220 * len(text))
+
+
+def fake_speaker(directory, accents=("mx", "es")):
+    """A Speaker whose voices for `accents` are 'downloaded' (empty files) and fake; also
+    returns the loads, as (path, FakeVoice), so tests can see what was loaded when."""
+    from spanish_tutor.speech import VOICES, Speaker
+
+    directory.mkdir(parents=True, exist_ok=True)
+    for accent in accents:
+        for file in VOICES[accent].files:
+            (directory / file).touch()
+    loads = []
+
+    def load(path):
+        voice = FakeVoice()
+        loads.append((path, voice))
+        return voice
+
+    return Speaker(directory, load=load), loads

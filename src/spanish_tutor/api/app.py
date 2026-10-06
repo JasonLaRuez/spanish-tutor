@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 
 from spanish_tutor import content, db, progress, recommend
@@ -42,13 +42,30 @@ from spanish_tutor.conversation import (
 from spanish_tutor.keyboard import expand_markers
 from spanish_tutor.lyrics import LyricsSession, TranslationError
 from spanish_tutor.reading import STUDY_BATCH, ReadingSession
+from spanish_tutor.speech import (
+    DEFAULT_ACCENT,
+    VOICES,
+    Speaker,
+    SpeechError,
+    VoiceMissing,
+)
 from spanish_tutor.teaching import Lesson
 from spanish_tutor.topics import MAX_WORDS, MIN_WORDS
 
 WEB_DIST = Path(__file__).resolve().parents[3] / "web" / "dist"
+# A clip may be reused for a day. Piper's noise makes each synthesis slightly different
+# (measured: 63,020 vs 63,532 bytes for the same sentence), but any of them will do. A
+# day, not forever, so a changed voice setting reaches the browser by the next day.
+SPEECH_CACHE = "public, max-age=86400"
 
 
 # --- Response and request models (they define the OpenAPI schema the UI's types use) --
+
+
+class VoiceOut(BaseModel):
+    accent: Literal["mx", "es"]
+    label: str  # "México", "España"
+    available: bool  # its voice files are downloaded
 
 
 class ExampleOut(BaseModel):
@@ -447,8 +464,11 @@ def create_app(
     load: Callable[[], Resources] = lambda: load_resources(check_same_thread=False),
     db_path: Path | str = DB_PATH,
     web_dist: Path = WEB_DIST,
+    speaker: Speaker | None = None,
 ) -> FastAPI:
-    """The app. Tests pass their own `load` (a scripted model, a temporary database)."""
+    """The app. Tests pass their own `load` (a scripted model, a temporary database) and
+    `speaker` (a fake voice)."""
+    speaker = speaker or Speaker()
     tutors: dict[int, Tutor] = {}
     readings: dict[int, ReadingSession] = {}
     lock = threading.Lock()
@@ -475,6 +495,32 @@ def create_app(
     @app.get("/api/health")
     def health() -> dict:
         return {"ok": True}
+
+    # --- Speech (speech.py): no database, no conversation lock -----------------------------
+
+    @app.get("/api/speech/voices")
+    def voices() -> list[VoiceOut]:
+        available = speaker.available()
+        return [
+            VoiceOut(accent=v.accent, label=v.label, available=available[v.accent])
+            for v in VOICES.values()
+        ]
+
+    @app.get(
+        "/api/speech",
+        response_class=Response,
+        responses={200: {"content": {"audio/wav": {}}, "description": "The text, spoken."}},
+    )
+    def speak(text: str, accent: Literal["mx", "es"] = DEFAULT_ACCENT) -> Response:
+        """`text` spoken in `accent` (made on demand: ~0.3 s for a sentence; the first use
+        of a voice also loads it, ~1.5 s). The browser may keep it (SPEECH_CACHE)."""
+        try:
+            audio = speaker.wav(text, accent)
+        except SpeechError as error:
+            raise HTTPException(422, str(error)) from error
+        except VoiceMissing as error:
+            raise HTTPException(503, str(error)) from error
+        return Response(audio, media_type="audio/wav", headers={"Cache-Control": SPEECH_CACHE})
 
     @app.post("/api/sessions")
     def start_session(request: NewSession) -> SessionStarted:

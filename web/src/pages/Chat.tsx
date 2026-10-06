@@ -6,8 +6,11 @@ import { LearnerMessage, TutorMessage, TypingIndicator } from '../components/Mes
 import { SummaryCard } from '../components/SummaryCard'
 import { PreTaught, TodaysWords } from '../components/TodaysWords'
 import { useConversations, type Chat } from '../state/context'
+import { useSpeech } from '../state/speechContext'
 
 const HOW_TO_SAY = '¿Cómo se dice ""?'
+// Tutor replies already read aloud (item ids are unique for the whole visit).
+const spoken = new Set<number>()
 
 export function ChatPage() {
   const sessionId = Number(useParams().sessionId)
@@ -52,6 +55,22 @@ export function ChatView({ chat }: { chat: Chat }) {
   useEffect(() => {
     end.current?.scrollIntoView?.({ behavior: 'smooth', block: 'end' })
   }, [chat.items.length, chat.pending])
+
+  // Read the newest reply aloud once its text is on the page (if autoplay is on). Only
+  // replies that arrived in this visit, each once: not a transcript rebuilt after a
+  // reload, and not again when the learner comes back to the page.
+  const speech = useSpeech()
+  const { autoplay } = speech.settings
+  const { say, available } = speech
+  useEffect(() => {
+    if (!available) return // the voices are still loading (or none is installed)
+    const fresh = chat.items.filter(
+      (item) => item.kind === 'tutor' && item.live && !spoken.has(item.id),
+    )
+    fresh.forEach((item) => spoken.add(item.id))
+    const newest = fresh.at(-1)
+    if (autoplay && newest?.kind === 'tutor') say(newest.turn.reply_es)
+  }, [chat.items, autoplay, say, available])
 
   // The "¿cómo se dice?" template itself, with nothing between the quotes, isn't a question.
   const canSend = !chat.pending && !chat.closed && text.trim().length > 0 && text.trim() !== HOW_TO_SAY

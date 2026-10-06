@@ -4,7 +4,8 @@ import type { Lesson, Summary, Transcript, Turn } from '../api/client'
 export type ChatItem =
   // Topic words taught before the conversation; fewer than requested comes with a reason.
   | { kind: 'lessons'; id: number; lessons: Lesson[]; requested: number; shortfall: string | null }
-  | { kind: 'tutor'; id: number; turn: Turn }
+  // live: arrived in this visit (read aloud if autoplay is on), not rebuilt from a transcript.
+  | { kind: 'tutor'; id: number; turn: Turn; live?: boolean }
   | { kind: 'learner'; id: number; text: string }
   | { kind: 'error'; id: number; text: string }
   | { kind: 'summary'; id: number; summary: Summary } // the end of the conversation

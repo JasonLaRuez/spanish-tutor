@@ -234,7 +234,7 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
 | 1 — Word bank + basic conversation skill (weeks 2–3) | Prove the core loop locally: SQL schema (`CREATE TABLE`, not an ORM), seed vocabulary, Tatoeba into local Chroma, a conversation skill constrained to word-bank vocabulary, write-back confirmed. |
 | 2 — Topic focus + pre-teaching (weeks 3–4) | Starter topics, vocabulary grounded against Subtlex-ESP, pre-teach flow before conversation starts. |
 | 3 — Content-difficulty index + recommender (weeks 4–6) | The novel subsystem: difficulty-index schema, the "fewest new words" ranking as a real SQL join-and-aggregate query, the book-sequence constraint, the explicit-request override. |
-| 4 — Lyrics + reading skills, and evaluation (weeks 6–8) | Both remaining skills, a multi-chapter book with chapter-level difficulty indexing, RAGAS as a baseline check, then the custom evaluation metrics and a written case study. Added 2026-10-06: **listening** in every skill, using text-to-speech only. The tutor speaks its replies after the text appears; clicked words are pronounced; books, stories and poems are narrated sentence by sentence with the current sentence highlighted. The engine is **Piper** (Jason's choice: free, open-source, offline on the CPU, so the project stays cheap and anyone can run it). Voices: an accent setting the learner can toggle. The default is Mexican Spanish (`es_MX`), Jason's focus as an American; Spain (`es_ES`) is the alternative. It applies everywhere audio plays. Each voice model's license is checked before shipping. Audio is cached per sentence/word and voice under `data/processed/audio/` (gitignored). A speaking skill was considered first and dropped: pronunciation scoring was its point, and the Claude API takes no audio (it would have needed Azure's pronunciation assessment). Planned after 4.4. |
+| 4 — Lyrics + reading skills, and evaluation (weeks 6–8) | Both remaining skills, a multi-chapter book with chapter-level difficulty indexing, RAGAS as a baseline check, then the custom evaluation metrics and a written case study. Added 2026-10-06: **listening** in every skill, using text-to-speech only. The tutor speaks its replies after the text appears; clicked words are pronounced; books, stories and poems are narrated sentence by sentence with the current sentence highlighted. The engine is **Piper** (Jason's choice: free, open-source, offline on the CPU, so the project stays cheap and anyone can run it). Voices: an accent setting the learner can toggle. The default is Mexican Spanish (`es_MX`), Jason's focus as an American; Spain (`es_ES`) is the alternative. It applies everywhere audio plays. Built 2026-10-06 (see "Listening" under the Phase 4 plan). A speaking skill was considered first and dropped: pronunciation scoring was its point, and the Claude API takes no audio (it would have needed Azure's pronunciation assessment). |
 | 5 — Cloud platform (weeks 8–9) | Migrate the vector store, word bank, and difficulty index onto Databricks (or AWS) while working through the platform course. |
 | 6 — Orchestration (weeks 9–10) | Spaced-repetition recalculation and content re-indexing as scheduled dbt models (or Airflow DAGs) — SQL-first, not Python wrapping raw SQL. |
 | 7 — Deployment (weeks 10–11) | FastAPI + Docker, a real endpoint, basic observability, and a handful of analytics queries (window functions) over the logs. |
@@ -270,7 +270,8 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
   accent respellings, candidate measurement), 4.2 (the reading skill) and 4.3 (the lyrics
   skill) are built. The real database (migration 8) holds Quiroga (too hard), *An
   Elementary Spanish Reader* (suggested) and Bécquer's 76 *Rimas* (10 within the
-  ceiling). Next: slice 4.4 (evaluation), alongside more real conversations.
+  ceiling). **Listening (Piper text-to-speech) is built** (2026-10-06). Next: slice 4.4
+  (evaluation), the last feature before Jason's long stretch of testing and real use.
   - **Built so far:** word bank schema + migrations 001–008; seed (1,086 recognized / 803
     produced after the seed-gap and expression marks; grows with sessions); general lexicon; Tatoeba in
     Chroma (261k sentences); the conversation skill with write-back, topic pre-teaching
@@ -834,6 +835,47 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
     and Tatoeba retrievals (check install compatibility first; else implement the two
     metrics directly). Notebook 03, Progress-page panel, written case study.
   - **4.5 Readiness rings:** only after researching the PCIC license with Jason.
+  - **Listening (built 2026-10-06; Jason's choices).** Text-to-speech in every skill, as
+    the last feature before 4.4. A speaking skill was dropped (pronunciation scoring was
+    its point; the Claude API takes no audio).
+    - **Engine: Piper** (`piper-tts` 1.8, GPL-3.0 like the spaCy model; onnxruntime was
+      already installed via Chroma). Free and offline, so anyone can run the project.
+    - **Voices** (`speech.VOICES`, pinned to rhasspy/piper-voices commit `c10ece1`, model
+      SHA-256 checked on download into `data/raw/piper/`):
+      - `mx` (default; Jason learns Mexican Spanish): `es_MX-claude-high` (Apache-2.0)
+        with noise 0.333/0.333 instead of Piper's 0.667/0.8. At the defaults both Mexican
+        voices (claude-high, ald-medium) sounded distorted and robotic to Jason; of four
+        tuning variants on three sentences he chose "less noise". Faster speech didn't
+        help; no clipping anywhere (≤0.004% of samples near full scale).
+      - `es`: `es_ES-davefx-medium` (CC0), defaults ("sounds like a real person").
+      - Not chosen: es_ES-sharvard (CC BY 3.0, needs attribution); es_AR is the only other
+        Latin American voice.
+    - **Measured on Jason's CPU:** a voice loads in ~1.5-2 s; synthesis ~26× real time
+      (a 112-char reply in 0.27 s). So audio is made on demand, a sentence at a time, and
+      there is no disk cache (the roadmap's first idea); the browser keeps clips for a day
+      (`SPEECH_CACHE`). Each synthesis differs slightly (Piper's noise: 63,020 vs 63,532
+      bytes for the same sentence).
+    - **API:** `GET /api/speech?text=&accent=mx|es` → `audio/wav` (422 empty / >1,500
+      chars / unknown accent; 503 voice missing, with the download command);
+      `GET /api/speech/voices` (which accents are installed). No database, no lock;
+      `speech.Speaker` loads each voice on first use, one lock per voice.
+    - **Nothing is logged** to the word bank: hearing isn't evidence of recognition.
+    - **Web:** `state/speech.tsx` (provider, one shared player: a new clip stops the
+      current one) + `state/speechContext.ts`; settings in the sidebar (accent, read
+      replies aloud, speed 1×/0.75× via `playbackRate`), kept in localStorage like the
+      theme. Tutor replies that arrive in this visit (`ChatItem.live`) are read aloud
+      once; transcripts rebuilt after a reload never are. ▶ on every tutor message and
+      on lesson cards (word, example); a clicked word is said as written. The reader
+      narrates with `lib/useNarration.ts`: one unit at a time (prose sentences, poem
+      lines), highlighted (`SpanishText` `units`/`active`), the next one prefetched,
+      pauses 150 ms / 350 ms (line, paragraph) / 900 ms (stanza); a ▶ per paragraph
+      starts there; anything else that plays (a clicked word) pauses it in place.
+    - **Checked:** 13 pytest (+2 slow on the real voices), 15 Vitest, and
+      `web/e2e/listening.mjs` in headless Edge on a database copy (the highlight moves
+      as each sentence ends; a clicked word is spoken and pauses the narration; the
+      accent toggle switches the voice; a new conversation's opening is read aloud).
+    - Not done: the CLI has no audio; the lyrics Compare step has no per-line ▶ (the
+      Read tab narrates the poem).
 - **Content index and recommender (roadmap Phase 3, built 2026-10-05; Jason's decisions):**
   - **Schema (migration 006; Jason approved the SQL as proposed):** `books`;
     `content_items` (song / story / chapter; a chapter has `book_id` + `chapter_no` and

@@ -10,26 +10,29 @@ import { ReadingPage } from './pages/ReadingPage'
 import { Songs } from './pages/Songs'
 import { WhatNext } from './pages/WhatNext'
 import { ConversationsProvider } from './state/conversations'
+import { SpeechProvider } from './state/speech'
 
 export default function App() {
   return (
-    <ConversationsProvider>
-      <BrowserRouter>
-        <Routes>
-          <Route element={<Layout />}>
-            <Route index element={<Home />} />
-            <Route path="new" element={<NewConversation />} />
-            <Route path="chat/:sessionId" element={<ChatPage />} />
-            <Route path="history" element={<HistoryList />} />
-            <Route path="history/:sessionId" element={<TranscriptPage />} />
-            <Route path="progress" element={<ProgressPage />} />
-            <Route path="next" element={<WhatNext />} />
-            <Route path="reading/:sessionId" element={<ReadingPage />} />
-            <Route path="books" element={<Books />} />
-            <Route path="songs" element={<Songs />} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
-    </ConversationsProvider>
+    <SpeechProvider>
+      <ConversationsProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route element={<Layout />}>
+              <Route index element={<Home />} />
+              <Route path="new" element={<NewConversation />} />
+              <Route path="chat/:sessionId" element={<ChatPage />} />
+              <Route path="history" element={<HistoryList />} />
+              <Route path="history/:sessionId" element={<TranscriptPage />} />
+              <Route path="progress" element={<ProgressPage />} />
+              <Route path="next" element={<WhatNext />} />
+              <Route path="reading/:sessionId" element={<ReadingPage />} />
+              <Route path="books" element={<Books />} />
+              <Route path="songs" element={<Songs />} />
+            </Route>
+          </Routes>
+        </BrowserRouter>
+      </ConversationsProvider>
+    </SpeechProvider>
   )
 }

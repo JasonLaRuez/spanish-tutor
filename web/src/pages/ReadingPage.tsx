@@ -4,8 +4,10 @@ import { api, type ComparedLine, type Expression, type Lesson, type ReadingState
 import { LessonCard } from '../components/LessonCard'
 import { CompareLines, TryLines } from '../components/Lyrics'
 import { loadComparison } from '../lib/lyrics'
+import { useNarration } from '../lib/useNarration'
 import { SpanishText } from '../components/Messages'
 import { useConversations } from '../state/context'
+import { useSpeech } from '../state/speechContext'
 
 type Step = 'study' | 'try' | 'compare' | 'read'
 
@@ -290,7 +292,25 @@ function Read({
     if (markerBefore < 0 && sentence + paragraph.length > state.readable_until) markerBefore = i
     sentence += paragraph.length
   })
-  const join = state.kind === 'song' || state.kind === 'poem' ? '\n' : ' '
+  const verse = state.kind === 'song' || state.kind === 'poem'
+  const join = verse ? '\n' : ' '
+
+  // Narration reads the text's units (sentences, or a poem's lines) one at a time; each
+  // paragraph (stanza) starts at an offset into that flat list, and its last unit ends it.
+  const { units, starts, breaks } = useMemo(() => {
+    const starts: number[] = []
+    const breaks = new Set<number>()
+    let n = 0
+    for (const paragraph of state.paragraphs) {
+      starts.push(n)
+      n += paragraph.length
+      breaks.add(n - 1)
+    }
+    return { units: state.paragraphs.flat(), starts, breaks }
+  }, [state.paragraphs])
+  const narration = useNarration(units, verse, breaks)
+  const { available } = useSpeech()
+
   return (
     <section aria-label="Text" className="space-y-4">
       <p className="text-sm text-ink-2">
@@ -298,18 +318,90 @@ function Read({
           ? 'Underlined: words you haven’t studied yet. Click any word to look it up.'
           : 'Click any word to look it up.'}
       </p>
+      {available && <NarrationBar narration={narration} total={units.length} verse={verse} />}
       <article className="space-y-4 text-[1.05rem] leading-relaxed text-ink">
-        {state.paragraphs.map((paragraph, i) => (
-          <div key={i}>
-            {i === markerBefore && i > 0 && (
-              <p role="separator" className="mb-4 border-t border-dashed border-accent pt-1 text-xs text-accent-text">
-                Every word above is studied
-              </p>
-            )}
-            <SpanishText text={paragraph.join(join)} onLookUp={onLookUp} marked={marked} />
-          </div>
-        ))}
+        {state.paragraphs.map((paragraph, i) => {
+          const active =
+            narration.at !== null && narration.at >= starts[i] && narration.at < starts[i] + paragraph.length
+              ? narration.at - starts[i]
+              : null
+          return (
+            <div key={i}>
+              {i === markerBefore && i > 0 && (
+                <p role="separator" className="mb-4 border-t border-dashed border-accent pt-1 text-xs text-accent-text">
+                  Every word above is studied
+                </p>
+              )}
+              <div className="group flex gap-1">
+                <div className="min-w-0 flex-1">
+                  <SpanishText
+                    units={paragraph}
+                    joiner={join}
+                    active={narration.status === 'idle' ? null : active}
+                    onLookUp={onLookUp}
+                    marked={marked}
+                  />
+                </div>
+                {available && (
+                  <button
+                    type="button"
+                    onClick={() => narration.play(starts[i])}
+                    aria-label={`Read aloud from ${verse ? 'stanza' : 'paragraph'} ${i + 1}`}
+                    title="Read aloud from here"
+                    className="h-6 w-6 shrink-0 rounded-full text-xs text-muted opacity-60 hover:bg-surface-2 hover:text-ink hover:opacity-100 focus-visible:opacity-100"
+                  >
+                    <span aria-hidden>▶</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          )
+        })}
       </article>
     </section>
+  )
+}
+
+/** Play, pause, resume or stop the narration, with where it is in the text. */
+function NarrationBar({
+  narration,
+  total,
+  verse,
+}: {
+  narration: ReturnType<typeof useNarration>
+  total: number
+  verse: boolean
+}) {
+  const { at, status, play, pause, resume, stop } = narration
+  const unit = verse ? 'line' : 'sentence'
+  const button = 'rounded-md border border-line px-2.5 py-1 text-sm text-ink-2 hover:bg-surface-2'
+  return (
+    <div role="group" aria-label="Narration" className="flex flex-wrap items-center gap-2">
+      {status === 'idle' && (
+        <button type="button" className={button} onClick={() => play(0)}>
+          ▶ Read aloud
+        </button>
+      )}
+      {status === 'playing' && (
+        <button type="button" className={button} onClick={pause}>
+          ❚❚ Pause
+        </button>
+      )}
+      {status === 'paused' && (
+        <button type="button" className={button} onClick={resume}>
+          ▶ Resume
+        </button>
+      )}
+      {status !== 'idle' && (
+        <>
+          <button type="button" className={button} onClick={stop}>
+            ■ Stop
+          </button>
+          <span className="text-sm text-muted" aria-live="polite">
+            {status === 'paused' ? 'Paused at' : 'Reading'} {unit} {(at ?? 0) + 1} of {total}
+          </span>
+        </>
+      )}
+    </div>
   )
 }

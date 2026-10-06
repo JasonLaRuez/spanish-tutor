@@ -32,6 +32,7 @@ export type SongTranslation = Schemas['SongTranslationOut']
 export type TranslatedLine = Schemas['TranslatedLine']
 export type Expression = Schemas['ExpressionOut']
 export type ComparedLine = Schemas['ComparedLine']
+export type Voice = Schemas['VoiceOut']
 /** How an item was chosen: the default suggestion (or a surprise), or the learner's own pick. */
 export type ChosenVia = Schemas['StartReading']['chosen_via']
 
@@ -69,6 +70,8 @@ const post = <T>(path: string, body: unknown) =>
 
 export const api = {
   progress: () => request<Progress>('/api/progress'),
+  // Speech: which accents' voices are installed (the audio itself is /api/speech?text=…).
+  voices: () => request<Voice[]>('/api/speech/voices'),
   sessions: () => request<SessionSummary[]>('/api/sessions'),
   transcript: (sessionId: number) => request<Transcript>(`/api/sessions/${sessionId}`),
   start: (topic: string | null, newWords: number) =>

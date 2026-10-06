@@ -1,27 +1,41 @@
 import { useState, type ReactNode } from 'react'
 import type { Lesson, Turn } from '../api/client'
 import { splitWords } from '../lib/text'
+import { useSpeech } from '../state/speechContext'
 import { LessonCard, LessonList } from './LessonCard'
+import { SpeakButton } from './SpeakButton'
 
 type LookUp = (word: string) => Promise<Lesson>
 
-/** Spanish text whose words can be clicked to look them up (when `onLookUp` is given).
- *  Words in `marked` (lowercase) are underlined: in the reader, the words still to study. */
+/** Spanish text whose words can be clicked to look them up (when `onLookUp` is given);
+ *  a clicked word is also said aloud, as written. Words in `marked` (lowercase) are
+ *  underlined: in the reader, the words still to study.
+ *
+ *  The reader passes the text as `units` (sentences, or a poem's lines) joined by
+ *  `joiner`, so the one being narrated (`active`) can be highlighted. */
 export function SpanishText({
   text,
+  units,
+  joiner = ' ',
+  active = null,
   onLookUp,
   marked,
 }: {
-  text: string
+  text?: string
+  units?: string[]
+  joiner?: string
+  active?: number | null
   onLookUp?: LookUp
   marked?: Set<string>
 }) {
   const [lookup, setLookup] = useState<
     { word: string; lesson?: Lesson; error?: string; loading?: boolean } | null
   >(null)
+  const { say } = useSpeech()
 
   const open = async (word: string) => {
     if (!onLookUp) return
+    say(word)
     setLookup({ word, loading: true })
     try {
       setLookup({ word, lesson: await onLookUp(word) })
@@ -30,28 +44,45 @@ export function SpanishText({
     }
   }
 
+  const words = (unit: string) =>
+    splitWords(unit).map((part, i) =>
+      part.word && onLookUp ? (
+        <button
+          key={i}
+          type="button"
+          onClick={() => open(part.text)}
+          className={`cursor-help rounded-sm underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-accent ${
+            marked?.has(part.text.toLowerCase())
+              ? 'underline decoration-accent decoration-2'
+              : 'decoration-dotted decoration-1'
+          }`}
+          title={`Look up “${part.text}”`}
+        >
+          {part.text}
+        </button>
+      ) : (
+        <span key={i}>{part.text}</span>
+      ),
+    )
+
   return (
     <>
       <p className="es whitespace-pre-wrap">
-        {splitWords(text).map((part, i) =>
-          part.word && onLookUp ? (
-            <button
-              key={i}
-              type="button"
-              onClick={() => open(part.text)}
-              className={`cursor-help rounded-sm underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-accent ${
-                marked?.has(part.text.toLowerCase())
-                  ? 'underline decoration-accent decoration-2'
-                  : 'decoration-dotted decoration-1'
-              }`}
-              title={`Look up “${part.text}”`}
-            >
-              {part.text}
-            </button>
-          ) : (
-            <span key={i}>{part.text}</span>
-          ),
-        )}
+        {units
+          ? units.map((unit, u) => (
+              <span key={u}>
+                {u > 0 && joiner}
+                <span
+                  data-unit={u}
+                  aria-current={u === active ? 'true' : undefined}
+                  ref={u === active ? (node) => node?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' }) : undefined}
+                  className={u === active ? 'rounded-sm bg-accent-soft' : undefined}
+                >
+                  {words(unit)}
+                </span>
+              </span>
+            ))
+          : words(text ?? '')}
       </p>
       {lookup && (
         <div className="mt-2 space-y-1">
@@ -75,11 +106,12 @@ export function SpanishText({
   )
 }
 
-function Bubble({ children, label }: { children: ReactNode; label: string }) {
+function Bubble({ children, label, speak }: { children: ReactNode; label: string; speak?: string }) {
   return (
     <div className="max-w-[44rem]" aria-label={label}>
-      <div className="rounded-2xl rounded-tl-md border border-line bg-surface px-4 py-3 text-ink shadow-xs">
-        {children}
+      <div className="flex gap-2 rounded-2xl rounded-tl-md border border-line bg-surface px-4 py-3 text-ink shadow-xs">
+        <div className="min-w-0 flex-1">{children}</div>
+        {speak && <SpeakButton text={speak} label="Listen to the tutor" />}
       </div>
     </div>
   )
@@ -101,7 +133,7 @@ export function TutorMessage({ turn, onLookUp }: { turn: Turn; onLookUp?: LookUp
   if (turn.kind === 'translation') {
     return (
       <div className="space-y-2">
-        <Bubble label="Translation">
+        <Bubble label="Translation" speak={turn.reply_es}>
           <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted">Se dice</p>
           <SpanishText text={turn.reply_es} onLookUp={onLookUp} />
         </Bubble>
@@ -119,7 +151,7 @@ export function TutorMessage({ turn, onLookUp }: { turn: Turn; onLookUp?: LookUp
 
   return (
     <div className="space-y-2">
-      <Bubble label="Tutor">
+      <Bubble label="Tutor" speak={turn.reply_es}>
         <SpanishText text={turn.reply_es} onLookUp={onLookUp} />
         {turn.reply_en && (
           <div className="mt-2">

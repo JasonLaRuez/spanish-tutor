@@ -5,7 +5,16 @@ connections, which an in-memory database can't share.
 """
 
 import pytest
-from fakes import KNOWN, Scripted, analyze, make_topic_store, notes, said, seed_bank
+from fakes import (
+    KNOWN,
+    Scripted,
+    analyze,
+    fake_speaker,
+    make_topic_store,
+    notes,
+    said,
+    seed_bank,
+)
 from fastapi.testclient import TestClient
 
 from spanish_tutor import db
@@ -31,7 +40,7 @@ def serve(db_path, tmp_path, make_wiktionary):
     wiktionary = make_wiktionary([("pez", "noun", "fish")])
     clients = []
 
-    def make(*replies, web_dist=tmp_path / "no-ui", topics=False, translate=None):
+    def make(*replies, web_dist=tmp_path / "no-ui", topics=False, translate=None, speaker=None):
         generator = Scripted(*replies)
         store = None
         if topics:  # sentences about a dog swimming, for topic pre-teaching
@@ -45,7 +54,9 @@ def serve(db_path, tmp_path, make_wiktionary):
                 conn, generator, LexiconIndex(conn, wiktionary), analyze, store, translate
             )
 
-        client = TestClient(create_app(load=load, db_path=db_path, web_dist=web_dist))
+        speaker = speaker or fake_speaker(tmp_path / "voices")[0]
+        app = create_app(load=load, db_path=db_path, web_dist=web_dist, speaker=speaker)
+        client = TestClient(app)
         client.__enter__()
         clients.append(client)
         return client, generator
@@ -635,3 +646,50 @@ def test_only_songs_and_poems_have_translations_and_a_bad_one_is_reported(serve,
     ).json()
     broken = client.get(f"/api/reading/{lyrics['session_id']}/translation")
     assert broken.status_code == 502 and "lines exactly once" in broken.json()["detail"]
+
+
+# --- Speech ----------------------------------------------------------------------------
+
+
+def test_text_is_spoken_as_cacheable_audio(serve, tmp_path):
+    speaker, loads = fake_speaker(tmp_path / "voices-1")
+    client, _ = serve(speaker=speaker)
+    response = client.get("/api/speech", params={"text": "¿Riegas tu jardín?", "accent": "es"})
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "audio/wav"
+    assert response.headers["cache-control"] == "public, max-age=86400"
+    assert response.content[:4] == b"RIFF"
+    assert loads[0][0].name == "es_ES-davefx-medium.onnx"
+    assert loads[0][1].said[0][0] == "¿Riegas tu jardín?"
+
+
+def test_speech_defaults_to_the_mexican_voice(serve, tmp_path):
+    speaker, loads = fake_speaker(tmp_path / "voices-1")
+    client, _ = serve(speaker=speaker)
+    assert client.get("/api/speech", params={"text": "hola"}).status_code == 200
+    assert loads[0][0].name == "es_MX-claude-high.onnx"
+
+
+@pytest.mark.parametrize(
+    "params", [{"text": "   "}, {"text": "x" * 1501}, {"text": "hola", "accent": "ar"}, {}]
+)
+def test_unspeakable_requests_are_refused(serve, params):
+    client, _ = serve()
+    assert client.get("/api/speech", params=params).status_code == 422
+
+
+def test_a_missing_voice_is_a_503_that_says_how_to_get_it(serve, tmp_path):
+    speaker, _ = fake_speaker(tmp_path / "voices-1", accents=("es",))
+    client, _ = serve(speaker=speaker)
+    response = client.get("/api/speech", params={"text": "hola", "accent": "mx"})
+    assert response.status_code == 503 and "speech download" in response.json()["detail"]
+
+
+def test_voices_report_which_accents_are_downloaded(serve, tmp_path):
+    speaker, _ = fake_speaker(tmp_path / "voices-1", accents=("es",))
+    client, _ = serve(speaker=speaker)
+    assert client.get("/api/speech/voices").json() == [
+        {"accent": "mx", "label": "México", "available": False},
+        {"accent": "es", "label": "España", "available": True},
+    ]

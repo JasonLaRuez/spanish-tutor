@@ -3,6 +3,7 @@ import { NavLink, Outlet, useLocation } from 'react-router'
 import { api, type Progress, type SessionSummary } from '../api/client'
 import { formatNumber, when } from '../lib/text'
 import { useConversations } from '../state/context'
+import { SpeechSettings } from './SpeechSettings'
 
 type Theme = 'system' | 'light' | 'dark'
 const THEME_KEY = 'spanish-tutor-theme'
@@ -126,6 +127,7 @@ export function Layout() {
               </span>
             </NavLink>
           )}
+          <SpeechSettings />
           <button
             type="button"
             onClick={() => setTheme(nextTheme[theme])}
