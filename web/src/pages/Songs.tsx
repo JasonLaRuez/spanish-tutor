@@ -63,7 +63,7 @@ export function Songs() {
             <thead className="border-b border-line text-left text-xs uppercase tracking-wide text-muted">
               <tr>
                 <th className="px-3 py-2.5 font-medium">Title</th>
-                <th className="px-3 py-2.5 font-medium">By</th>
+                <th className="px-3 py-2.5 font-medium max-sm:hidden">By</th>
                 <th className="px-3 py-2.5 text-right font-medium">New words</th>
                 <th className="px-3 py-2.5 text-right font-medium">Words known</th>
                 <th className="px-3 py-2.5 font-medium">Status</th>
@@ -82,7 +82,7 @@ export function Songs() {
                       {item.title}
                       <span className="ml-2 text-xs text-muted">{item.kind === 'poem' ? 'poem' : 'song'}</span>
                     </td>
-                    <td className="px-3 py-2 text-ink-2">{item.author ?? ''}</td>
+                    <td className="px-3 py-2 text-ink-2 max-sm:hidden">{item.author ?? ''}</td>
                     <td className="px-3 py-2 text-right">{item.new_words == null ? 'not indexed' : item.new_words}</td>
                     <td className="px-3 py-2 text-right">
                       {item.coverage == null ? '' : percent(item.coverage)}

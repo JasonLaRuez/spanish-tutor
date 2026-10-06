@@ -601,6 +601,19 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
   The web API is `src/spanish_tutor/api/`, the web UI `web/` (its own `README.md`), and the
   progress/history SQL `sql/queries/` (loaded by `progress.py`).
 - **Web UI (roadmap Phase 2.5, slice U1 built 2026-10-02; Jason's choices):**
+  - **Phones (built 2026-10-06, Jason's request, before slice 4.4d):** below 768 px
+    (`md`) the sidebar is a drawer behind a ☰ top bar. Its open state is derived from
+    the page it was opened on, so navigating closes it without an effect (oxlint's
+    set-state-in-effect rule); it also closes on Escape or a tap on the backdrop, and is
+    `invisible` while closed (out of the tab order). Measured first at 390 × 844: the
+    fixed sidebar left the content 134 px wide. Fixes then found by screenshots: the
+    chat header wraps, a grid list on Progress needed `grid-cols-1` (a nowrap item grew
+    its column 780 px wide), secondary table columns (author, kind, source) are hidden
+    below `sm`. iPhone Safari plays audio only from an element first played during a
+    tap, so the shared player plays a silent WAV on the first tap or key
+    (`state/speech.tsx`); not yet confirmed on a real iPhone. `web/e2e/phone.mjs` checks
+    every page (no model calls). Phone access is `serve --host 0.0.0.0` on a trusted
+    network (no login; the README says so).
   - Stack: a FastAPI JSON API plus React + TypeScript (Vite, Tailwind v4, React Router).
     Built now, before Phase 3, so the remaining real conversations happen in it. Each
     later phase adds its screen: U2 recommend (Phase 3), U3 songs/books and U4

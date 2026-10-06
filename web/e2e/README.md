@@ -10,6 +10,7 @@ written to verify Phase 4's slices and are meant to be re-run after changes to t
 | `reading.mjs` | What next? → start the suggested book → study chapter 1's words → read, look a word up → Finished (not "Talk about it") → the book moves to chapter 2; the Books page | none |
 | `lyrics.mjs` | Songs & poems → Rima XXIII → study → translate line 1 → Compare → Finished; the library shows it finished | one translation and one comparison, ~2¢ |
 | `listening.mjs` | What next? → the suggested chapter → Read → ▶ Read aloud (the highlight moves when a sentence ends) → click a word (it's said; the narration pauses) → switch the accent → a new conversation's opening read aloud | the opening only, under 1¢; needs the voices (`python -m spanish_tutor.speech download`) |
+| `phone.mjs` | Every page at iPhone width (390 × 844): nothing wider than the screen (a table may scroll inside its frame); the ☰ menu opens the sidebar as a drawer and choosing a page closes it; at 1280 px the sidebar is always shown | none |
 | `conversation.mjs` | New conversation on a topic with few new words left (20 words) → practice words fill the gap, with their tag → use one → it's ticked off → ¡Hasta luego! → the summary counts its first use | word choice, opening, one reply, goodbye, notes, ~3–5¢ |
 
 `conversation.mjs` needs a topic whose new words have run short. On the copy, first mark

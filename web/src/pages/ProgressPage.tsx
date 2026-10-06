@@ -32,7 +32,7 @@ export function ProgressPage() {
             <p className="text-sm text-ink-2">
               Words you recognize but haven’t used yet, most common first.
             </p>
-            <ul className="mt-4 grid gap-x-6 gap-y-2 sm:grid-cols-2">
+            <ul className="mt-4 grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
               {progress.try_using.map((word) => (
                 <li key={`${word.lemma}|${word.pos}`} className="text-sm">
                   <span className="es font-medium text-ink">{word.lemma}</span>{' '}

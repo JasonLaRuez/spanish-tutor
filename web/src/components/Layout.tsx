@@ -41,6 +41,18 @@ export function Layout() {
 
   useEffect(() => applyTheme(theme), [theme])
 
+  // On a phone the sidebar is a drawer behind the menu button: closed on every page change
+  // (it's open only on the page it was opened on), on Escape, and by tapping outside it.
+  const [menuOpenOn, setMenuOpenOn] = useState<string | null>(null)
+  const menuOpen = menuOpenOn === location.pathname
+  const setMenuOpen = (open: boolean) => setMenuOpenOn(open ? location.pathname : null)
+  useEffect(() => {
+    if (!menuOpen) return
+    const onKey = (event: KeyboardEvent) => event.key === 'Escape' && setMenuOpenOn(null)
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [menuOpen])
+
   // Refresh the sidebar's history and counts on every page change, and when a conversation
   // ends (it stops being "open") or a reply changes the word counts.
   const { chats } = useConversations()
@@ -55,8 +67,34 @@ export function Layout() {
   const nextTheme: Record<Theme, Theme> = { system: 'light', light: 'dark', dark: 'system' }
 
   return (
-    <div className="flex h-full">
-      <aside className="flex w-64 shrink-0 flex-col border-r border-line bg-surface">
+    <div className="flex h-full flex-col md:flex-row">
+      <header className="flex shrink-0 items-center gap-3 border-b border-line bg-surface px-3 py-2 md:hidden">
+        <button
+          type="button"
+          onClick={() => setMenuOpen(true)}
+          aria-label="Menu"
+          aria-expanded={menuOpen}
+          aria-controls="sidebar"
+          className="grid h-10 w-10 place-items-center rounded-md text-xl text-ink hover:bg-surface-2"
+        >
+          <span aria-hidden>☰</span>
+        </button>
+        <NavLink to="/" className="flex items-center gap-2">
+          <span className="grid h-7 w-7 place-items-center rounded-lg bg-accent font-semibold text-accent-ink">ñ</span>
+          <span className="font-semibold text-ink">Spanish Tutor</span>
+        </NavLink>
+      </header>
+
+      {menuOpen && (
+        <div className="fixed inset-0 z-30 bg-black/40 md:hidden" onClick={() => setMenuOpen(false)} aria-hidden />
+      )}
+
+      <aside
+        id="sidebar"
+        className={`fixed inset-y-0 left-0 z-40 flex w-64 shrink-0 flex-col border-r border-line bg-surface transition-transform md:static md:z-auto md:translate-x-0 ${
+          menuOpen ? 'translate-x-0' : '-translate-x-full max-md:invisible'
+        }`}
+      >
         <div className="px-4 pt-5 pb-4">
           <NavLink to="/" className="flex items-center gap-2">
             <span className="grid h-8 w-8 place-items-center rounded-lg bg-accent text-lg font-semibold text-accent-ink">
@@ -141,7 +179,7 @@ export function Layout() {
         </div>
       </aside>
 
-      <main className="min-w-0 flex-1 overflow-y-auto">
+      <main className="min-h-0 min-w-0 flex-1 overflow-y-auto">
         <Outlet />
       </main>
     </div>

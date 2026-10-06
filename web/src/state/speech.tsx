@@ -11,6 +11,9 @@ import {
   type SpeechSettings,
 } from './speechContext'
 
+// An empty WAV file (a header and no samples): enough to play during a tap.
+const SILENT_WAV = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA='
+
 export function SpeechProvider({
   children,
   createAudio = () => new Audio(),
@@ -80,6 +83,24 @@ export function SpeechProvider({
   )
 
   useEffect(() => stop, [stop]) // nothing keeps playing after the app goes away
+
+  // iPhone Safari plays audio only from an element first played during a tap; replies are
+  // read aloud after a network request, outside any tap. So on the first tap (or key),
+  // the shared player plays a silent clip, and every later clip can play on its own.
+  useEffect(() => {
+    const unlock = () => {
+      const player = (audio.current ??= createAudio())
+      if (settle.current) return // something is already playing: it's unlocked
+      player.src = SILENT_WAV
+      player.play().catch(() => {})
+    }
+    document.addEventListener('pointerdown', unlock, { once: true })
+    document.addEventListener('keydown', unlock, { once: true })
+    return () => {
+      document.removeEventListener('pointerdown', unlock)
+      document.removeEventListener('keydown', unlock)
+    }
+  }, [createAudio])
 
   const value = useMemo(
     () => ({ settings, update, voices, available, playing, say, stop, prefetch }),

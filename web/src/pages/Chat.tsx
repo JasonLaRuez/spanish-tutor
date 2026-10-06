@@ -106,10 +106,10 @@ export function ChatView({ chat }: { chat: Chat }) {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex items-center gap-3 border-b border-line bg-surface px-6 py-3">
-        <div className="min-w-0 flex-1">
+      <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-line bg-surface px-4 py-3 sm:px-6">
+        <div className="min-w-0 max-sm:basis-full sm:flex-1">
           <h1 className="truncate font-semibold text-ink">{chat.topic ?? 'Open conversation'}</h1>
-          <p className="text-xs text-muted">Click any Spanish word to look it up.</p>
+          <p className="text-xs text-muted max-sm:hidden">Click any Spanish word to look it up.</p>
         </div>
         {chat.focus.length > 0 && (
           <button
@@ -132,18 +132,18 @@ export function ChatView({ chat }: { chat: Chat }) {
       </header>
 
       {showToday && chat.focus.length > 0 && (
-        <div className="border-b border-line bg-surface px-6 py-2.5">
+        <div className="border-b border-line bg-surface px-4 sm:px-6 py-2.5">
           <TodaysWords focus={chat.focus} used={chat.used} />
         </div>
       )}
 
       {showTaught && (
-        <div className="border-b border-line bg-surface-2 px-6 py-2 text-sm text-ink-2">
+        <div className="border-b border-line bg-surface-2 px-4 sm:px-6 py-2 text-sm text-ink-2">
           {chat.taught.length ? chat.taught.join(', ') : 'None yet.'}
         </div>
       )}
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 sm:px-6 py-5">
         <div className="mx-auto max-w-3xl space-y-5">
           {chat.items.map((item) => {
             switch (item.kind) {
@@ -181,7 +181,7 @@ export function ChatView({ chat }: { chat: Chat }) {
         </div>
       </div>
 
-      <form onSubmit={submit} className="border-t border-line bg-surface px-6 py-3">
+      <form onSubmit={submit} className="border-t border-line bg-surface px-4 sm:px-6 py-3">
         <div className="mx-auto max-w-3xl space-y-2">
           {chat.closed ? (
             <p className="text-sm text-ink-2">
@@ -239,7 +239,7 @@ export function ChatView({ chat }: { chat: Chat }) {
                   Send
                 </button>
               </div>
-              <p className="text-xs text-muted">Enter to send · Shift+Enter for a new line</p>
+              <p className="text-xs text-muted max-sm:hidden">Enter to send · Shift+Enter for a new line</p>
             </>
           )}
         </div>

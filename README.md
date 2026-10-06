@@ -75,6 +75,18 @@ For UI development, run `npm run dev` in `web/` alongside `serve` (hot reload on
 http://localhost:5173). The app listens on this machine only by default. Everything below
 also works from the terminal.
 
+**On a phone.** The UI adapts to a phone screen: below 768 px the sidebar becomes a ☰ menu.
+To use it from a phone on the same Wi-Fi, let the server listen on the network and open
+`http://<this computer's address>:8000` on the phone:
+
+```sh
+uv run spanish-tutor serve --host 0.0.0.0
+```
+
+There is no login: anyone on the network could use it (and spend your API credit), so do
+this only on a network you trust. Away from home, a private network between your devices
+(such as Tailscale) avoids exposing it to the internet.
+
 ### Listening
 
 The app speaks Spanish with [Piper](https://github.com/OHF-voice/piper1-gpl), which runs

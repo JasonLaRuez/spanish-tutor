@@ -206,7 +206,7 @@ function ItemTable(props: {
           <thead className="border-b border-line text-left text-xs uppercase tracking-wide text-muted">
             <tr>
               <th className={th}>Title</th>
-              <th className={th}>Kind</th>
+              <th className={`${th} max-sm:hidden`}>Kind</th>
               <th className={`${th} text-right`}>New words</th>
               <th className={`${th} text-right`}>Words known</th>
             </tr>
@@ -219,7 +219,7 @@ function ItemTable(props: {
                 onClick={() => !props.disabled && props.onOpen(item.content_id, i === 0 ? 'recommended' : 'requested')}
               >
                 <td lang="es" className="px-3 py-2.5 text-ink">{item.title}</td>
-                <td className="px-3 py-2.5 text-ink-2">{KIND[item.kind]}</td>
+                <td className="px-3 py-2.5 text-ink-2 max-sm:hidden">{KIND[item.kind]}</td>
                 <td className="px-3 py-2.5 text-right">{item.new_words.toLocaleString()}</td>
                 <td className="px-3 py-2.5 text-right">{percent(item.coverage)}</td>
               </tr>
@@ -324,7 +324,7 @@ function TooHard(props: {
           <thead className="border-b border-line text-left text-xs uppercase tracking-wide text-muted">
             <tr>
               <th className={th}>Title</th>
-              <th className={th}>Kind</th>
+              <th className={`${th} max-sm:hidden`}>Kind</th>
               <th className={`${th} text-right`}>Words known</th>
               <th className={`${th} text-right`}>New words</th>
             </tr>
@@ -335,7 +335,7 @@ function TooHard(props: {
                 <td lang="es" className="px-3 py-2.5 text-ink">
                   {entry.title}
                 </td>
-                <td className="px-3 py-2.5 text-ink-2">{entry.from}</td>
+                <td className="px-3 py-2.5 text-ink-2 max-sm:hidden">{entry.from}</td>
                 <td className="px-3 py-2.5 text-right">
                   {percent(1 - entry.share)} <span className="text-muted">(needs {props.known})</span>
                 </td>
@@ -363,7 +363,7 @@ function Catalog(props: { items: CatalogItem[]; disabled: boolean; onOpen: (id: 
           <thead className="border-b border-line text-left text-xs uppercase tracking-wide text-muted">
             <tr>
               <th className={th}>Title</th>
-              <th className={th}>From</th>
+              <th className={`${th} max-sm:hidden`}>From</th>
               <th className={`${th} text-right`}>New words</th>
               <th className={th}>Status</th>
             </tr>
@@ -379,7 +379,7 @@ function Catalog(props: { items: CatalogItem[]; disabled: boolean; onOpen: (id: 
                   {item.chapter_no != null ? `${item.chapter_no}. ` : ''}
                   {item.title}
                 </td>
-                <td lang="es" className="px-3 py-2 text-ink-2">{item.book_title ?? KIND[item.kind]}</td>
+                <td lang="es" className="px-3 py-2 text-ink-2 max-sm:hidden">{item.book_title ?? KIND[item.kind]}</td>
                 <td className="px-3 py-2 text-right">
                   {item.new_words == null ? 'not indexed' : item.new_words.toLocaleString()}
                 </td>

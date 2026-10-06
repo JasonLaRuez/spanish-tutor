@@ -24,7 +24,12 @@ class FakeAudio {
   onended: (() => void) | null = null
   onerror: (() => void) | null = null
   paused = 0
+  unlocked = 0 // silent clips played on the first tap (iPhone Safari)
   play() {
+    if (this.src.startsWith('data:')) {
+      this.unlocked++
+      return Promise.resolve()
+    }
     const query = new URLSearchParams(this.src.split('?')[1])
     this.played.push({ text: query.get('text')!, accent: query.get('accent')!, rate: this.playbackRate })
     return Promise.resolve()
@@ -144,6 +149,16 @@ describe('Listening to words and replies', () => {
     await user.click(await screen.findByRole('button', { name: 'Listen: regar' }))
     await user.click(screen.getByRole('button', { name: 'Listen to the example' }))
     expect(audio.texts).toEqual(['regar', 'Riego las plantas.'])
+  })
+
+  it('the first tap plays a silent clip, so iPhone Safari lets replies play later', async () => {
+    const user = userEvent.setup()
+    render(withSpeech(<p>page</p>))
+    expect(audio.unlocked).toBe(0)
+    await user.click(screen.getByText('page'))
+    await user.click(screen.getByText('page'))
+    expect(audio.unlocked).toBe(1) // once
+    expect(audio.played).toEqual([])
   })
 
   it('no listen buttons when the chosen accent has no voice', async () => {
