@@ -349,7 +349,7 @@ def test_pending_migrations_lists_only_what_an_old_database_needs(conn):
     old = connect(":memory:")
     old.executescript((FIXTURES / "schema_v1.sql").read_text(encoding="utf-8"))
     old.execute("PRAGMA user_version = 1")
-    assert pending_migrations(old) == [2, 3, 4, 5]
+    assert pending_migrations(old) == [2, 3, 4, 5, 6]
 
 
 def test_version_2_database_upgrades_to_version_3_keeping_notes(conn):
@@ -419,3 +419,131 @@ def test_statements_splits_a_script_keeping_comments_and_quoted_semicolons():
 def test_statements_rejects_an_unfinished_statement():
     with pytest.raises(ValueError, match="incomplete"):
         statements("SELECT 1;\nSELECT 2\n")
+
+
+# --- Content and the difficulty index (migration 6) -------------------------------------
+
+
+def database_at(version):
+    """An existing database at an older migration: version 2's fixture, migrated by hand."""
+    from spanish_tutor.db import migrations
+
+    old = connect(":memory:")
+    old.executescript((FIXTURES / "schema_v2.sql").read_text(encoding="utf-8"))
+    for number, path in migrations():
+        if 2 < number <= version:
+            old.executescript(path.read_text(encoding="utf-8"))
+    old.execute(f"PRAGMA user_version = {version}")
+    return old
+
+
+def test_version_5_database_upgrades_to_version_6_keeping_its_words(conn):
+    old = database_at(5)
+    casa = add_lexeme(old, "casa")
+    add_event(old, casa, "taught", source="seed")
+
+    init_schema(old)
+
+    assert table_shapes(old) == table_shapes(conn)
+    assert old.execute("PRAGMA user_version").fetchone()[0] == 6
+    row = old.execute("SELECT lemma, example_en_source FROM lexemes").fetchone()
+    assert tuple(row) == ("casa", None)
+    assert old.execute("SELECT COUNT(*) FROM word_bank").fetchone()[0] == 1
+
+
+def add_book(conn, title="Platero y yo"):
+    return conn.execute(
+        "INSERT INTO books (title, author, source, is_private) VALUES (?, 'J. R. Jiménez', "
+        "'gutenberg:1', 0)",
+        (title,),
+    ).lastrowid
+
+
+def add_chapter(conn, book_id, chapter_no):
+    return conn.execute(
+        "INSERT INTO content_items (kind, title, book_id, chapter_no, text_es) "
+        "VALUES ('chapter', ?, ?, ?, 'Texto.')",
+        (f"Capítulo {chapter_no}", book_id, chapter_no),
+    ).lastrowid
+
+
+def add_song(conn, title="Una canción"):
+    return conn.execute(
+        "INSERT INTO content_items (kind, title, author, source, is_private, text_es) "
+        "VALUES ('song', ?, 'Alguien', 'private', 1, 'La la la.')",
+        (title,),
+    ).lastrowid
+
+
+def test_chapters_belong_to_a_book_and_take_its_source(conn):
+    book = add_book(conn)
+    add_chapter(conn, book, 1)
+    add_chapter(conn, book, 2)
+    add_song(conn)
+    add_song(conn, "Otra canción")  # many items without a book: NULLs never collide
+    bad = [
+        # A chapter without a book, or without a number.
+        ("chapter", None, 3, None, None),
+        ("chapter", book, None, None, None),
+        # A chapter repeating its book's source or privacy.
+        ("chapter", book, 3, "gutenberg:1", None),
+        ("chapter", book, 3, None, 0),
+        # A song or story inside a book, or without its own source and privacy.
+        ("song", book, None, "private", 1),
+        ("story", None, 1, "gutenberg:2", 0),
+        ("story", None, None, None, 0),
+        ("song", None, None, "private", None),
+    ]
+    for kind, book_id, chapter_no, source, is_private in bad:
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                "INSERT INTO content_items (kind, title, book_id, chapter_no, source, "
+                "is_private, text_es) VALUES (?, 'x', ?, ?, ?, ?, 'x')",
+                (kind, book_id, chapter_no, source, is_private),
+            )
+    with pytest.raises(sqlite3.IntegrityError):  # a chapter number appears once per book
+        add_chapter(conn, book, 2)
+    add_chapter(conn, add_book(conn, "Otro libro"), 2)  # ... but in every book
+
+
+def test_content_vocab_counts_each_word_once_per_item(conn):
+    song = add_song(conn)
+    casa = add_lexeme(conn, "casa")
+    conn.execute("INSERT INTO content_vocab VALUES (?, ?, 3)", (song, casa))
+    with pytest.raises(sqlite3.IntegrityError):  # one row per (item, word)
+        conn.execute("INSERT INTO content_vocab VALUES (?, ?, 1)", (song, casa))
+    with pytest.raises(sqlite3.IntegrityError):  # a word in the vocabulary occurs
+        conn.execute("INSERT INTO content_vocab VALUES (?, ?, 0)", (song, add_lexeme(conn, "x")))
+    with pytest.raises(sqlite3.IntegrityError):  # of an item that exists
+        conn.execute("INSERT INTO content_vocab VALUES (99, ?, 1)", (casa,))
+
+
+def test_only_a_start_says_how_the_item_was_chosen(conn):
+    song = add_song(conn)
+    sql = "INSERT INTO content_events (content_id, event, chosen_via) VALUES (?, ?, ?)"
+    conn.execute(sql, (song, "started", "recommended"))
+    conn.execute(sql, (song, "started", "requested"))
+    conn.execute(sql, (song, "finished", None))
+    for event, chosen_via in [("started", None), ("finished", "requested"), ("read", None)]:
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(sql, (song, event, chosen_via))
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute(sql, (song, "started", "surprise"))
+
+
+def test_a_resolution_names_a_word_unless_the_form_is_not_spanish(conn):
+    ser = add_lexeme(conn, "ser", "VERB")
+    sql = (
+        "INSERT INTO word_resolutions (form, tagged_lemma, tagged_pos, verdict, lexeme_id, "
+        "reviewer) VALUES (?, ?, 'VERB', ?, ?, 'model:test')"
+    )
+    conn.execute(sql, ("fué", "fuar", "variant", ser))
+    conn.execute(sql, ("yeah", "yeah", "not_spanish", None))
+    for form, verdict, lexeme_id in [
+        ("fué", "variant", None),  # a variant of nothing
+        ("chamba", "word", None),  # a word with no row
+        ("yeah", "not_spanish", ser),  # not Spanish, yet a Spanish word
+        ("fué", "guess", ser),
+    ]:
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(sql, (form, form, verdict, lexeme_id))

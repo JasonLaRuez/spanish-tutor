@@ -48,6 +48,10 @@ CREATE TABLE IF NOT EXISTS lexemes (
     -- Estimated occurrences per million words of subtitles (SUBTLEX-ESP form counts
     -- split across lemmas by Tatoeba usage). General data, independent of any learner.
     frequency_per_million REAL CHECK (frequency_per_million >= 0),
+    -- Where example_en came from when it isn't the example's own source, e.g. a model id
+    -- for a model-translated sentence met in a song or book. NULL = Tatoeba's human
+    -- translation of the sentence named in example_source.
+    example_en_source TEXT,
     UNIQUE (lemma, pos)
 );
 
@@ -277,3 +281,110 @@ FROM entry_events AS e
 JOIN activity AS a ON a.lexeme_id = e.lexeme_id AND a.mode = e.mode
 LEFT JOIN familiarity AS f ON f.lexeme_id = e.lexeme_id AND f.mode = e.mode
 WHERE e.nth = 1;
+
+
+-- ===== Content and the difficulty index (Phase 3) =====================================
+--
+-- Songs, stories and book chapters, each indexed by its full vocabulary so the
+-- recommender's ranking is a join against the word bank, not a re-analysis of the text.
+
+
+-- A book: an ordered set of chapters. Not itself something you read in one sitting, so
+-- it isn't a content item; its chapters are. Books are ranked by new-word density across
+-- all their chapters, so an easy first chapter can't make a hard book look easy.
+CREATE TABLE IF NOT EXISTS books (
+    book_id    INTEGER PRIMARY KEY,
+    title      TEXT NOT NULL,
+    author     TEXT,
+    source     TEXT NOT NULL,          -- 'gutenberg:<ebook no>', or 'private'
+    -- 1 = copyrighted: local use only, never in a public demo (Phase 7 filters on it).
+    is_private INTEGER NOT NULL CHECK (is_private IN (0, 1)),
+    added_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+
+-- Anything the learner can read or listen to and the recommender can rank.
+-- Chapters take author, source and privacy from their book, so those facts are stored
+-- once; songs and stories carry their own. The CASE check enforces exactly that split.
+CREATE TABLE IF NOT EXISTS content_items (
+    content_id  INTEGER PRIMARY KEY,
+    kind        TEXT NOT NULL CHECK (kind IN ('song', 'story', 'chapter')),
+    title       TEXT NOT NULL,
+    author      TEXT,
+    source      TEXT,
+    is_private  INTEGER CHECK (is_private IN (0, 1)),
+    book_id     INTEGER REFERENCES books (book_id),
+    chapter_no  INTEGER CHECK (chapter_no >= 1),
+    -- Filled by the indexer; NULL until indexed (the re-index job's work list).
+    -- tokens: running words counted as vocabulary (per analysis: 'del' is two).
+    -- unresolved_tokens: words that aren't Spanish vocabulary or couldn't be resolved;
+    -- excluded from the cost, and shown so the exclusion is visible.
+    tokens            INTEGER CHECK (tokens >= 0),
+    unresolved_tokens INTEGER CHECK (unresolved_tokens >= 0),
+    analyzer    TEXT,   -- tagger + expression-list fingerprint the index was built with
+    indexed_at  TEXT,
+    added_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    -- Last column: SQLite reads a long value's overflow pages only when it's asked for,
+    -- so the ranking queries never pay for the text.
+    text_es     TEXT NOT NULL,
+    CHECK (CASE WHEN kind = 'chapter'
+                THEN book_id IS NOT NULL AND chapter_no IS NOT NULL
+                     AND source IS NULL AND is_private IS NULL
+                ELSE book_id IS NULL AND chapter_no IS NULL
+                     AND source IS NOT NULL AND is_private IS NOT NULL END),
+    UNIQUE (book_id, chapter_no)
+);
+
+
+-- The difficulty index: each item's vocabulary, with how often each word occurs.
+-- Derived data, replaced whenever an item is re-indexed (unlike the append-only logs).
+-- WITHOUT ROWID: the primary key is the only way in, so no hidden rowid is stored.
+CREATE TABLE IF NOT EXISTS content_vocab (
+    content_id  INTEGER NOT NULL REFERENCES content_items (content_id),
+    lexeme_id   INTEGER NOT NULL REFERENCES lexemes (lexeme_id),
+    occurrences INTEGER NOT NULL CHECK (occurrences >= 1),
+    PRIMARY KEY (content_id, lexeme_id)
+) WITHOUT ROWID;
+
+CREATE INDEX IF NOT EXISTS ix_content_vocab_lexeme ON content_vocab (lexeme_id);
+
+
+-- Append-only reading and listening history, like word_events. Never UPDATE or DELETE.
+-- A book's next chapter is derived from it: the first one after the highest finished.
+CREATE TABLE IF NOT EXISTS content_events (
+    event_id    INTEGER PRIMARY KEY,
+    content_id  INTEGER NOT NULL REFERENCES content_items (content_id),
+    event       TEXT NOT NULL CHECK (event IN ('started', 'finished')),
+    -- How a started item was chosen: the recommender's default, or the learner's own
+    -- request. Raw data for the recommendation-quality metric (Phase 4).
+    chosen_via  TEXT CHECK (chosen_via IN ('recommended', 'requested')),
+    session_id  INTEGER REFERENCES sessions (session_id),   -- NULL outside a session
+    occurred_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CHECK ((event = 'started') = (chosen_via IS NOT NULL))
+);
+
+CREATE INDEX IF NOT EXISTS ix_content_events_content ON content_events (content_id, event);
+
+
+-- How a word form neither the lexicon nor Wiktionary knows was resolved, by an LLM (or a
+-- person). Append-only like lexeme_reviews: the latest row for a form wins, older ones
+-- stay. It is also the cache that keeps each form to one model call.
+--   word:        a real word missing from the lexicon; lexeme_id is the row added for it
+--   variant:     another spelling of an existing word (fué -> ser, pa' -> para)
+--   not_spanish: English, a sound ('la la la'), a name the tagger missed
+CREATE TABLE IF NOT EXISTS word_resolutions (
+    resolution_id INTEGER PRIMARY KEY,
+    form          TEXT NOT NULL,   -- as written, normalized like lexicon.py
+    tagged_lemma  TEXT NOT NULL,   -- what the tagger proposed
+    tagged_pos    TEXT NOT NULL,
+    verdict       TEXT NOT NULL CHECK (verdict IN ('word', 'variant', 'not_spanish')),
+    lexeme_id     INTEGER REFERENCES lexemes (lexeme_id),
+    reason        TEXT,            -- the reviewer's one-line explanation
+    reviewer      TEXT NOT NULL,   -- model id, or 'human'
+    content_id    INTEGER REFERENCES content_items (content_id),  -- where it was met
+    resolved_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CHECK ((verdict = 'not_spanish') = (lexeme_id IS NULL))
+);
+
+CREATE INDEX IF NOT EXISTS ix_word_resolutions_form
+    ON word_resolutions (form, tagged_lemma, tagged_pos);

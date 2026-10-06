@@ -236,6 +236,52 @@ def test_reviewed_rows_are_kept(conn):
     assert lexeme(conn, "razon")["lexeme_id"] == reviewed
 
 
+def add_story(conn):
+    return conn.execute(
+        "INSERT INTO content_items (kind, title, source, is_private, text_es) "
+        "VALUES ('story', 'Un cuento', 'gutenberg:1', 0, 'Había una vez.')"
+    ).lastrowid
+
+
+def test_rows_in_indexed_content_are_kept(conn):
+    """Words added while indexing (from Wiktionary or by a model) aren't in any build."""
+    indexed = add_old_row(conn, "fogón")
+    conn.execute(
+        "INSERT INTO content_vocab (content_id, lexeme_id, occurrences) VALUES (?, ?, 2)",
+        (add_story(conn), indexed),
+    )
+    assert fill_lexicon(conn, ENTRIES).removed == 0
+    assert lexeme(conn, "fogón")["lexeme_id"] == indexed
+
+
+def test_rows_a_word_resolution_points_to_are_kept(conn):
+    resolved = add_old_row(conn, "chamba")
+    conn.execute(
+        "INSERT INTO word_resolutions (form, tagged_lemma, tagged_pos, verdict, lexeme_id, "
+        "reviewer) VALUES ('chamba', 'chamba', 'NOUN', 'word', ?, 'model:test')",
+        (resolved,),
+    )
+    assert fill_lexicon(conn, ENTRIES).removed == 0
+    assert lexeme(conn, "chamba")["lexeme_id"] == resolved
+
+
+def test_a_filled_example_is_a_human_translation(conn):
+    """example_en_source moves with the example: a Tatoeba example filled into a blank
+    slot never keeps a stale "model-translated" mark, and a kept example keeps its own."""
+    conn.execute(
+        "INSERT INTO lexemes (lemma, pos, example_en_source) VALUES ('casa', 'NOUN', 'model:x')"
+    )
+    conn.execute(
+        "INSERT INTO lexemes (lemma, pos, example_es, example_en, example_source, "
+        "example_en_source) VALUES ('estación', 'NOUN', 'La estación.', 'The station.', "
+        "'content:1', 'model:x')"
+    )
+    fill_lexicon(conn, ENTRIES)
+    casa = lexeme(conn, "casa")
+    assert (casa["example_source"], casa["example_en_source"]) == ("tatoeba:12", None)
+    assert lexeme(conn, "estación")["example_en_source"] == "model:x"
+
+
 def test_cleared_counts_only_frequencies_that_changed(conn):
     add_old_row(conn, "mas", frequency=94.5)
     conn.execute(
