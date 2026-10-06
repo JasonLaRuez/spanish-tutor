@@ -33,6 +33,10 @@ export type TranslatedLine = Schemas['TranslatedLine']
 export type Expression = Schemas['ExpressionOut']
 export type ComparedLine = Schemas['ComparedLine']
 export type Voice = Schemas['VoiceOut']
+export type RatingQueue = Schemas['RatingQueue']
+export type RatingItem = Schemas['RatingItem']
+export type EvalOverview = Schemas['EvalOverview']
+export type RateOut = Schemas['RateOut']
 /** How an item was chosen: the default suggestion (or a surprise), or the learner's own pick. */
 export type ChosenVia = Schemas['StartReading']['chosen_via']
 
@@ -72,6 +76,11 @@ export const api = {
   progress: () => request<Progress>('/api/progress'),
   // Speech: which accents' voices are installed (the audio itself is /api/speech?text=…).
   voices: () => request<Voice[]>('/api/speech/voices'),
+  // The evaluation's hand ratings: the overview, one type's items, and a rating.
+  evalOverview: () => request<EvalOverview>('/api/eval'),
+  ratingQueue: (itemType: string) => request<RatingQueue>(`/api/eval/items/${itemType}`),
+  rate: (itemId: number, rating: { label?: string; score?: number }) =>
+    post<{ ok: boolean }>('/api/eval/ratings', { item_id: itemId, ...rating }),
   sessions: () => request<SessionSummary[]>('/api/sessions'),
   transcript: (sessionId: number) => request<Transcript>(`/api/sessions/${sessionId}`),
   start: (topic: string | null, newWords: number) =>

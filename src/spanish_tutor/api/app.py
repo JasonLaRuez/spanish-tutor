@@ -19,7 +19,7 @@ from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractContextManager, asynccontextmanager, closing
 from dataclasses import asdict
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, Response
@@ -39,6 +39,8 @@ from spanish_tutor.conversation import (
     new_tutor,
     reply_to,
 )
+from spanish_tutor.evaluation import ratings
+from spanish_tutor.evaluation.metrics import Rate
 from spanish_tutor.keyboard import expand_markers
 from spanish_tutor.lyrics import LyricsSession, TranslationError
 from spanish_tutor.reading import STUDY_BATCH, ReadingSession
@@ -233,6 +235,57 @@ class Progress(BaseModel):
     bands: list[Band]
     growth: list[Growth]
     try_using: list[GapWord]
+
+
+class RateOut(BaseModel):
+    """k of n, with a 95% Wilson interval (low, high); value and interval None when n = 0."""
+
+    k: int
+    n: int
+    value: float | None
+    low: float | None
+    high: float | None
+
+    @classmethod
+    def of(cls, rate: Rate) -> "RateOut":
+        low, high = rate.interval or (None, None)
+        return cls(k=rate.k, n=rate.n, value=rate.value, low=low, high=high)
+
+
+class CriterionOut(BaseModel):
+    item_type: str
+    name: str
+    question: str
+    labels: list[str]  # a choice of categories...
+    scale: list[int] | None  # ...or a score range [low, high]
+
+
+class RatingItem(BaseModel):
+    item_id: int
+    item_type: str
+    source_ref: str  # 'turn:…' (the real log) or 'benchmark:<run>:turn:…'
+    content: dict[str, Any]  # what to show: a snapshot taken when it was queued
+    score: float | None  # Jason's latest rating; None (with label) if not rated yet
+    label: str | None
+    rated_at: str | None
+
+
+class RatingQueue(BaseModel):
+    criterion: CriterionOut
+    items: list[RatingItem]  # unrated first
+
+
+class NewRating(BaseModel):
+    item_id: int
+    label: str | None = None
+    score: float | None = None
+
+
+class EvalOverview(BaseModel):
+    progress: dict[str, dict[str, int]]  # item type -> items, rated
+    new_word_precision: dict[str, RateOut]  # all, real, benchmark
+    new_word_labels: dict[str, int]
+    false_flags: list[str]  # words taught as new that weren't
 
 
 class SessionSummary(BaseModel):
@@ -626,6 +679,46 @@ def create_app(
                 growth=progress.growth_by_session(conn),
                 try_using=progress.try_using(conn, try_using),
             )
+
+    # --- Rating (the evaluation's hand ratings; evaluation/ratings.py) --------------------
+
+    @app.get("/api/eval")
+    def eval_overview() -> EvalOverview:
+        with reader() as conn:
+            found = ratings.new_word_precision(conn)
+            return EvalOverview(
+                progress=ratings.progress(conn),
+                new_word_precision={k: RateOut.of(found[k]) for k in ("all", "real", "benchmark")},
+                new_word_labels=found["labels"],
+                false_flags=found["false_flags"],
+            )
+
+    @app.get("/api/eval/items/{item_type}")
+    def rating_queue(item_type: str) -> RatingQueue:
+        if item_type not in ratings.CRITERIA:
+            raise HTTPException(404, f"Nothing to rate called {item_type!r}.")
+        c = ratings.CRITERIA[item_type]
+        with reader() as conn:
+            items = ratings.queue(conn, item_type)
+        return RatingQueue(
+            criterion=CriterionOut(
+                item_type=item_type,
+                name=c.name,
+                question=c.question,
+                labels=list(c.labels),
+                scale=list(c.scale) if c.scale else None,
+            ),
+            items=[RatingItem(**item) for item in items],
+        )
+
+    @app.post("/api/eval/ratings")
+    def add_rating(request: NewRating) -> dict:
+        with reader() as conn:
+            try:
+                ratings.rate(conn, request.item_id, label=request.label, score=request.score)
+            except ratings.RatingError as error:
+                raise HTTPException(422, str(error)) from error
+        return {"ok": True}
 
     def reading_for(session_id: int) -> ReadingSession:
         if (session := readings.get(session_id)) is None:

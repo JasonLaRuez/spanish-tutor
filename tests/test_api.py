@@ -693,3 +693,56 @@ def test_voices_report_which_accents_are_downloaded(serve, tmp_path):
         {"accent": "mx", "label": "México", "available": False},
         {"accent": "es", "label": "España", "available": True},
     ]
+
+
+# --- Rating (the evaluation's hand ratings) --------------------------------------------------
+
+
+def queue_word(db_path, ref="turn:1", lemma="perro"):
+    conn = db.connect(db_path)
+    item_id = conn.execute(
+        "INSERT INTO eval_items (item_type, source_ref, content) VALUES ('new_word_flag', ?, ?)",
+        (ref, f'{{"lemma": "{lemma}", "sentence": "El {lemma}."}}'),
+    ).lastrowid
+    conn.commit()
+    conn.close()
+    return item_id
+
+
+def test_the_rating_page_gets_its_items_and_criterion(serve, db_path):
+    item_id = queue_word(db_path)
+    client, _ = serve()
+    found = client.get("/api/eval/items/new_word_flag").json()
+    assert found["criterion"]["labels"] == ["new", "known", "not_a_word"]
+    assert found["criterion"]["scale"] is None
+    assert found["items"][0] == {
+        "item_id": item_id,
+        "item_type": "new_word_flag",
+        "source_ref": "turn:1",
+        "content": {"lemma": "perro", "sentence": "El perro."},
+        "score": None,
+        "label": None,
+        "rated_at": None,
+    }
+    assert client.get("/api/eval/items/nonsense").status_code == 404
+
+
+def test_a_rating_is_recorded_and_counted(serve, db_path):
+    item_id = queue_word(db_path)
+    queue_word(db_path, "benchmark:r:turn:2", "qué")
+    client, _ = serve()
+    assert client.post("/api/eval/ratings", json={"item_id": item_id, "label": "new"}).json() == {
+        "ok": True
+    }
+    overview = client.get("/api/eval").json()
+    assert overview["progress"]["new_word_flag"] == {"items": 2, "rated": 1}
+    assert overview["new_word_precision"]["real"]["k"] == 1
+    assert overview["new_word_precision"]["benchmark"]["n"] == 0
+    assert overview["new_word_precision"]["benchmark"]["value"] is None
+
+
+def test_a_rating_the_criterion_doesnt_allow_is_a_422(serve, db_path):
+    item_id = queue_word(db_path)
+    client, _ = serve()
+    response = client.post("/api/eval/ratings", json={"item_id": item_id, "label": "maybe"})
+    assert response.status_code == 422 and "new, known, not_a_word" in response.json()["detail"]

@@ -88,6 +88,9 @@ export function Layout() {
           <NavLink to="/songs" className={navClass}>
             Songs &amp; poems
           </NavLink>
+          <NavLink to="/rate" className={navClass}>
+            Rate
+          </NavLink>
         </nav>
 
         <div className="mt-6 min-h-0 flex-1 overflow-y-auto px-2">

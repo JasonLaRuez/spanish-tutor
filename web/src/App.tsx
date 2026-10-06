@@ -5,6 +5,7 @@ import { HistoryList, TranscriptPage } from './pages/History'
 import { Home } from './pages/Home'
 import { NewConversation } from './pages/NewConversation'
 import { ProgressPage } from './pages/ProgressPage'
+import { RatePage } from './pages/Rate'
 import { Books } from './pages/Books'
 import { ReadingPage } from './pages/ReadingPage'
 import { Songs } from './pages/Songs'
@@ -25,6 +26,7 @@ export default function App() {
               <Route path="history" element={<HistoryList />} />
               <Route path="history/:sessionId" element={<TranscriptPage />} />
               <Route path="progress" element={<ProgressPage />} />
+              <Route path="rate" element={<RatePage />} />
               <Route path="next" element={<WhatNext />} />
               <Route path="reading/:sessionId" element={<ReadingPage />} />
               <Route path="books" element={<Books />} />

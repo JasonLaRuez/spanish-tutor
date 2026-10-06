@@ -47,8 +47,8 @@ export interface paths {
         };
         /**
          * Speak
-         * @description `text` spoken in `accent` (made on demand: ~0.3 s for a sentence). The same text
-         *     and accent always give the same audio, so the browser may keep it.
+         * @description `text` spoken in `accent` (made on demand: ~0.3 s for a sentence; the first use
+         *     of a voice also loads it, ~1.5 s). The browser may keep it (SPEECH_CACHE).
          */
         get: operations["speak_api_speech_get"];
         put?: never;
@@ -159,6 +159,57 @@ export interface paths {
         get: operations["get_progress_api_progress_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/eval": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Eval Overview */
+        get: operations["eval_overview_api_eval_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/eval/items/{item_type}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Rating Queue */
+        get: operations["rating_queue_api_eval_items__item_type__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/eval/ratings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add Rating */
+        post: operations["add_rating_api_eval_ratings_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -555,10 +606,42 @@ export interface components {
             /** New Words */
             new_words: components["schemas"]["NewWord"][];
         };
+        /** CriterionOut */
+        CriterionOut: {
+            /** Item Type */
+            item_type: string;
+            /** Name */
+            name: string;
+            /** Question */
+            question: string;
+            /** Labels */
+            labels: string[];
+            /** Scale */
+            scale: number[] | null;
+        };
         /** Ended */
         Ended: {
             turn: components["schemas"]["TurnOut"];
             summary: components["schemas"]["SummaryOut"];
+        };
+        /** EvalOverview */
+        EvalOverview: {
+            /** Progress */
+            progress: {
+                [key: string]: {
+                    [key: string]: number;
+                };
+            };
+            /** New Word Precision */
+            new_word_precision: {
+                [key: string]: components["schemas"]["RateOut"];
+            };
+            /** New Word Labels */
+            new_word_labels: {
+                [key: string]: number;
+            };
+            /** False Flags */
+            false_flags: string[];
         };
         /** ExampleOut */
         ExampleOut: {
@@ -658,6 +741,15 @@ export interface components {
             taught: string[];
             summary?: components["schemas"]["SummaryOut"] | null;
         };
+        /** NewRating */
+        NewRating: {
+            /** Item Id */
+            item_id: number;
+            /** Label */
+            label?: string | null;
+            /** Score */
+            score?: number | null;
+        };
         /** NewSession */
         NewSession: {
             /**
@@ -713,6 +805,47 @@ export interface components {
             growth: components["schemas"]["Growth"][];
             /** Try Using */
             try_using: components["schemas"]["GapWord"][];
+        };
+        /**
+         * RateOut
+         * @description k of n, with a 95% Wilson interval (low, high); value and interval None when n = 0.
+         */
+        RateOut: {
+            /** K */
+            k: number;
+            /** N */
+            n: number;
+            /** Value */
+            value: number | null;
+            /** Low */
+            low: number | null;
+            /** High */
+            high: number | null;
+        };
+        /** RatingItem */
+        RatingItem: {
+            /** Item Id */
+            item_id: number;
+            /** Item Type */
+            item_type: string;
+            /** Source Ref */
+            source_ref: string;
+            /** Content */
+            content: {
+                [key: string]: unknown;
+            };
+            /** Score */
+            score: number | null;
+            /** Label */
+            label: string | null;
+            /** Rated At */
+            rated_at: string | null;
+        };
+        /** RatingQueue */
+        RatingQueue: {
+            criterion: components["schemas"]["CriterionOut"];
+            /** Items */
+            items: components["schemas"]["RatingItem"][];
         };
         /** ReadingLookUp */
         ReadingLookUp: {
@@ -1339,6 +1472,92 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Progress"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    eval_overview_api_eval_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalOverview"];
+                };
+            };
+        };
+    };
+    rating_queue_api_eval_items__item_type__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_type: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RatingQueue"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_rating_api_eval_ratings_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewRating"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
