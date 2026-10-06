@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from spanish_tutor.db import connect, init_schema, rebuild_word_bank, statements
+from spanish_tutor.db import connect, init_schema, migrations, rebuild_word_bank, statements
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -349,7 +349,7 @@ def test_pending_migrations_lists_only_what_an_old_database_needs(conn):
     old = connect(":memory:")
     old.executescript((FIXTURES / "schema_v1.sql").read_text(encoding="utf-8"))
     old.execute("PRAGMA user_version = 1")
-    assert pending_migrations(old) == [2, 3, 4, 5, 6, 7, 8]
+    assert pending_migrations(old) == [2, 3, 4, 5, 6, 7, 8, 9]
 
 
 def test_version_2_database_upgrades_to_version_3_keeping_notes(conn):
@@ -657,7 +657,7 @@ def test_version_7_database_rebuilds_content_items_keeping_everything_that_point
     init_schema(old)
 
     assert table_shapes(old) == table_shapes(conn)
-    assert old.execute("PRAGMA user_version").fetchone()[0] == 8
+    assert old.execute("PRAGMA user_version").fetchone()[0] == migrations()[-1][0]
     assert [
         dict(r) for r in old.execute("SELECT * FROM content_items ORDER BY content_id")
     ] == before
@@ -706,3 +706,98 @@ def test_a_translation_is_a_run_with_one_row_per_line(conn):
         conn.execute("INSERT INTO song_translations (content_id, model) VALUES (99, 'm')")
     with pytest.raises(sqlite3.IntegrityError):  # both translations are required
         conn.execute(line, (run, 3, "x", None, None))
+
+
+# --- Evaluation (migration 9) ---------------------------------------------------------------
+
+
+def eval_item(conn, ref="turn:1"):
+    return conn.execute(
+        "INSERT INTO eval_items (item_type, source_ref, content) VALUES ('reply', ?, '{}')",
+        (ref,),
+    ).lastrowid
+
+
+def judge_run(conn):
+    return conn.execute(
+        "INSERT INTO eval_runs (kind, model) VALUES ('judge', 'claude-sonnet-5-5')"
+    ).lastrowid
+
+
+def rate(conn, item, rater="human", run=None, repeat=1, score=4.0, label=None):
+    conn.execute(
+        "INSERT INTO ratings (item_id, criterion, rater, run_id, repeat_no, score, label) "
+        "VALUES (?, 'naturalness', ?, ?, ?, ?, ?)",
+        (item, rater, run, repeat, score, label),
+    )
+
+
+def test_judges_and_jason_rate_the_same_items(conn):
+    item, run = eval_item(conn), judge_run(conn)
+    rate(conn, item)  # Jason
+    rate(conn, item, rater="claude-sonnet-5-5", run=run, repeat=1, score=4)
+    rate(conn, item, rater="claude-sonnet-5-5", run=run, repeat=2, score=5)
+    rate(conn, item, rater="claude-sonnet-5-5", run=run, repeat=3, label="right", score=None)
+    assert conn.execute("SELECT COUNT(*) FROM ratings").fetchone()[0] == 4
+
+
+@pytest.mark.parametrize(
+    "rater, with_run",
+    [("human", True), ("claude-sonnet-5-5", False)],  # Jason has no run; a judge must
+)
+def test_a_rating_belongs_to_a_run_exactly_when_a_model_made_it(conn, rater, with_run):
+    item, run = eval_item(conn), judge_run(conn)
+    with pytest.raises(sqlite3.IntegrityError):
+        rate(conn, item, rater=rater, run=run if with_run else None)
+
+
+def test_a_rating_needs_a_score_or_a_label(conn):
+    with pytest.raises(sqlite3.IntegrityError):
+        rate(conn, eval_item(conn), score=None, label=None)
+
+
+def test_a_judge_repeat_is_recorded_once(conn):
+    item, run = eval_item(conn), judge_run(conn)
+    rate(conn, item, rater="claude-sonnet-5-5", run=run, repeat=1)
+    with pytest.raises(sqlite3.IntegrityError):
+        rate(conn, item, rater="claude-sonnet-5-5", run=run, repeat=1)
+
+
+def test_jason_may_rate_an_item_again_and_the_latest_counts(conn):
+    item = eval_item(conn)
+    rate(conn, item, score=2)
+    rate(conn, item, score=4)
+    latest = conn.execute(
+        "SELECT score FROM ratings WHERE item_id = ? AND rater = 'human' "
+        "ORDER BY rated_at DESC, rating_id DESC LIMIT 1",
+        (item,),
+    ).fetchone()[0]
+    assert latest == 4
+
+
+def test_an_item_is_listed_once_per_source(conn):
+    eval_item(conn, "turn:7")
+    with pytest.raises(sqlite3.IntegrityError):
+        eval_item(conn, "turn:7")
+
+
+def test_a_ratings_item_must_exist(conn):
+    with pytest.raises(sqlite3.IntegrityError):
+        rate(conn, 999)
+
+
+def test_version_8_database_gains_the_evaluation_tables(conn):
+    old = database_at(8)
+    casa = add_lexeme(old, "casa")
+    old.execute(
+        "INSERT INTO word_events (lexeme_id, mode, event_type, source) "
+        "VALUES (?, 'recognition', 'taught', 'seed')",
+        (casa,),
+    )
+    old.commit()
+
+    init_schema(old)
+
+    assert table_shapes(old) == table_shapes(conn)
+    assert old.execute("PRAGMA user_version").fetchone()[0] == 9
+    assert old.execute("SELECT COUNT(*) FROM word_events").fetchone()[0] == 1

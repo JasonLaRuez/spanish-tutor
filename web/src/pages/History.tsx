@@ -119,7 +119,12 @@ export function TranscriptPage() {
 
       <div className="mt-8 space-y-5">
         {turns.map((turn) =>
-          turn.role === 'learner' ? (
+          turn.kind === 'study' ? (
+            // Words taught on their own: a lookup in a chat, or a study batch in the reader.
+            <p key={turn.turn_no} className="text-sm text-muted">
+              Studied: <span className="es text-ink-2">{turn.taught.join(', ') || turn.text_es}</span>
+            </p>
+          ) : turn.role === 'learner' ? (
             <div key={turn.turn_no} className="space-y-1 text-right">
               <LearnerMessage text={turn.text_es} />
               <Words label="Used" words={turn.used} />

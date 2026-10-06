@@ -366,6 +366,9 @@ def summary_prompt(topic: str | None, transcript: list[dict], stats: dict) -> st
     """The request for the tutor's notes: the transcript, its corrections, and the numbers."""
     lines = []
     for turn in transcript:
+        if turn["kind"] == "study":  # a word the learner looked up and was taught
+            lines.append(f"  (the learner looked up: {turn['text_es']})")
+            continue
         if turn["role"] == "learner":
             label = "Learner (¿cómo se dice?)" if turn["kind"] == "translation" else "Learner"
         else:
@@ -798,7 +801,10 @@ class Tutor:
 
         Looking up a known word logs nothing: the learner shouldn't be penalized for
         using a reminder (Jason, 2026-10-05; until then it logged a grade-1 `looked_up`).
-        An unknown word is taught, as anywhere else.
+        An unknown word is taught, as anywhere else, on a one-word `study` turn of its own
+        (like a lookup in the reader). Until 2026-10-06 its `taught` event went on the last
+        tutor reply, where the teaching-completeness metric counted it as a word the reply
+        taught (no real session had one by then).
 
         A dictionary form is matched directly (index.headword); an inflected form
         ("nada") goes through the analyzer. Returns None for anything that isn't a word
@@ -817,10 +823,11 @@ class Tutor:
             lex = lexemes[0]
         if lex.analysis not in self.known:
             with self.conn:
-                log_events(
-                    self.conn,
-                    [Event(lex.lexeme_id, "taught", self.source, turn_id=self.last_tutor_turn_id)],
+                self.turn_no += 1
+                turn = db.add_turn(
+                    self.conn, self.session_id, self.turn_no, "tutor", lex.lemma, kind="study"
                 )
+                log_events(self.conn, [Event(lex.lexeme_id, "taught", self.source, turn_id=turn)])
             self.known.add(lex.analysis)
             self.taught.append(lex)
         return self._lesson(lex, met_in=self.last.reply_es if self.last else None)

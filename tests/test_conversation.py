@@ -277,6 +277,33 @@ def test_looking_up_an_unknown_word_teaches_it(make_tutor, bank):
     assert [lex.lemma for lex in tutor.taught] == ["perro"]
 
 
+def test_a_lookup_is_taught_on_its_own_study_turn_not_on_the_reply(make_tutor, bank):
+    # Otherwise teaching completeness counts it as a word the tutor's reply taught.
+    tutor, _ = make_tutor("Hola.", "¡Bien!")
+    tutor.open()
+    tutor.look_up("perro")
+    tutor.respond("Estoy cansado.")
+
+    rows = [tuple(r) for r in bank.execute("SELECT turn_no, role, kind, text_es FROM turns")]
+    assert rows == [
+        (1, "tutor", "conversation", "Hola."),
+        (2, "tutor", "study", "perro"),
+        (3, "learner", "conversation", "Estoy cansado."),
+        (4, "tutor", "conversation", "¡Bien!"),
+    ]
+    (perro,) = [e for e in events(bank, event_type="taught")]
+    study_turn = bank.execute("SELECT turn_id FROM turns WHERE kind = 'study'").fetchone()[0]
+    assert perro[0] == "perro" and perro[4] == study_turn
+
+
+def test_the_summary_request_mentions_lookups(make_tutor):
+    tutor, generator = make_tutor("Hola.", "¡Adiós!", notes())
+    tutor.open()
+    tutor.look_up("perro")
+    tutor.end()
+    assert "(the learner looked up: perro)" in generator.requests[-1]
+
+
 def test_looking_up_a_bare_word_matches_the_headword_without_the_tagger(make_tutor, bank):
     # The real tagger calls a lone "perro" a proper noun; the headword match avoids it.
     tutor, _ = make_tutor("Hola.")

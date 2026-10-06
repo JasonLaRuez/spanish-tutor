@@ -423,3 +423,59 @@ CREATE TABLE IF NOT EXISTS song_translation_lines (
     note_en        TEXT,            -- the figurative meaning, where the two differ
     PRIMARY KEY (translation_id, line_no)
 ) WITHOUT ROWID;
+
+
+-- --- Evaluation (slice 4.4, migration 9) ----------------------------------------------
+
+-- One evaluation pass: a benchmark run (scripted conversations on a database copy), or a
+-- batch of judge calls.
+CREATE TABLE IF NOT EXISTS eval_runs (
+    run_id         INTEGER PRIMARY KEY,
+    kind           TEXT NOT NULL CHECK (kind IN ('benchmark', 'judge')),
+    model          TEXT NOT NULL,   -- the tutor's model (benchmark) or the judge's
+    prompt_version TEXT,            -- which rubric or prompt, so runs can be compared
+    config         TEXT,            -- JSON: repeats, topics, sample sizes...
+    started_at     TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    note           TEXT
+);
+
+
+-- What gets rated: one row per thing a judge or Jason scores, with exactly what the rater
+-- sees. `source_ref` says where it came from ('song_translation_lines:4:2', 'turn:381',
+-- 'benchmark:3:turn:57'); it's text, not a foreign key, because items come from several
+-- tables and from benchmark copies. `content` (JSON) is a snapshot, so a rating stays
+-- interpretable even if its source changes later.
+CREATE TABLE IF NOT EXISTS eval_items (
+    item_id    INTEGER PRIMARY KEY,
+    item_type  TEXT NOT NULL CHECK (item_type IN
+                   ('translation_line', 'attempt', 'retrieval', 'reply', 'new_word_flag')),
+    source_ref TEXT NOT NULL,
+    content    TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (item_type, source_ref)
+);
+
+
+-- Append-only: every score, by a model judge (one row per repeat) or by Jason ('human').
+-- A re-rating is a new row; the latest one counts. One table for both raters, so judge
+-- consistency and judge-vs-human agreement are self-joins.
+CREATE TABLE IF NOT EXISTS ratings (
+    rating_id     INTEGER PRIMARY KEY,
+    item_id       INTEGER NOT NULL REFERENCES eval_items (item_id),
+    criterion     TEXT NOT NULL,    -- naturalness, faithfulness, relevance, supported,
+                                    -- verdict, truly_new
+    rater         TEXT NOT NULL,    -- 'human', or the judge model's id
+    run_id        INTEGER REFERENCES eval_runs (run_id),
+    repeat_no     INTEGER NOT NULL DEFAULT 1 CHECK (repeat_no >= 1),
+    score         REAL,             -- a number on the criterion's scale (e.g. 1-5)
+    label         TEXT,             -- or a category (right / close / wrong)
+    rationale     TEXT,
+    input_tokens  INTEGER,
+    output_tokens INTEGER,
+    rated_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CHECK (score IS NOT NULL OR label IS NOT NULL),
+    CHECK ((rater = 'human') = (run_id IS NULL)),   -- judges belong to a run; Jason doesn't
+    UNIQUE (run_id, item_id, criterion, repeat_no)
+);
+
+CREATE INDEX IF NOT EXISTS ix_ratings_item ON ratings (item_id, criterion);
