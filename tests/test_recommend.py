@@ -319,3 +319,15 @@ def test_a_surprise_never_picks_a_too_hard_item(conn, words, ceiling):
     content.start(conn, hard[0], "requested")
     picks = {recommend.surprise(conn, random.Random(seed))["title"] for seed in range(50)}
     assert picks == {"easy"}
+
+
+def test_poems_are_ranked_with_songs_and_stories(conn, words):
+    w = words
+    item(conn, "song", {w["w0"]: 1, w["w1"]: 1})
+    item(conn, "poem", {w["w2"]: 1}, kind="poem")
+    item(conn, "story", {w["w3"]: 1, w["w4"]: 1, w["w5"]: 1}, kind="story")
+    assert [(r["title"], r["kind"]) for r in recommend.items(conn)] == [
+        ("poem", "poem"),
+        ("song", "song"),
+        ("story", "story"),
+    ]

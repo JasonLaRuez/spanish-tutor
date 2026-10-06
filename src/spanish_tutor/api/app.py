@@ -27,6 +27,7 @@ from pydantic import BaseModel, Field
 
 from spanish_tutor import content, db, progress, recommend
 from spanish_tutor.config import DB_PATH
+from spanish_tutor.content import VERSE
 from spanish_tutor.conversation import (
     Ending,
     Resources,
@@ -39,6 +40,7 @@ from spanish_tutor.conversation import (
     reply_to,
 )
 from spanish_tutor.keyboard import expand_markers
+from spanish_tutor.lyrics import LyricsSession, TranslationError
 from spanish_tutor.reading import STUDY_BATCH, ReadingSession
 from spanish_tutor.teaching import Lesson
 from spanish_tutor.topics import MAX_WORDS, MIN_WORDS
@@ -251,7 +253,7 @@ class Transcript(BaseModel):
 
 class RecommendedItem(BaseModel):
     content_id: int
-    kind: Literal["song", "story"]
+    kind: Literal["song", "poem", "story"]
     title: str
     author: str | None
     new_words: int  # distinct words it would teach
@@ -287,14 +289,14 @@ class Recommendations(BaseModel):
 
 class Pick(BaseModel):
     content_id: int
-    kind: Literal["song", "story", "chapter"]
+    kind: Literal["song", "poem", "story", "chapter"]
     title: str
     new_words: int
 
 
 class CatalogItem(BaseModel):
     content_id: int
-    kind: Literal["song", "story", "chapter"]
+    kind: Literal["song", "poem", "story", "chapter"]
     title: str
     author: str | None
     book_id: int | None
@@ -318,7 +320,7 @@ class NewWord(BaseModel):
 
 class ContentDetail(BaseModel):
     content_id: int
-    kind: Literal["song", "story", "chapter"]
+    kind: Literal["song", "poem", "story", "chapter"]
     title: str
     author: str | None
     source: str | None
@@ -355,7 +357,8 @@ class ReadingState(BaseModel):
 
     session_id: int
     content_id: int
-    kind: Literal["song", "story", "chapter"]
+    skill: Literal["reading", "lyrics"]  # lyrics: a song or poem, with Try and Compare
+    kind: Literal["song", "poem", "story", "chapter"]
     title: str
     author: str | None
     book_title: str | None
@@ -387,6 +390,51 @@ class StudyRequest(BaseModel):
 class ReadingLookUp(BaseModel):
     lesson: LessonOut
     state: ReadingState
+
+
+class ExpressionOut(BaseModel):
+    line_no: int
+    phrase: str
+    definition_en: str | None  # its reviewed meaning
+    example_es: str | None  # a real Tatoeba sentence using it
+    example_en: str | None
+
+
+class TranslatedLine(BaseModel):
+    line_no: int
+    es: str
+    natural_en: str
+    literal_en: str
+    note_en: str | None
+
+
+class SongTranslationOut(BaseModel):
+    lines: list[TranslatedLine]
+    expressions: list[ExpressionOut]
+
+
+class Attempt(BaseModel):
+    line_no: int
+    text: str
+
+
+class AttemptRequest(BaseModel):
+    attempts: list[Attempt]
+
+
+class ComparedLine(BaseModel):
+    line_no: int
+    es: str
+    attempt: str | None  # the learner's own translation; None if the line wasn't tried
+    natural_en: str
+    literal_en: str
+    note_en: str | None
+    verdict: Literal["right", "close", "missed"] | None
+    comment_en: str | None
+
+
+class Compared(BaseModel):
+    lines: list[ComparedLine]
 
 
 # --- The app ----------------------------------------------------------------------------
@@ -542,6 +590,7 @@ def create_app(
         return ReadingState(
             session_id=session.session_id,
             content_id=session.content_id,
+            skill=session.skill,
             kind=item["kind"],
             title=item["title"],
             author=item["author"],
@@ -561,18 +610,21 @@ def create_app(
         """Start reading an item: analyzes its text (a few seconds for a long chapter)."""
         resources = state["resources"]
         with lock:
-            try:
-                session = ReadingSession(
-                    resources.conn,
-                    resources.generate,
-                    resources.index,
-                    resources.analyze,
-                    request.content_id,
-                    request.chosen_via,
-                    store=resources.store,
-                )
-            except KeyError as error:
-                raise HTTPException(404, "No such song, story or chapter.") from error
+            item = recommend.item(resources.conn, request.content_id)
+            if item is None:
+                raise HTTPException(404, "No such song, story or chapter.")
+            args = (
+                resources.conn,
+                resources.generate,
+                resources.index,
+                resources.analyze,
+                request.content_id,
+                request.chosen_via,
+            )
+            if item["kind"] in VERSE:  # songs and poems: the lyrics skill
+                session = LyricsSession(*args, store=resources.store, translate=resources.translate)
+            else:
+                session = ReadingSession(*args, store=resources.store)
             readings[session.session_id] = session
             return reading_state(session)
 
@@ -617,6 +669,48 @@ def create_app(
         with lock:
             session.finish()
             return reading_state(session)
+
+    def lyrics_for(session_id: int) -> LyricsSession:
+        session = reading_for(session_id)
+        if not isinstance(session, LyricsSession):
+            raise HTTPException(409, "Only songs and poems have translations.")
+        return session
+
+    @app.get("/api/reading/{session_id}/translation")
+    def get_translation(session_id: int) -> SongTranslationOut:
+        """The song's natural and literal translations: stored, or made now (one model call,
+        a few cents, the first time a song is opened)."""
+        session = lyrics_for(session_id)
+        with lock:
+            try:
+                lines = session.translation()
+            except TranslationError as error:
+                raise HTTPException(502, str(error)) from error
+            expressions = session.expressions()
+        return SongTranslationOut(
+            lines=[
+                TranslatedLine(
+                    line_no=n,
+                    es=session.units[n - 1],
+                    natural_en=line.natural_en,
+                    literal_en=line.literal_en,
+                    note_en=line.note_en,
+                )
+                for n, line in enumerate(lines, 1)
+            ],
+            expressions=[ExpressionOut(**vars(e)) for e in expressions],
+        )
+
+    @app.post("/api/reading/{session_id}/attempt")
+    def attempt(session_id: int, request: AttemptRequest) -> Compared:
+        """Compare the learner's own translations with the song's (one model call)."""
+        session = lyrics_for(session_id)
+        with lock:
+            try:
+                compared = session.attempt({a.line_no: a.text for a in request.attempts})
+            except TranslationError as error:
+                raise HTTPException(502, str(error)) from error
+        return Compared(lines=[ComparedLine(**vars(c)) for c in compared])
 
     @app.post("/api/reading/{session_id}/discuss")
     def discuss(session_id: int) -> SessionStarted:

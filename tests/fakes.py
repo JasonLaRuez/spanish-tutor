@@ -84,6 +84,11 @@ class Scripted:
             raise reply
         return Generation(reply, input_tokens=800, cache_read_tokens=0, output_tokens=120)
 
+    def ask(self, schema, prompt):
+        """A one-off structured request (the lyrics comparison): the next scripted reply."""
+        self.requests.append(prompt)
+        return Generation(self.replies.pop(0), input_tokens=300, output_tokens=120)
+
 
 def notes(went_well="You asked good questions.", *work_on):
     from spanish_tutor.conversation import SessionNotes

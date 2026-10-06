@@ -12,9 +12,13 @@ margin, notes in English, illustrations), so each book has a small manifest in
 ingest/books/<ebook>.json, written by hand after reading the text. The manifests are
 committed (the text never is):
 
+    kind      "book" (the default: chapters of one book, read in order) or "poems" (a
+              collection: each chapter is a poem of its own, added with add-poems)
     chapters  [heading as it appears in the text, title to show], in reading order. Each
               heading must be found, in order, as a whole line; the splitter fails loudly if
               one isn't, rather than guess.
+    start     the line after which the headings are searched (a section heading such as
+              RIMAS, when earlier sections number their parts the same way), or null
     end       the line where the reading text ends (a vocabulary or notes section), or null
     remove    regexes deleted from the text before splitting (margin line numbers, notes)
     replace   [regex, replacement] applied to each chapter's text (markup, dialogue dashes)
@@ -40,6 +44,8 @@ class Manifest:
     title: str
     author: str | None
     chapters: list[tuple[str, str]]  # (heading in the text, title to show)
+    kind: str = "book"  # or "poems"
+    start: str | None = None
     end: str | None = None
     remove: tuple[str, ...] = ()
     replace: tuple[tuple[str, str], ...] = ()
@@ -57,6 +63,8 @@ def load_manifest(ebook: int, folder: Path = MANIFESTS) -> Manifest:
         title=data["title"],
         author=data.get("author"),
         chapters=[(heading, title) for heading, title in data["chapters"]],
+        kind=data.get("kind", "book"),
+        start=data.get("start"),
         end=data.get("end"),
         remove=tuple(data.get("remove", [])),
         replace=tuple((pattern, repl) for pattern, repl in data.get("replace", [])),
@@ -85,7 +93,13 @@ def split_chapters(text: str, manifest: Manifest) -> list[tuple[str, str]]:
     """
     for pattern in manifest.remove:
         text = re.sub(pattern, "", text, flags=re.MULTILINE)
-    found, position = [], 0
+    position = 0
+    if manifest.start is not None:
+        match = _line_at(text, manifest.start, 0)
+        if match is None:
+            raise ValueError(f"start line not found: {manifest.start!r}")
+        position = match.end()
+    found = []
     for heading, title in manifest.chapters:
         match = _line_at(text, heading, position)
         if match is None:
@@ -137,10 +151,17 @@ def main() -> None:
     paths = write_chapters(chapters, GUTENBERG_DIR / str(args.ebook))
     for path, (_, text) in zip(paths, chapters, strict=True):
         print(f"{path.name}: {len(text.split()):,} words")
-    print(
-        f"add it: python -m spanish_tutor.content add-book {GUTENBERG_DIR / str(args.ebook)} "
-        f'--title "{manifest.title}" --author "{manifest.author}" --source gutenberg:{args.ebook}'
-    )
+    folder = GUTENBERG_DIR / str(args.ebook)
+    if manifest.kind == "poems":
+        print(
+            f"add them: python -m spanish_tutor.content add-poems {folder} "
+            f'--author "{manifest.author}" --source gutenberg:{args.ebook}'
+        )
+    else:
+        print(
+            f"add it: python -m spanish_tutor.content add-book {folder} "
+            f'--title "{manifest.title}" --author "{manifest.author}" --source gutenberg:{args.ebook}'
+        )
 
 
 if __name__ == "__main__":

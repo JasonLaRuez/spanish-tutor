@@ -7,6 +7,7 @@ import { NewConversation } from './pages/NewConversation'
 import { ProgressPage } from './pages/ProgressPage'
 import { Books } from './pages/Books'
 import { ReadingPage } from './pages/ReadingPage'
+import { Songs } from './pages/Songs'
 import { WhatNext } from './pages/WhatNext'
 import { ConversationsProvider } from './state/conversations'
 
@@ -25,6 +26,7 @@ export default function App() {
             <Route path="next" element={<WhatNext />} />
             <Route path="reading/:sessionId" element={<ReadingPage />} />
             <Route path="books" element={<Books />} />
+            <Route path="songs" element={<Songs />} />
           </Route>
         </Routes>
       </BrowserRouter>

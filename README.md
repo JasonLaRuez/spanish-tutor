@@ -148,6 +148,18 @@ the order they appear in the text, then read it (words you haven't studied yet a
 underlined, and any word can be clicked to look it up), mark it finished, and then talk
 about it with the tutor, who keeps to your vocabulary and draws on passages of the text.
 
+Songs and poems add two steps: translate a few lines into English yourself first, then
+compare with a natural translation and a literal one side by side, with a note wherever
+they differ and the song's fixed expressions explained. The translation is made once per
+song and kept. Bécquer's *Rimas* (public domain) are the demo:
+
+```sh
+uv run python -m spanish_tutor.ingest.gutenberg 53552
+uv run python -m spanish_tutor.content add-poems data/raw/gutenberg/53552 \
+    --author "Gustavo Adolfo Bécquer" --source gutenberg:53552
+uv run python -m spanish_tutor.content index
+```
+
 Words neither the lexicon nor Wiktionary knows (old spellings, regional words, English
 lines) are sent to Claude Opus 5.5 with the sentence each appears in. It decides whether
 each one is a spelling of a known word, a real word the dictionaries miss, or not Spanish,

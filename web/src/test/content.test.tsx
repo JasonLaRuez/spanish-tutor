@@ -155,6 +155,7 @@ const lessonFor = (lexeme_id: number, lemma: string): Lesson => ({
 const readingState = (overrides: Partial<ReadingState> = {}): ReadingState => ({
   session_id: 7,
   content_id: 30,
+  skill: 'reading',
   kind: 'chapter',
   title: 'El cuento del pollo',
   author: 'E. S. Harrison',
@@ -268,5 +269,77 @@ describe('Reading', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Talk about it' }))
     expect(discuss).toHaveBeenCalledWith(7)
     expect(await screen.findByText('chat page')).toBeInTheDocument()
+  })
+})
+
+const rima = readingState({
+  skill: 'lyrics',
+  kind: 'poem',
+  title: 'Rima XXIII',
+  author: 'Gustavo Adolfo Bécquer',
+  book_title: null,
+  chapter_no: null,
+  chapters: 0,
+  paragraphs: [['Por una mirada, un mundo;', 'Por una sonrisa, un cielo;'], ['Por un beso... ¡yo no sé']],
+  total_new: 0,
+  remaining: 0,
+  unstudied: [],
+  readable_until: 3,
+})
+
+const translation = {
+  lines: [
+    { line_no: 1, es: 'Por una mirada, un mundo;', natural_en: "For one glance, I'd give a world;", literal_en: 'For a look, a world;', note_en: 'The verb is implied.' },
+    { line_no: 2, es: 'Por una sonrisa, un cielo;', natural_en: 'For one smile, a heaven;', literal_en: 'For a smile, a sky;', note_en: null },
+    { line_no: 3, es: 'Por un beso... ¡yo no sé', natural_en: "For a kiss... I don't know", literal_en: 'For a kiss... I not know', note_en: null },
+  ],
+  expressions: [{ line_no: 3, phrase: 'no sé', definition_en: "I don't know", example_es: null, example_en: null }],
+}
+
+describe('Lyrics', () => {
+  it('offers four steps for a poem, with the first stanza chosen to try', async () => {
+    vi.spyOn(api, 'reading').mockResolvedValue(rima)
+    renderReading()
+    await userEvent.click(await screen.findByRole('tab', { name: 'Try first' }))
+    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['Study', 'Try first', 'Compare', 'Read'])
+    expect(screen.getByRole('textbox', { name: 'Your translation of line 1' })).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Your translation of line 2' })).toBeInTheDocument()
+    expect(screen.queryByRole('textbox', { name: 'Your translation of line 3' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Compare' })).toBeDisabled() // nothing written yet
+  })
+
+  it('compares your lines with the natural and literal translations', async () => {
+    vi.spyOn(api, 'reading').mockResolvedValue(rima)
+    const translate = vi.spyOn(api, 'translation').mockResolvedValue(translation)
+    const attempt = vi.spyOn(api, 'attempt').mockResolvedValue({
+      lines: translation.lines.map((line) => ({
+        ...line,
+        attempt: line.line_no === 1 ? 'For a look, a world' : null,
+        verdict: line.line_no === 1 ? ('close' as const) : null,
+        comment_en: line.line_no === 1 ? 'Close: the verb "give" is implied.' : null,
+      })),
+    })
+    renderReading()
+    await userEvent.click(await screen.findByRole('tab', { name: 'Try first' }))
+    await userEvent.type(screen.getByRole('textbox', { name: 'Your translation of line 1' }), 'For a look, a world')
+    await userEvent.click(screen.getByRole('button', { name: 'Compare' }))
+
+    expect(attempt).toHaveBeenCalledWith(7, [{ line_no: 1, text: 'For a look, a world' }])
+    expect(translate).toHaveBeenCalledTimes(1)
+    const compared = await screen.findByRole('region', { name: 'Compare' })
+    expect(within(compared).getByText('Close')).toBeInTheDocument()
+    expect(within(compared).getByText("For one glance, I'd give a world;")).toBeInTheDocument()
+    expect(within(compared).getByText('For a smile, a sky;')).toBeInTheDocument()
+    expect(within(compared).getByText('The verb is implied.')).toBeInTheDocument()
+    expect(within(compared).getByRole('region', { name: 'Expressions' })).toHaveTextContent('no sé')
+  })
+
+  it('can show the translations without trying first', async () => {
+    vi.spyOn(api, 'reading').mockResolvedValue(rima)
+    vi.spyOn(api, 'translation').mockResolvedValue(translation)
+    renderReading()
+    await userEvent.click(await screen.findByRole('tab', { name: 'Compare' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Show the translations' }))
+    expect(await screen.findByText('For one smile, a heaven;')).toBeInTheDocument()
   })
 })

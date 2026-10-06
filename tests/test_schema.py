@@ -349,7 +349,7 @@ def test_pending_migrations_lists_only_what_an_old_database_needs(conn):
     old = connect(":memory:")
     old.executescript((FIXTURES / "schema_v1.sql").read_text(encoding="utf-8"))
     old.execute("PRAGMA user_version = 1")
-    assert pending_migrations(old) == [2, 3, 4, 5, 6, 7]
+    assert pending_migrations(old) == [2, 3, 4, 5, 6, 7, 8]
 
 
 def test_version_2_database_upgrades_to_version_3_keeping_notes(conn):
@@ -555,6 +555,8 @@ def test_a_resolution_names_a_word_unless_the_form_is_not_spanish(conn):
 
 
 def test_version_6_database_rebuilds_turns_keeping_every_turn_and_event(conn):
+    from spanish_tutor.db import migrations
+
     old = database_at(6)
     session = add_session(old)
     first = add_turn(old, session, 1, role="tutor", text="Hola.")
@@ -576,7 +578,7 @@ def test_version_6_database_rebuilds_turns_keeping_every_turn_and_event(conn):
     init_schema(old)
 
     assert table_shapes(old) == table_shapes(conn)
-    assert old.execute("PRAGMA user_version").fetchone()[0] == 7
+    assert old.execute("PRAGMA user_version").fetchone()[0] == migrations()[-1][0]
     # Same rows, compared by column: the rebuilt table has schema.sql's column order, while
     # an old database had later columns (kind, the cache writes) at the end.
     assert [dict(r) for r in old.execute("SELECT * FROM turns ORDER BY turn_id")] == [
@@ -628,3 +630,79 @@ def test_a_migration_that_would_break_a_reference_is_rolled_back(conn):
     assert conn.execute("SELECT COUNT(*) FROM turns").fetchone()[0] == 1  # rolled back
     assert conn.execute("PRAGMA user_version").fetchone()[0] == version
     assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
+
+
+# --- Migration 8: poems, and stored translations ------------------------------------------
+
+
+def test_version_7_database_rebuilds_content_items_keeping_everything_that_points_to_it(conn):
+    old = database_at(7)
+    book = add_book(old)
+    chapter = add_chapter(old, book, 1)
+    song = add_song(old)
+    casa = add_lexeme(old, "casa")
+    old.execute("INSERT INTO content_vocab VALUES (?, ?, 3)", (chapter, casa))
+    old.execute(
+        "INSERT INTO content_events (content_id, event, chosen_via) VALUES (?, 'started', 'requested')",
+        (song,),
+    )
+    old.execute(
+        "INSERT INTO word_resolutions (form, tagged_lemma, tagged_pos, verdict, lexeme_id, "
+        "reviewer, content_id) VALUES ('casas', 'casa', 'NOUN', 'variant', ?, 'human', ?)",
+        (casa, song),
+    )
+    old.commit()
+    before = [dict(r) for r in old.execute("SELECT * FROM content_items ORDER BY content_id")]
+
+    init_schema(old)
+
+    assert table_shapes(old) == table_shapes(conn)
+    assert old.execute("PRAGMA user_version").fetchone()[0] == 8
+    assert [
+        dict(r) for r in old.execute("SELECT * FROM content_items ORDER BY content_id")
+    ] == before
+    assert old.execute("PRAGMA foreign_key_check").fetchall() == []
+    assert old.execute("SELECT COUNT(*) FROM content_vocab").fetchone()[0] == 1
+    with pytest.raises(sqlite3.IntegrityError):  # still enforced on the rebuilt table
+        old.execute("INSERT INTO content_vocab VALUES (99, ?, 1)", (casa,))
+
+
+def test_a_poem_stands_alone_like_a_song(conn):
+    conn.execute(
+        "INSERT INTO content_items (kind, title, author, source, is_private, text_es) "
+        "VALUES ('poem', 'Rima XXIII', 'Bécquer', 'gutenberg:53552', 0, 'Por una mirada, un mundo;')"
+    )
+    with pytest.raises(sqlite3.IntegrityError):  # a poem is not part of a book
+        conn.execute(
+            "INSERT INTO content_items (kind, title, book_id, chapter_no, text_es) "
+            "VALUES ('poem', 'x', ?, 1, 'x')",
+            (add_book(conn),),
+        )
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute(
+            "INSERT INTO content_items (kind, title, source, is_private, text_es) "
+            "VALUES ('essay', 'x', 'x', 0, 'x')"
+        )
+
+
+def test_a_translation_is_a_run_with_one_row_per_line(conn):
+    poem = add_song(conn)
+    run = conn.execute(
+        "INSERT INTO song_translations (content_id, model, output_tokens) VALUES (?, 'm', 900)",
+        (poem,),
+    ).lastrowid
+    line = "INSERT INTO song_translation_lines VALUES (?, ?, ?, ?, ?)"
+    conn.execute(line, (run, 1, "For a look, a world;", "For one look, one world;", None))
+    conn.execute(
+        line, (run, 2, "for a smile, a sky;", "for one smile, one sky;", "cielo: sky or heaven")
+    )
+    with pytest.raises(sqlite3.IntegrityError):  # one row per line of a run
+        conn.execute(line, (run, 2, "x", "x", None))
+    with pytest.raises(sqlite3.IntegrityError):  # lines are numbered from 1
+        conn.execute(line, (run, 0, "x", "x", None))
+    with pytest.raises(sqlite3.IntegrityError):  # of a run that exists
+        conn.execute(line, (99, 1, "x", "x", None))
+    with pytest.raises(sqlite3.IntegrityError):  # for an item that exists
+        conn.execute("INSERT INTO song_translations (content_id, model) VALUES (99, 'm')")
+    with pytest.raises(sqlite3.IntegrityError):  # both translations are required
+        conn.execute(line, (run, 3, "x", None, None))

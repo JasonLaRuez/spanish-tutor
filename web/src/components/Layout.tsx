@@ -32,8 +32,6 @@ const navClass = ({ isActive }: { isActive: boolean }) =>
     isActive ? 'bg-accent-soft font-medium text-ink' : 'text-ink-2 hover:bg-surface-2 hover:text-ink'
   }`
 
-const LATER = [{ name: 'Songs', phase: 'Phase 4' }]
-
 export function Layout() {
   const location = useLocation()
   const [theme, setTheme] = useState<Theme>(readTheme)
@@ -86,16 +84,9 @@ export function Layout() {
           <NavLink to="/books" className={navClass}>
             Books
           </NavLink>
-          {LATER.map((item) => (
-            <span
-              key={item.name}
-              className="flex items-center justify-between rounded-md px-2.5 py-1.5 text-sm text-muted"
-              aria-disabled="true"
-            >
-              {item.name}
-              <span className="text-[11px]">{item.phase}</span>
-            </span>
-          ))}
+          <NavLink to="/songs" className={navClass}>
+            Songs &amp; poems
+          </NavLink>
         </nav>
 
         <div className="mt-6 min-h-0 flex-1 overflow-y-auto px-2">

@@ -73,7 +73,13 @@ class TextPassages:
 
 
 class ReadingSession:
-    """One reading session: study, read, finish, and optionally talk about the text."""
+    """One reading session: study, read, finish, and optionally talk about the text.
+
+    `skill` is both the session's skill and its events' source; the lyrics skill
+    (lyrics.LyricsSession) is a reading session of a song or poem with skill 'lyrics'.
+    """
+
+    skill = SOURCE
 
     def __init__(
         self,
@@ -103,7 +109,7 @@ class ReadingSession:
         self.turn_no = 0
         self.finished = False
         with conn:
-            self.session_id = db.start_session(conn, "reading", model, item["title"])
+            self.session_id = db.start_session(conn, self.skill, model, item["title"])
         content.start(conn, content_id, chosen_via, self.session_id)
 
         analyze_many = analyze_many or (lambda units: [analyze(u) for u in units])
@@ -197,7 +203,7 @@ class ReadingSession:
             turn = self._add_turn("learner", "reading", self.item["title"])
             log_events(
                 self.conn,
-                [Event(lex_id, "seen", SOURCE, turn_id=turn) for lex_id in known_lexemes],
+                [Event(lex_id, "seen", self.skill, turn_id=turn) for lex_id in known_lexemes],
             )
             db.end_session(self.conn, self.session_id)
         content.finish(self.conn, self.content_id, self.session_id)
@@ -218,8 +224,8 @@ class ReadingSession:
             store=self.store,
             topic=f"«{title}»",
             model=self.model,
-            skill="reading",
-            source=SOURCE,
+            skill=self.skill,
+            source=self.skill,
             session_id=self.session_id,
             first_turn_no=self.turn_no,
             opening=(
@@ -250,13 +256,16 @@ class ReadingSession:
         with self.conn:
             turn = self._add_turn("tutor", "study", ", ".join(lex.lemma for lex in lexemes))
             log_events(
-                self.conn, [Event(lex.lexeme_id, "taught", SOURCE, turn_id=turn) for lex in lexemes]
+                self.conn,
+                [Event(lex.lexeme_id, "taught", self.skill, turn_id=turn) for lex in lexemes],
             )
         self.known |= {lex.analysis for lex in lexemes}
 
-    def _add_turn(self, role: str, kind: str, text: str) -> int:
+    def _add_turn(self, role: str, kind: str, text: str, **columns: object) -> int:
         self.turn_no += 1
-        return db.add_turn(self.conn, self.session_id, self.turn_no, role, text, kind=kind)
+        return db.add_turn(
+            self.conn, self.session_id, self.turn_no, role, text, kind=kind, **columns
+        )
 
     def _vocab_of(self, text: str) -> set[Analysis]:
         return {analysis for _, analyses in self.analyze(text) for analysis in analyses}

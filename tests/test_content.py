@@ -224,3 +224,24 @@ def test_chapter_titles_drop_the_number_that_orders_the_files():
     assert content.chapter_title(Path("12_Yaguaí.txt")) == "Yaguaí"
     assert content.chapter_title(Path("Prólogo.txt")) == "Prólogo"
     assert content.chapter_title(Path("2001.txt")) == "2001"
+
+
+def test_a_poem_is_verse_analyzed_line_by_line_in_stanzas(conn):
+    poem = add_item(
+        conn,
+        "poem",
+        "Rima XXIII",
+        "Por una mirada, un mundo;\n    Por una sonrisa, un cielo;\n\nPor un beso... ¡yo no sé",
+        source="gutenberg:53552",
+        is_private=False,
+        author="Bécquer",
+    )
+    assert (
+        conn.execute("SELECT kind FROM content_items WHERE content_id = ?", (poem,)).fetchone()[0]
+        == "poem"
+    )
+    assert content.paragraphs("Uno, dos\n  tres\n\ncuatro", "poem") == [
+        ["Uno, dos", "tres"],
+        ["cuatro"],
+    ]
+    assert content.sentences("Uno, dos\n  tres", "poem") == ["Uno, dos", "tres"]

@@ -1,14 +1,20 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
-import { api, type Lesson, type ReadingState, type StudyWord } from '../api/client'
+import { api, type ComparedLine, type Expression, type Lesson, type ReadingState, type StudyWord } from '../api/client'
 import { LessonCard } from '../components/LessonCard'
+import { CompareLines, TryLines } from '../components/Lyrics'
+import { loadComparison } from '../lib/lyrics'
 import { SpanishText } from '../components/Messages'
 import { useConversations } from '../state/context'
 
-type Step = 'study' | 'read'
+type Step = 'study' | 'try' | 'compare' | 'read'
+
+const STEP_NAMES: Record<Step, string> = { study: 'Study', try: 'Try first', compare: 'Compare', read: 'Read' }
 
 /** The reading skill: study the text's new words in batches (in the order they appear),
- *  read it with click-to-look-up, mark it finished, then talk about it with the tutor. */
+ *  read it with click-to-look-up, mark it finished, then talk about it with the tutor.
+ *  A song or poem (the lyrics skill) adds two steps: translate some lines yourself, then
+ *  compare with natural and literal translations. */
 export function ReadingPage() {
   const sessionId = Number(useParams().sessionId)
   const navigate = useNavigate()
@@ -18,6 +24,7 @@ export function ReadingPage() {
   const [step, setStep] = useState<Step>('study')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [comparison, setComparison] = useState<{ lines: ComparedLine[]; expressions: Expression[] } | null>(null)
 
   const fail = (err: unknown) => setError(err instanceof Error ? err.message : String(err))
 
@@ -69,6 +76,16 @@ export function ReadingPage() {
     [sessionId],
   )
 
+  // The translation is made the first time a song is opened (a model call), then stored.
+  const showTranslations = () => run(async () => setComparison(await loadComparison(sessionId)))
+  const compare = (attempts: { line_no: number; text: string }[]) =>
+    run(async () => {
+      const translation = comparison ?? (await loadComparison(sessionId))
+      const compared = await api.attempt(sessionId, attempts)
+      setComparison({ lines: compared.lines, expressions: translation.expressions })
+      setStep('compare')
+    })
+
   const finish = () => run(async () => setState(await api.readingFinish(sessionId)))
   const talk = () => run(async () => navigate(`/chat/${await discuss(sessionId)}`))
 
@@ -76,12 +93,11 @@ export function ReadingPage() {
   if (!state) return <p className="p-8 text-muted">Opening the text…</p>
 
   const studied = state.total_new - state.remaining
+  const lyrics = state.skill === 'lyrics'
+  const steps: Step[] = lyrics ? ['study', 'try', 'compare', 'read'] : ['study', 'read']
+  const kindName = { song: 'Song', poem: 'Poem', story: 'Story', chapter: 'Chapter' }[state.kind]
   const where =
-    state.kind === 'chapter'
-      ? `${state.book_title} · chapter ${state.chapter_no} of ${state.chapters}`
-      : state.kind === 'song'
-        ? 'Song'
-        : 'Story'
+    state.kind === 'chapter' ? `${state.book_title} · chapter ${state.chapter_no} of ${state.chapters}` : kindName
 
   return (
     <div className="mx-auto max-w-3xl space-y-6 px-6 py-10">
@@ -116,7 +132,7 @@ export function ReadingPage() {
       </section>
 
       <div role="tablist" className="flex gap-1 border-b border-line">
-        {(['study', 'read'] as const).map((tab) => (
+        {steps.map((tab) => (
           <button
             key={tab}
             type="button"
@@ -127,18 +143,43 @@ export function ReadingPage() {
               step === tab ? 'border-accent font-medium text-ink' : 'border-transparent text-ink-2 hover:text-ink'
             }`}
           >
-            {tab === 'study' ? `Study${state.remaining ? ` (${state.remaining.toLocaleString()})` : ''}` : 'Read'}
+            {tab === 'study' && state.remaining ? `Study (${state.remaining.toLocaleString()})` : STEP_NAMES[tab]}
           </button>
         ))}
       </div>
 
       {error && <p className="text-danger">{error}</p>}
 
-      {step === 'study' ? (
-        <Study state={state} batch={batch} busy={busy} onStudy={studyBatch} onRead={() => setStep('read')} />
-      ) : (
-        <Read state={state} onLookUp={lookUp} />
+      {step === 'study' && (
+        <Study
+          state={state}
+          batch={batch}
+          busy={busy}
+          onStudy={studyBatch}
+          onRead={() => setStep(lyrics ? 'try' : 'read')}
+          readLabel={lyrics ? 'Try translating' : 'Start reading'}
+        />
       )}
+      {step === 'try' && <TryLines state={state} busy={busy} onCompare={compare} />}
+      {step === 'compare' &&
+        (comparison ? (
+          <CompareLines lines={comparison.lines} expressions={comparison.expressions} />
+        ) : (
+          <section className="space-y-3 rounded-xl border border-line bg-surface p-5">
+            <p className="text-sm text-ink-2">
+              Try a few lines yourself first, or see the natural and literal translations now.
+            </p>
+            <button
+              type="button"
+              onClick={showTranslations}
+              disabled={busy}
+              className="rounded-lg border border-line bg-surface px-4 py-2 text-sm font-medium text-ink hover:border-accent disabled:opacity-50"
+            >
+              {busy ? 'Translating…' : 'Show the translations'}
+            </button>
+          </section>
+        ))}
+      {step === 'read' && <Read state={state} onLookUp={lookUp} />}
 
       <div className="flex flex-wrap items-center gap-3 border-t border-line pt-5">
         {!state.finished ? (
@@ -179,6 +220,7 @@ function Study(props: {
   busy: boolean
   onStudy: () => void
   onRead: () => void
+  readLabel: string
 }) {
   if (props.state.remaining === 0) {
     return (
@@ -190,7 +232,7 @@ function Study(props: {
           onClick={props.onRead}
           className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-ink"
         >
-          Read it now
+          {props.readLabel === 'Start reading' ? 'Read it now' : props.readLabel}
         </button>
       </section>
     )
@@ -226,7 +268,7 @@ function Study(props: {
           onClick={props.onRead}
           className="rounded-lg border border-line bg-surface px-4 py-2 text-sm font-medium text-ink hover:border-accent"
         >
-          Start reading
+          {props.readLabel}
         </button>
       </div>
     </section>
@@ -248,7 +290,7 @@ function Read({
     if (markerBefore < 0 && sentence + paragraph.length > state.readable_until) markerBefore = i
     sentence += paragraph.length
   })
-  const join = state.kind === 'song' ? '\n' : ' '
+  const join = state.kind === 'song' || state.kind === 'poem' ? '\n' : ' '
   return (
     <section aria-label="Text" className="space-y-4">
       <p className="text-sm text-ink-2">

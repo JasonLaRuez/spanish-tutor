@@ -232,6 +232,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/reading/{session_id}/translation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Translation
+         * @description The song's natural and literal translations: stored, or made now (one model call,
+         *     a few cents, the first time a song is opened).
+         */
+        get: operations["get_translation_api_reading__session_id__translation_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/reading/{session_id}/attempt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Attempt
+         * @description Compare the learner's own translations with the song's (one model call).
+         */
+        post: operations["attempt_api_reading__session_id__attempt_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/reading/{session_id}/discuss": {
         parameters: {
             query?: never;
@@ -359,6 +400,18 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** Attempt */
+        Attempt: {
+            /** Line No */
+            line_no: number;
+            /** Text */
+            text: string;
+        };
+        /** AttemptRequest */
+        AttemptRequest: {
+            /** Attempts */
+            attempts: components["schemas"]["Attempt"][];
+        };
         /** Band */
         Band: {
             /** Band */
@@ -380,7 +433,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "song" | "story" | "chapter";
+            kind: "song" | "poem" | "story" | "chapter";
             /** Title */
             title: string;
             /** Author */
@@ -402,6 +455,30 @@ export interface components {
             /** State */
             state: ("started" | "finished") | null;
         };
+        /** Compared */
+        Compared: {
+            /** Lines */
+            lines: components["schemas"]["ComparedLine"][];
+        };
+        /** ComparedLine */
+        ComparedLine: {
+            /** Line No */
+            line_no: number;
+            /** Es */
+            es: string;
+            /** Attempt */
+            attempt: string | null;
+            /** Natural En */
+            natural_en: string;
+            /** Literal En */
+            literal_en: string;
+            /** Note En */
+            note_en: string | null;
+            /** Verdict */
+            verdict: ("right" | "close" | "missed") | null;
+            /** Comment En */
+            comment_en: string | null;
+        };
         /** ContentDetail */
         ContentDetail: {
             /** Content Id */
@@ -410,7 +487,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "song" | "story" | "chapter";
+            kind: "song" | "poem" | "story" | "chapter";
             /** Title */
             title: string;
             /** Author */
@@ -460,6 +537,19 @@ export interface components {
                 string,
                 string
             ][];
+        };
+        /** ExpressionOut */
+        ExpressionOut: {
+            /** Line No */
+            line_no: number;
+            /** Phrase */
+            phrase: string;
+            /** Definition En */
+            definition_en: string | null;
+            /** Example Es */
+            example_es: string | null;
+            /** Example En */
+            example_en: string | null;
         };
         /** GapWord */
         GapWord: {
@@ -565,7 +655,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "song" | "story" | "chapter";
+            kind: "song" | "poem" | "story" | "chapter";
             /** Title */
             title: string;
             /** New Words */
@@ -599,10 +689,15 @@ export interface components {
             /** Content Id */
             content_id: number;
             /**
+             * Skill
+             * @enum {string}
+             */
+            skill: "reading" | "lyrics";
+            /**
              * Kind
              * @enum {string}
              */
-            kind: "song" | "story" | "chapter";
+            kind: "song" | "poem" | "story" | "chapter";
             /** Title */
             title: string;
             /** Author */
@@ -679,7 +774,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "song" | "story";
+            kind: "song" | "poem" | "story";
             /** Title */
             title: string;
             /** Author */
@@ -733,6 +828,13 @@ export interface components {
             ended_at: string | null;
             /** Active */
             active: boolean;
+        };
+        /** SongTranslationOut */
+        SongTranslationOut: {
+            /** Lines */
+            lines: components["schemas"]["TranslatedLine"][];
+            /** Expressions */
+            expressions: components["schemas"]["ExpressionOut"][];
         };
         /** StartReading */
         StartReading: {
@@ -835,6 +937,19 @@ export interface components {
             pre_taught: string[];
             /** Used */
             used: string[];
+        };
+        /** TranslatedLine */
+        TranslatedLine: {
+            /** Line No */
+            line_no: number;
+            /** Es */
+            es: string;
+            /** Natural En */
+            natural_en: string;
+            /** Literal En */
+            literal_en: string;
+            /** Note En */
+            note_en: string | null;
         };
         /**
          * TurnOut
@@ -1314,6 +1429,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReadingState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_translation_api_reading__session_id__translation_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SongTranslationOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    attempt_api_reading__session_id__attempt_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AttemptRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Compared"];
                 };
             };
             /** @description Validation Error */

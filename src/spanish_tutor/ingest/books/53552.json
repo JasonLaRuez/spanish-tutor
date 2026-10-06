@@ -1,0 +1,325 @@
+{
+  "ebook": 53552,
+  "title": "Rimas",
+  "author": "Gustavo Adolfo Bécquer",
+  "kind": "poems",
+  "note": "Obras escogidas (Bécquer): only the Rimas section, 76 poems numbered I-LXXVI. Earlier sections number their parts with the same numerals, so headings are searched after the RIMAS heading. The section ends at FIN, before the index.",
+  "start": "RIMAS",
+  "end": "FIN",
+  "remove": [
+    "\\[Ilustración[^\\]]*\\]",
+    "^[ \\t]*(\\. ){3,}\\.?[ \\t]*$"
+  ],
+  "replace": [
+    [
+      "--",
+      " — "
+    ]
+  ],
+  "chapters": [
+    [
+      "I",
+      "Rima I"
+    ],
+    [
+      "II",
+      "Rima II"
+    ],
+    [
+      "III",
+      "Rima III"
+    ],
+    [
+      "IV",
+      "Rima IV"
+    ],
+    [
+      "V",
+      "Rima V"
+    ],
+    [
+      "VI",
+      "Rima VI"
+    ],
+    [
+      "VII",
+      "Rima VII"
+    ],
+    [
+      "VIII",
+      "Rima VIII"
+    ],
+    [
+      "IX",
+      "Rima IX"
+    ],
+    [
+      "X",
+      "Rima X"
+    ],
+    [
+      "XI",
+      "Rima XI"
+    ],
+    [
+      "XII",
+      "Rima XII"
+    ],
+    [
+      "XIII",
+      "Rima XIII"
+    ],
+    [
+      "XIV",
+      "Rima XIV"
+    ],
+    [
+      "XV",
+      "Rima XV"
+    ],
+    [
+      "XVI",
+      "Rima XVI"
+    ],
+    [
+      "XVII",
+      "Rima XVII"
+    ],
+    [
+      "XVIII",
+      "Rima XVIII"
+    ],
+    [
+      "XIX",
+      "Rima XIX"
+    ],
+    [
+      "XX",
+      "Rima XX"
+    ],
+    [
+      "XXI",
+      "Rima XXI"
+    ],
+    [
+      "XXII",
+      "Rima XXII"
+    ],
+    [
+      "XXIII",
+      "Rima XXIII"
+    ],
+    [
+      "XXIV",
+      "Rima XXIV"
+    ],
+    [
+      "XXV",
+      "Rima XXV"
+    ],
+    [
+      "XXVI",
+      "Rima XXVI"
+    ],
+    [
+      "XXVII",
+      "Rima XXVII"
+    ],
+    [
+      "XXVIII",
+      "Rima XXVIII"
+    ],
+    [
+      "XXIX",
+      "Rima XXIX"
+    ],
+    [
+      "XXX",
+      "Rima XXX"
+    ],
+    [
+      "XXXI",
+      "Rima XXXI"
+    ],
+    [
+      "XXXII",
+      "Rima XXXII"
+    ],
+    [
+      "XXXIII",
+      "Rima XXXIII"
+    ],
+    [
+      "XXXIV",
+      "Rima XXXIV"
+    ],
+    [
+      "XXXV",
+      "Rima XXXV"
+    ],
+    [
+      "XXXVI",
+      "Rima XXXVI"
+    ],
+    [
+      "XXXVII",
+      "Rima XXXVII"
+    ],
+    [
+      "XXXVIII",
+      "Rima XXXVIII"
+    ],
+    [
+      "XXXIX",
+      "Rima XXXIX"
+    ],
+    [
+      "XL",
+      "Rima XL"
+    ],
+    [
+      "XLI",
+      "Rima XLI"
+    ],
+    [
+      "XLII",
+      "Rima XLII"
+    ],
+    [
+      "XLIII",
+      "Rima XLIII"
+    ],
+    [
+      "XLIV",
+      "Rima XLIV"
+    ],
+    [
+      "XLV",
+      "Rima XLV"
+    ],
+    [
+      "XLVI",
+      "Rima XLVI"
+    ],
+    [
+      "XLVII",
+      "Rima XLVII"
+    ],
+    [
+      "XLVIII",
+      "Rima XLVIII"
+    ],
+    [
+      "XLIX",
+      "Rima XLIX"
+    ],
+    [
+      "L",
+      "Rima L"
+    ],
+    [
+      "LI",
+      "Rima LI"
+    ],
+    [
+      "LII",
+      "Rima LII"
+    ],
+    [
+      "LIII",
+      "Rima LIII"
+    ],
+    [
+      "LIV",
+      "Rima LIV"
+    ],
+    [
+      "LV",
+      "Rima LV"
+    ],
+    [
+      "LVI",
+      "Rima LVI"
+    ],
+    [
+      "LVII",
+      "Rima LVII"
+    ],
+    [
+      "LVIII",
+      "Rima LVIII"
+    ],
+    [
+      "LIX",
+      "Rima LIX"
+    ],
+    [
+      "LX",
+      "Rima LX"
+    ],
+    [
+      "LXI",
+      "Rima LXI"
+    ],
+    [
+      "LXII",
+      "Rima LXII"
+    ],
+    [
+      "LXIII",
+      "Rima LXIII"
+    ],
+    [
+      "LXIV",
+      "Rima LXIV"
+    ],
+    [
+      "LXV",
+      "Rima LXV"
+    ],
+    [
+      "LXVI",
+      "Rima LXVI"
+    ],
+    [
+      "LXVII",
+      "Rima LXVII"
+    ],
+    [
+      "LXVIII",
+      "Rima LXVIII"
+    ],
+    [
+      "LXIX",
+      "Rima LXIX"
+    ],
+    [
+      "LXX",
+      "Rima LXX"
+    ],
+    [
+      "LXXI",
+      "Rima LXXI"
+    ],
+    [
+      "LXXII",
+      "Rima LXXII"
+    ],
+    [
+      "LXXIII",
+      "Rima LXXIII"
+    ],
+    [
+      "LXXIV",
+      "Rima LXXIV"
+    ],
+    [
+      "LXXV",
+      "Rima LXXV"
+    ],
+    [
+      "LXXVI",
+      "Rima LXXVI"
+    ]
+  ]
+}

@@ -14,7 +14,7 @@ const percent = (share: number | null | undefined) =>
 
 const count = (n: number, noun: string) => `${n.toLocaleString()} ${noun}${n === 1 ? '' : 's'}`
 
-const KIND: Record<string, string> = { song: 'Song', story: 'Story', chapter: 'Chapter' }
+const KIND: Record<string, string> = { song: 'Song', poem: 'Poem', story: 'Story', chapter: 'Chapter' }
 
 /** "What next?": the recommender's two rankings, a surprise pick, and everything else to
  *  choose from. Starting an item opens a reading session, which logs how it was chosen

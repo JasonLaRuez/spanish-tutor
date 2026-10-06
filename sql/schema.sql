@@ -309,10 +309,11 @@ CREATE TABLE IF NOT EXISTS books (
 
 -- Anything the learner can read or listen to and the recommender can rank.
 -- Chapters take author, source and privacy from their book, so those facts are stored
--- once; songs and stories carry their own. The CASE check enforces exactly that split.
+-- once; songs, poems and stories carry their own. The CASE check enforces that split.
+-- Songs and poems use the lyrics skill; stories and chapters the reading skill.
 CREATE TABLE IF NOT EXISTS content_items (
     content_id  INTEGER PRIMARY KEY,
-    kind        TEXT NOT NULL CHECK (kind IN ('song', 'story', 'chapter')),
+    kind        TEXT NOT NULL CHECK (kind IN ('song', 'poem', 'story', 'chapter')),
     title       TEXT NOT NULL,
     author      TEXT,
     source      TEXT,
@@ -392,3 +393,33 @@ CREATE TABLE IF NOT EXISTS word_resolutions (
 
 CREATE INDEX IF NOT EXISTS ix_word_resolutions_form
     ON word_resolutions (form, tagged_lemma, tagged_pos);
+
+
+-- One translation of a song or poem by a model (a run). Append-only: re-translating adds
+-- a run, the latest is shown, older ones stay for comparison (the naturalness metric).
+-- The lyrics skill stores it once and reuses it in every later session.
+CREATE TABLE IF NOT EXISTS song_translations (
+    translation_id    INTEGER PRIMARY KEY,
+    content_id        INTEGER NOT NULL REFERENCES content_items (content_id),
+    model             TEXT NOT NULL,
+    input_tokens      INTEGER,      -- the call's cost, as turns record it
+    cache_read_tokens INTEGER,
+    output_tokens     INTEGER,      -- includes thinking
+    latency_ms        INTEGER,
+    created_at        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS ix_song_translations_content
+    ON song_translations (content_id, translation_id);
+
+
+-- Its lines, numbered from 1 in the order the text is analyzed (content.sentences: one
+-- per line of verse).
+CREATE TABLE IF NOT EXISTS song_translation_lines (
+    translation_id INTEGER NOT NULL REFERENCES song_translations (translation_id),
+    line_no        INTEGER NOT NULL CHECK (line_no >= 1),
+    natural_en     TEXT NOT NULL,   -- idiomatic English: the meaning, as a speaker would say it
+    literal_en     TEXT NOT NULL,   -- word for word, idioms translated literally
+    note_en        TEXT,            -- the figurative meaning, where the two differ
+    PRIMARY KEY (translation_id, line_no)
+) WITHOUT ROWID;

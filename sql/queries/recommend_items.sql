@@ -1,4 +1,4 @@
--- Songs and short stories, ranked by how many words each would teach: the distinct words
+-- Songs, poems and short stories, ranked by how many words each would teach: the distinct words
 -- in it the learner doesn't recognize yet. This is Krashen's i+1 as a query: the least new
 -- input first. Ties go to higher coverage (more of the running text already known), then
 -- the title. The first row is the default suggestion; an explicit request skips this query.
@@ -38,7 +38,7 @@ items AS (
                 THEN COALESCE(cost.new_tokens, 0) * 1.0 / c.tokens ELSE 0 END AS unknown_share
     FROM content_items AS c
     LEFT JOIN cost ON cost.content_id = c.content_id
-    WHERE c.kind IN ('song', 'story')
+    WHERE c.kind IN ('song', 'poem', 'story')
       AND c.indexed_at IS NOT NULL
       AND NOT EXISTS (SELECT 1 FROM content_events AS e
                       WHERE e.content_id = c.content_id AND e.event = 'finished')

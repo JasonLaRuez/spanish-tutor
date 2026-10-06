@@ -28,6 +28,10 @@ export type ReadingState = Schemas['ReadingState']
 export type StudyBatch = Schemas['StudyBatch']
 export type StudyWord = Schemas['StudyWord']
 export type ReadingLookUp = Schemas['ReadingLookUp']
+export type SongTranslation = Schemas['SongTranslationOut']
+export type TranslatedLine = Schemas['TranslatedLine']
+export type Expression = Schemas['ExpressionOut']
+export type ComparedLine = Schemas['ComparedLine']
 /** How an item was chosen: the default suggestion (or a surprise), or the learner's own pick. */
 export type ChosenVia = Schemas['StartReading']['chosen_via']
 
@@ -94,4 +98,9 @@ export const api = {
     post<ReadingLookUp>(`/api/reading/${sessionId}/lookup`, { word }),
   readingFinish: (sessionId: number) => post<ReadingState>(`/api/reading/${sessionId}/finish`, {}),
   discuss: (sessionId: number) => post<SessionStarted>(`/api/reading/${sessionId}/discuss`, {}),
+  // Songs and poems (the lyrics skill): the stored translation (made once, a model call the
+  // first time), and the learner's own attempts compared with it (one call per submission).
+  translation: (sessionId: number) => request<SongTranslation>(`/api/reading/${sessionId}/translation`),
+  attempt: (sessionId: number, attempts: { line_no: number; text: string }[]) =>
+    post<{ lines: ComparedLine[] }>(`/api/reading/${sessionId}/attempt`, { attempts }),
 }

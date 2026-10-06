@@ -65,9 +65,9 @@ def add_item(
     is_private: bool,
     author: str | None = None,
 ) -> int:
-    """Add a song or a story (not yet indexed); returns its content_id."""
-    if kind not in ("song", "story"):
-        raise ValueError(f"add_item adds songs and stories, not {kind!r}: use add_book")
+    """Add a song, poem or story (not yet indexed); returns its content_id."""
+    if kind not in ("song", "poem", "story"):
+        raise ValueError(f"add_item adds songs, poems and stories, not {kind!r}: use add_book")
     return conn.execute(
         """
         INSERT INTO content_items (kind, title, author, source, is_private, text_es)
@@ -109,6 +109,8 @@ def add_book(
 # A sentence ends after final punctuation followed by whitespace, or directly before an
 # opening ¿ or ¡, which always starts a new sentence or clause ("queja...¿no?"): spaCy
 # leaves "...¿no" as one token, so it's split here.
+VERSE = ("song", "poem")  # analyzed line by line, in stanzas; the lyrics skill
+
 _SENTENCE_END = re.compile(r"(?<=[.!?…])\s+|(?<=[.!?…])(?=[¿¡])")
 _PARAGRAPH_BREAK = re.compile(r"\n\s*\n")
 
@@ -124,7 +126,7 @@ def paragraphs(text: str, kind: str) -> list[list[str]]:
     after sentence-final punctuation.
     """
     blocks = _PARAGRAPH_BREAK.split(text)
-    if kind == "song":
+    if kind in VERSE:
         stanzas = [[line.strip() for line in b.splitlines() if line.strip()] for b in blocks]
         return [stanza for stanza in stanzas if stanza]
     joined = (" ".join(b.split()) for b in blocks)
@@ -477,7 +479,7 @@ def read_text(path: Path) -> str:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Add and index songs, stories and books.")
+    parser = argparse.ArgumentParser(description="Add and index songs, poems, stories and books.")
     commands = parser.add_subparsers(dest="command", required=True)
     for kind in ("song", "story"):
         p = commands.add_parser(f"add-{kind}", help=f"add a {kind} from a UTF-8 text file")
@@ -496,6 +498,15 @@ def main() -> None:
             default=kind == "song",
             help="copyrighted: local use only (songs always are)",
         )
+    p = commands.add_parser(
+        "add-poems", help="add a collection: each .txt file is a poem (ingest.gutenberg splits one)"
+    )
+    p.add_argument(
+        "folder", type=Path, help="one .txt file per poem; the name (minus its number) is the title"
+    )
+    p.add_argument("--author")
+    p.add_argument("--source", required=True, help="e.g. gutenberg:53552")
+    p.add_argument("--private", action="store_true")
     p = commands.add_parser("add-book", help="add a book: one .txt file per chapter, in order")
     p.add_argument("folder", type=Path, help="chapter files, sorted by name = reading order")
     p.add_argument("--title", required=True)
@@ -532,6 +543,17 @@ def main() -> None:
                 author=args.author,
             )
         print(f"added {kind} {content_id}: {args.title} (run `index` next)")
+    elif args.command == "add-poems":
+        files = sorted(args.folder.glob("*.txt"))
+        if not files:
+            sys.exit(f"no .txt poem files in {args.folder}")
+        with conn:
+            ids = [
+                add_item(conn, "poem", chapter_title(f), read_text(f), source=args.source,
+                         is_private=args.private, author=args.author)
+                for f in files
+            ]  # fmt: skip
+        print(f"added {len(ids)} poems, items {ids[0]}-{ids[-1]} (run `index` next)")
     elif args.command == "add-book":
         files = sorted(args.folder.glob("*.txt"))
         if not files:

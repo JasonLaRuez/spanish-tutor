@@ -266,9 +266,10 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
   screen with a simple reader; see "Content index and recommender" below). Quiroga's
   story collection is in the real database. **Phase 4 is planned** (see "Phase 4 plan"
   below); slices 4.0 (the difficulty ceiling, now 20%), 4.1 (book manifests, older
-  accent respellings, candidate measurement) and 4.2 (the reading skill) are built. The
-  real database holds Quiroga (too hard) and *An Elementary Spanish Reader* (suggested).
-  Next: slice 4.3 (the lyrics skill), alongside more real conversations reviewed in SQL.
+  accent respellings, candidate measurement), 4.2 (the reading skill) and 4.3 (the lyrics
+  skill) are built. The real database (migration 8) holds Quiroga (too hard), *An
+  Elementary Spanish Reader* (suggested) and Bécquer's 76 *Rimas* (10 within the
+  ceiling). Next: slice 4.4 (evaluation), alongside more real conversations.
   - **Built so far:** word bank schema + migrations 001–006; seed (1,030 recognized / 762
     produced after the seed-gap marks; grows with sessions); general lexicon; Tatoeba in
     Chroma (261k sentences); the conversation skill with write-back, topic pre-teaching
@@ -769,6 +770,33 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
     expressions grounded in their reviewed sense plus a Tatoeba example. One structured
     call per song, stored in `song_translations` (local DB). Bécquer's *Rimas* for the
     public demo; Jason's songs in `private/lyrics/`. Songs library page.
+    - **Built 2026-10-06 (Jason's choices: runs + lines storage, a new `poem` kind, the
+      talk offered after songs too, medium effort for the translation).**
+      `lyrics.LyricsSession(ReadingSession)` (skill and source `lyrics`; a reading
+      session's `skill` is now a class attribute): `expressions()` (EXPR lexemes per line,
+      with the reviewed sense and the lexicon's Tatoeba example), `translation()` (the
+      latest stored run if it covers exactly the song's lines, else one structured call:
+      `SongTranslation`, every line exactly once, one retry naming the problem, then
+      `TranslationError`), `attempt({line: text})` (one `AttemptFeedback` call via
+      `generate.ask`; a learner `attempt` turn with the Spanish lines and the English in
+      `note_en`, a tutor `attempt` turn with the comments and the call's cost; no `used`
+      events). `Resources.translate` = `ClaudeGenerator(effort="medium").ask`.
+    - **Migration 8 (approved):** `content_items` rebuilt with kind `poem` (foreign keys
+      off, checked before commit); `song_translations` (a run: model, tokens, latency;
+      append-only, the latest shown) and `song_translation_lines` (run, line_no,
+      natural_en, literal_en, note_en; WITHOUT ROWID). Songs and poems are `content.VERSE`
+      (analyzed by line, in stanzas; ranked with stories).
+    - **The Rimas:** manifest 53552 (`kind: "poems"`, `start: "RIMAS"`, because earlier
+      sections number their parts the same way; ends at `FIN`); `content add-poems`
+      adds each file as a poem. Measured: 10 of 76 within 20% (Rima XXIII: 22 words, 2 new;
+      median 27.5% unknown). Resolver on the real DB: $0.125 (estimate $0.13).
+    - Live: Rima XXIII translated for ~1¢ (973 in / 327 out) and compared for ~0.5¢, both
+      well judged ("cielo" as heaven vs. sky, the implied "I'd give"). A 12-line rima
+      should cost ~2–3¢ to translate. API: `GET /api/reading/{id}/translation` (makes it
+      the first time; 409 for a non-song, 502 on a bad translation),
+      `POST …/attempt`; `ReadingState.skill`. Web: Try first / Compare steps on the
+      reading page for songs and poems, a Songs & poems library page; every Phase 4
+      placeholder in the nav is gone.
   - **4.4 Evaluation:** adherence, teaching completeness (first make lookup events
     distinguishable: they currently log `taught` on the last tutor turn, showing as false
     gaps), translation naturalness (LLM-as-judge with **Sonnet 5.5**, Jason's choice;

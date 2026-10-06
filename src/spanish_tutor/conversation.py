@@ -980,6 +980,9 @@ class Resources:
     index: LexiconIndex
     analyze: Callable[[str], list[TokenAnalysis]]
     store: Chroma | None
+    # The lyrics skill's translator: ClaudeGenerator(effort="medium").ask (Jason's choice:
+    # a song is translated once and stored, so it gets more thinking than a chat turn).
+    translate: Callable[..., Generation] | None = None
 
 
 def load_resources(check_same_thread: bool = True) -> Resources:
@@ -1007,6 +1010,7 @@ def load_resources(check_same_thread: bool = True) -> Resources:
         LexiconIndex(conn, lexicon.load_wiktionary(), expression_definitions()),
         analyze,
         store=open_store(),
+        translate=ClaudeGenerator(effort="medium").ask,
     )
 
 

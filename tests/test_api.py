@@ -31,7 +31,7 @@ def serve(db_path, tmp_path, make_wiktionary):
     wiktionary = make_wiktionary([("pez", "noun", "fish")])
     clients = []
 
-    def make(*replies, web_dist=tmp_path / "no-ui", topics=False):
+    def make(*replies, web_dist=tmp_path / "no-ui", topics=False, translate=None):
         generator = Scripted(*replies)
         store = None
         if topics:  # sentences about a dog swimming, for topic pre-teaching
@@ -41,7 +41,9 @@ def serve(db_path, tmp_path, make_wiktionary):
 
         def load():
             conn = db.connect(db_path, check_same_thread=False)
-            return Resources(conn, generator, LexiconIndex(conn, wiktionary), analyze, store)
+            return Resources(
+                conn, generator, LexiconIndex(conn, wiktionary), analyze, store, translate
+            )
 
         client = TestClient(create_app(load=load, db_path=db_path, web_dist=web_dist))
         client.__enter__()
@@ -508,3 +510,105 @@ def test_reading_endpoints_name_real_items_and_open_sessions(serve, db_path):
     )
     assert client.get("/api/reading/99").status_code == 404
     assert client.get("/api/reading/99/batch").status_code == 404
+
+
+# --- Lyrics ------------------------------------------------------------------------------
+
+
+def add_poem(db_path, text):
+    from spanish_tutor import content
+
+    conn = db.connect(db_path)
+    with conn:
+        poem = content.add_item(
+            conn, "poem", "Rima", text, source="gutenberg:53552", is_private=False, author="Bécquer"
+        )
+    conn.close()
+    return poem
+
+
+def translator(*numbers_per_call):
+    """A fake translation model: each call answers the given line numbers."""
+    from spanish_tutor.conversation import Generation
+    from spanish_tutor.lyrics import LineTranslation, SongTranslation
+
+    calls = []
+
+    def translate(schema, prompt):
+        numbers = numbers_per_call[len(calls)]
+        calls.append(prompt)
+        lines = [
+            LineTranslation(
+                line_no=n, natural_en=f"natural {n}", literal_en=f"literal {n}", note_en=None
+            )
+            for n in numbers
+        ]
+        return Generation(SongTranslation(lines=lines), input_tokens=900, output_tokens=300)
+
+    translate.calls = calls
+    return translate
+
+
+POEM = "El gato come en casa.\nEl perro nada en el río."
+
+
+def test_a_poem_opens_as_lyrics_with_a_translation_made_once(serve, db_path):
+    poem = add_poem(db_path, POEM)
+    translate = translator((1, 2))
+    client, _ = serve(translate=translate)
+
+    state = client.post("/api/reading", json={"content_id": poem, "chosen_via": "requested"}).json()
+    assert (state["skill"], state["kind"], state["paragraphs"]) == (
+        "lyrics",
+        "poem",
+        [["El gato come en casa.", "El perro nada en el río."]],
+    )
+    session = state["session_id"]
+    first = client.get(f"/api/reading/{session}/translation").json()
+    assert [(l["line_no"], l["es"], l["natural_en"]) for l in first["lines"]] == [
+        (1, "El gato come en casa.", "natural 1"),
+        (2, "El perro nada en el río.", "natural 2"),
+    ]
+    assert client.get(f"/api/reading/{session}/translation").json() == first
+    assert len(translate.calls) == 1  # stored, then reused
+
+
+def test_attempts_come_back_compared(serve, db_path):
+    from spanish_tutor.lyrics import AttemptFeedback, LineFeedback
+
+    poem = add_poem(db_path, POEM)
+    feedback = AttemptFeedback(lines=[LineFeedback(line_no=2, verdict="right", comment_en="Yes!")])
+    client, _ = serve(feedback, translate=translator((1, 2)))
+    session = client.post(
+        "/api/reading", json={"content_id": poem, "chosen_via": "recommended"}
+    ).json()["session_id"]
+
+    compared = client.post(
+        f"/api/reading/{session}/attempt",
+        json={"attempts": [{"line_no": 2, "text": "The dog swims."}]},
+    ).json()["lines"]
+
+    assert [(c["line_no"], c["attempt"], c["verdict"]) for c in compared] == [
+        (1, None, None),
+        (2, "The dog swims.", "right"),
+    ]
+    assert rows(db_path, "SELECT role, kind FROM turns ORDER BY turn_no") == [
+        ("learner", "attempt"),
+        ("tutor", "attempt"),
+    ]
+
+
+def test_only_songs_and_poems_have_translations_and_a_bad_one_is_reported(serve, db_path):
+    story = add_story(db_path, STORY)
+    poem = add_poem(db_path, POEM)
+    client, _ = serve(translate=translator((1,), (1, 1)))
+    reading = client.post(
+        "/api/reading", json={"content_id": story, "chosen_via": "requested"}
+    ).json()
+    assert reading["skill"] == "reading"
+    assert client.get(f"/api/reading/{reading['session_id']}/translation").status_code == 409
+    lyrics = client.post(
+        "/api/reading", json={"content_id": poem, "chosen_via": "requested"}
+    ).json()
+    broken = client.get(f"/api/reading/{lyrics['session_id']}/translation")
+    assert broken.status_code == 502 and "lines exactly once" in broken.json()["detail"]
