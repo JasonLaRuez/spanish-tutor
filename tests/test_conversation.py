@@ -464,7 +464,7 @@ def topic_store(bank, tmp_path):
 def test_pre_taught_words_are_taught_before_the_conversation_and_logged_with_it(
     make_tutor, bank, topic_store
 ):
-    choice = TopicWords(words=["perro|NOUN", "nadar|VERB"], fewer_because=None)
+    choice = TopicWords(words=["perro|NOUN", "nadar|VERB"], practice=[], fewer_because=None)
     tutor, generator = make_tutor(choice, "Hola. El perro nada.", store=topic_store)
     lessons = tutor.pre_teach(2)
     turn = tutor.open()
@@ -487,7 +487,7 @@ def test_pre_taught_words_are_taught_before_the_conversation_and_logged_with_it(
 
 
 def test_pre_taught_words_are_in_the_frozen_vocabulary_and_every_note(make_tutor, topic_store):
-    choice = TopicWords(words=["perro|NOUN", "nadar|VERB"], fewer_because=None)
+    choice = TopicWords(words=["perro|NOUN", "nadar|VERB"], practice=[], fewer_because=None)
     tutor, generator = make_tutor(choice, "Hola.", "Bien.", store=topic_store)
     tutor.pre_teach(2)
     tutor.open()
@@ -499,7 +499,7 @@ def test_pre_taught_words_are_in_the_frozen_vocabulary_and_every_note(make_tutor
     assert "perro, nadar" in opening_request[-2].text  # the opening message
     for request in (opening_request, reply_request):
         note = request[-1].content
-        assert "taught for today's topic, before the conversation: perro, nadar." in note
+        assert "known words they haven't used yet): perro, nadar." in note
         # The words are for the learner to practice; the tutor uses some, not all.
         assert "invite the learner to use them" in note and "don't need to use them all" in note
         assert "Words taught this session: none yet." in request[-1].content
@@ -514,7 +514,9 @@ def test_pre_teaching_needs_a_topic_and_must_come_before_the_opening(make_tutor,
 
 
 def test_fewer_topic_words_than_requested_come_with_a_reason(make_tutor, topic_store):
-    choice = TopicWords(words=["perro|NOUN"], fewer_because="Only perro is about animals.")
+    choice = TopicWords(
+        words=["perro|NOUN"], practice=[], fewer_because="Only perro is about animals."
+    )
     tutor, _ = make_tutor(choice, "Hola.", store=topic_store)
     lessons = tutor.pre_teach(5)
     assert [item.lemma for item in lessons] == ["perro"]
@@ -526,10 +528,115 @@ def test_fewer_topic_words_than_requested_come_with_a_reason(make_tutor, topic_s
 
 
 def test_all_requested_topic_words_means_no_shortfall(make_tutor, topic_store):
-    choice = TopicWords(words=["perro|NOUN", "nadar|VERB"], fewer_because=None)
+    choice = TopicWords(words=["perro|NOUN", "nadar|VERB"], practice=[], fewer_because=None)
     tutor, _ = make_tutor(choice, "Hola.", store=topic_store)
     tutor.pre_teach(2)
     assert tutor.pre_teach_shortfall is None
+
+
+def recognize(conn, *lemmas):
+    """Teach `lemmas` (recognition only), as if read in a story: words to practice."""
+    conn.execute(
+        "INSERT INTO word_events (lexeme_id, mode, event_type, source) "
+        "SELECT lexeme_id, 'recognition', 'taught', 'reading' FROM lexemes "
+        "WHERE lemma IN ({})".format(",".join("?" * len(lemmas))),
+        lemmas,
+    )
+    conn.commit()
+
+
+def word_bank_row(conn, lemma, mode):
+    return conn.execute(
+        "SELECT b.encounters, b.familiarity FROM word_bank AS b JOIN lexemes AS l "
+        "USING (lexeme_id) WHERE l.lemma = ? AND b.mode = ?",
+        (lemma, mode),
+    ).fetchone()
+
+
+def pre_teach_events(conn):
+    rows = conn.execute(
+        "SELECT l.lemma, e.event_type, e.grade, e.turn_id FROM word_events AS e "
+        "JOIN lexemes AS l USING (lexeme_id) WHERE e.source = 'pre_teach' ORDER BY e.event_id"
+    )
+    return [tuple(r) for r in rows]
+
+
+def test_a_gap_in_new_words_is_filled_with_known_words_to_practice(make_tutor, bank, topic_store):
+    recognize(bank, "río")  # recognized, never used: a practice candidate
+    choice = TopicWords(words=["perro|NOUN"], practice=["río|NOUN"], fewer_because=None)
+    tutor, generator = make_tutor(choice, "Hola.", store=topic_store)
+    lessons = tutor.pre_teach(2)
+
+    assert [(item.lemma, item.practice) for item in lessons] == [
+        ("perro", False),
+        ("río", True),
+    ]
+    prompt = generator.requests[0]
+    assert "- perro|NOUN" in prompt and "never used" in prompt and "- río|NOUN" in prompt
+    assert tutor.pre_teach_shortfall is None  # 1 new + 1 practice = 2 requested
+    assert [lex.lemma for lex in tutor.focus] == ["perro", "río"]
+    assert [lex.lemma for lex in tutor.taught] == ["perro"]  # río isn't taught again
+
+
+def test_practice_words_are_logged_seen_with_the_opening_and_change_no_mode(
+    make_tutor, bank, topic_store
+):
+    recognize(bank, "río")
+    choice = TopicWords(words=["perro|NOUN"], practice=["río|NOUN"], fewer_because=None)
+    tutor, generator = make_tutor(choice, "Hola.", store=topic_store)
+    tutor.pre_teach(2)
+    tutor.open()
+
+    opening = turns(bank)[0]["turn_id"]
+    assert pre_teach_events(bank) == [
+        ("perro", "taught", None, opening),
+        ("río", "seen", None, opening),  # an encounter, ungraded
+    ]
+    assert word_bank_row(bank, "río", "recognition")["encounters"] == 2  # taught + seen
+    assert word_bank_row(bank, "río", "production") is None
+    assert "known words they haven't used yet): perro, río." in generator.requests[1][-1].content
+
+
+def test_using_a_practice_word_puts_it_into_production(make_tutor, bank, topic_store):
+    recognize(bank, "río")
+    choice = TopicWords(words=["perro|NOUN"], practice=["río|NOUN"], fewer_because=None)
+    tutor, _ = make_tutor(choice, "Hola.", "¡Bien!", "Adiós.", notes(), store=topic_store)
+    tutor.pre_teach(2)
+    tutor.open()
+    turn = tutor.respond("El río.")
+
+    assert "río" in turn.used
+    assert word_bank_row(bank, "río", "production")["familiarity"] == 4 / 5
+    stats = tutor.end().stats
+    assert stats["pre_taught"] == ["perro", "río"] and stats["pre_taught_used"] == ["río"]
+    assert stats["practice"] == ["río"] and stats["practice_first_use"] == ["río"]
+    assert stats["words_taught"] == 1  # perro; río was practiced, not taught
+
+
+def test_enough_new_words_means_no_practice_words(make_tutor, bank, topic_store):
+    recognize(bank, "río")
+    choice = TopicWords(
+        words=["perro|NOUN", "nadar|VERB"], practice=["río|NOUN"], fewer_because=None
+    )
+    tutor, _ = make_tutor(choice, "Hola.", store=topic_store)
+    lessons = tutor.pre_teach(2)
+    tutor.open()
+    assert [item.lemma for item in lessons] == ["perro", "nadar"]
+    assert all(event[1] == "taught" for event in pre_teach_events(bank))
+
+
+def test_produced_words_are_never_practice_words(make_tutor, bank, topic_store):
+    recognize(bank, "río")
+    bank.execute(
+        "INSERT INTO word_events (lexeme_id, mode, event_type, source, grade) "
+        "SELECT lexeme_id, 'production', 'used', 'conversation', 4 FROM lexemes WHERE lemma = 'río'"
+    )
+    bank.commit()
+    choice = TopicWords(words=["perro|NOUN"], practice=["río|NOUN"], fewer_because=None)
+    tutor, generator = make_tutor(choice, "Hola.", store=topic_store)
+    lessons = tutor.pre_teach(2)
+    assert [item.lemma for item in lessons] == ["perro"]  # río isn't on either list
+    assert "río" not in generator.requests[0]
 
 
 def test_a_turn_reports_the_words_the_learner_used(make_tutor):
@@ -627,9 +734,24 @@ def test_summary_prompt_lists_todays_unused_words():
     stats = {
         "messages": 3, "corrections": 0, "how_to_say": 1, "first_time": [],
         "pre_taught": ["regar", "césped"], "pre_taught_used": ["regar"],
+        "practice": [], "practice_first_use": [],
     }  # fmt: skip
     prompt = summary_prompt("el jardín", [], stats)
     assert "Not used by the learner: césped." in prompt and "about el jardín" in prompt
+    assert "never used, chosen for practice" not in prompt
+
+
+def test_summary_prompt_names_practice_words_and_their_first_uses():
+    stats = {
+        "messages": 3, "corrections": 0, "how_to_say": 0, "first_time": ["verde"],
+        "pre_taught": ["regar", "verde", "flor"], "pre_taught_used": ["verde"],
+        "practice": ["flor", "verde"], "practice_first_use": ["verde"],
+    }  # fmt: skip
+    prompt = summary_prompt("el jardín", [], stats)
+    assert (
+        "never used, chosen for practice: flor, verde. Used for the first time today: verde."
+        in prompt
+    )
 
 
 # --- Prompt caching of the conversation --------------------------------------------------------

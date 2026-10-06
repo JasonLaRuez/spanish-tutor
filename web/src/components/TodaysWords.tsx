@@ -26,7 +26,8 @@ export function TodaysWords({ focus, used }: { focus: string[]; used: string[] }
   )
 }
 
-/** The words taught before the conversation, with why there are fewer than asked for. */
+/** The words shown before the conversation, with why there are fewer than asked for: new
+ * words, then (filling a gap in new words) known words the learner hasn't used yet. */
 export function PreTaught({
   lessons,
   requested,
@@ -36,19 +37,25 @@ export function PreTaught({
   requested: number
   shortfall: string | null
 }) {
+  const fresh = lessons.filter((lesson) => !lesson.practice)
+  const practice = lessons.filter((lesson) => lesson.practice)
   return (
     <div className="space-y-2">
       {shortfall && (
         <Note title={`${lessons.length} of ${requested} words`}>{shortfall}</Note>
       )}
+      {fresh.length > 0 && <LessonList lessons={fresh} title="Words for today" />}
+      {practice.length > 0 && (
+        <LessonList
+          lessons={practice}
+          title="Words to practice: you know these, but haven’t used them yet"
+        />
+      )}
       {lessons.length > 0 && (
-        <>
-          <LessonList lessons={lessons} title="Words for today" />
-          <p className="text-sm text-ink-2">
-            Try to use these in your replies. “Today’s words” at the top checks each one off
-            when you do.
-          </p>
-        </>
+        <p className="text-sm text-ink-2">
+          Try to use these in your replies. “Today’s words” at the top checks each one off
+          when you do.
+        </p>
       )}
     </div>
   )

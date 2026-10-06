@@ -12,6 +12,7 @@ from spanish_tutor.topics import (
     choose_words,
     selection_prompt,
     topic_candidates,
+    topic_pools,
     word_count,
 )
 from spanish_tutor.vectorstore import open_store
@@ -78,8 +79,8 @@ def candidates(*lemmas):
     return [Candidate(lemma, "NOUN", lemma.upper(), 5, 10.0 - i) for i, lemma in enumerate(lemmas)]
 
 
-def picked(*words, why=None):
-    return lambda prompt: TopicWords(words=list(words), fewer_because=why)
+def picked(*words, why=None, practice=()):
+    return lambda prompt: TopicWords(words=list(words), practice=list(practice), fewer_because=why)
 
 
 def test_claude_chooses_only_from_the_candidates():
@@ -141,6 +142,85 @@ def test_selection_prompt_lists_every_candidate_and_allows_fewer():
     assert "- planta|NOUN: PLANTA" in prompt and "- hoja|NOUN: HOJA" in prompt
     assert "el jardín" in prompt and "choose up to 2" in prompt
     assert "Choose fewer rather than include words that aren't really about the topic" in prompt
+    assert "never used" not in prompt  # no practice list without practice candidates
+
+
+# --- Practice words: known, never used, filling a gap in new words ---------------------------
+
+
+def test_topic_pools_split_one_search_into_new_and_practice_words(lexicon, store):
+    # regar recognized and not produced: practice. casa recognized and produced: neither.
+    new, practice = topic_pools(
+        lexicon, store, "el jardín", recognized={REGAR, CASA}, produced={CASA}, k=10
+    )
+    assert {c.key for c in new} == {"planta|NOUN", "lleno|ADJ"}
+    assert [c.key for c in practice] == ["regar|VERB"]
+
+
+def test_practice_words_must_be_more_frequent_near_the_topic_than_overall(lexicon, store):
+    # lleno is everywhere (900 per million): near the topic no more often than expected.
+    _, practice = topic_pools(
+        lexicon, store, "el jardín", recognized={REGAR, LLENO}, produced=set(), k=10_000
+    )
+    assert [c.key for c in practice] == ["regar|VERB"]
+
+
+def test_topic_candidates_is_the_new_word_pool(lexicon, store):
+    new, _ = topic_pools(lexicon, store, "el jardín", recognized={CASA}, produced=set(), k=10)
+    assert topic_candidates(lexicon, store, "el jardín", known={CASA}, k=10) == new
+
+
+def test_enough_new_words_need_no_practice_words():
+    pool, practice = candidates("planta", "hoja"), candidates("verde", "flor")
+    choice = choose_words(
+        picked("planta|NOUN", "hoja|NOUN", practice=["verde|NOUN"]), "x", pool, 2, practice
+    )
+    assert [c.lemma for c in choice.words] == ["planta", "hoja"] and choice.practice == []
+
+
+def test_a_gap_is_filled_with_practice_words_up_to_the_number_asked_for():
+    pool, practice = candidates("planta", "hoja"), candidates("verde", "flor", "sol")
+    select = picked("planta|NOUN", practice=["flor|NOUN", "rosa|NOUN", "verde|NOUN", "sol|NOUN"])
+    choice = choose_words(select, "el jardín", pool, 3, practice)
+    assert [c.lemma for c in choice.words] == ["planta"]
+    assert [c.lemma for c in choice.practice] == ["flor", "verde"]  # off-list rosa dropped; capped
+    assert choice.shortfall is None
+
+
+def test_practice_choices_none_of_which_are_listed_fall_back_to_the_best_scores():
+    pool, practice = candidates("planta"), candidates("verde", "flor")
+    choice = choose_words(picked("planta|NOUN", practice=["rosa|NOUN"]), "x", pool, 3, practice)
+    assert [c.lemma for c in choice.practice] == ["verde", "flor"]
+
+
+def test_practice_words_alone_still_get_a_choice():
+    prompts = []
+
+    def select(prompt):
+        prompts.append(prompt)
+        return TopicWords(words=[], practice=["flor|NOUN"], fewer_because="Only flor fits.")
+
+    choice = choose_words(select, "el jardín", [], 2, candidates("verde", "flor"))
+    assert choice.words == [] and [c.lemma for c in choice.practice] == ["flor"]
+    assert "(none)" in prompts[0] and "- flor|NOUN: FLOR" in prompts[0]
+    assert choice.shortfall == "Only flor fits."
+
+
+def test_a_shortfall_counts_the_practice_words_too():
+    pool, practice = candidates("planta"), candidates("verde")
+    select = picked("planta|NOUN", practice=["verde|NOUN"])
+    choice = choose_words(select, "el jardín", pool, 5, practice)
+    assert choice.shortfall == (
+        "Only 1 words about “el jardín” turned up that you don't know yet, "
+        "and 1 you know but haven't used yet."
+    )
+
+
+def test_the_prompt_offers_practice_words_only_to_fill_the_gap():
+    prompt = selection_prompt("el jardín", candidates("planta"), 3, candidates("verde"))
+    assert "- planta|NOUN: PLANTA" in prompt and "- verde|NOUN: VERDE" in prompt
+    assert "never used" in prompt and "fill the remaining places" in prompt
+    assert "Never choose one of these instead of a new word that fits" in prompt
 
 
 @pytest.mark.parametrize("n, count", [(2, 25), (5, 25), (12, 25), (13, 26), (20, 40)])

@@ -1,6 +1,6 @@
--- One session's transcript, with the words each turn taught, the topic words taught
--- before it (logged with the opening turn, source 'pre_teach'), and the words the learner
--- used in it. Each list is built by a correlated subquery: the turn's events grouped to
+-- One session's transcript, with the words each turn taught, today's topic words shown
+-- before it (logged with the opening turn, source 'pre_teach': new words `taught`,
+-- practice words `seen`), and the words the learner used in it. Each list is built by a correlated subquery: the turn's events grouped to
 -- one row per word (keeping its first event id), then folded into one comma-separated
 -- string by GROUP_CONCAT, in the order the words were logged.
 SELECT t.turn_id,

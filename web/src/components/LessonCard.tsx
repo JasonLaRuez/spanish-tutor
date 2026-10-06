@@ -2,7 +2,8 @@ import type { Lesson } from '../api/client'
 import { posName } from '../lib/text'
 
 /** A taught word: its definition and a readable example, with Tatoeba's author credit.
- * Words no dictionary has carry a "model-written" label (their definition is Claude's). */
+ * Words no dictionary has carry a "model-written" label (their definition is Claude's);
+ * known words shown before a conversation to practice using carry a "practice" label. */
 export function LessonCard({ lesson }: { lesson: Lesson }) {
   const example = lesson.example
   const tatoebaId = example?.source?.startsWith('tatoeba:') ? example.source.slice(8) : null
@@ -17,6 +18,14 @@ export function LessonCard({ lesson }: { lesson: Lesson }) {
             title="This word isn't in the dictionaries: Claude wrote its definition and translated the example."
           >
             model-written
+          </span>
+        )}
+        {lesson.practice && (
+          <span
+            className="rounded border border-line px-1 text-[0.65rem] uppercase tracking-wide text-muted"
+            title="You already understand this word but haven't used it yet: try it in a reply."
+          >
+            practice
           </span>
         )}
       </div>

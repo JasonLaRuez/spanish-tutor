@@ -22,6 +22,7 @@ const lesson: Lesson = {
   definition_en: 'to water',
   example: { es: 'Riego las plantas.', en: 'I water the plants.', source: 'tatoeba:42', author: 'ana', glosses: [] },
   model_written: false,
+  practice: false,
 }
 
 const turn = (overrides: Partial<Turn> = {}): Turn => ({
@@ -125,6 +126,7 @@ describe('TutorMessage', () => {
       definition_en: 'to work (informal)',
       example: { es: 'Hay que chambear.', en: 'You have to work.', source: 'content:3', author: null, glosses: [] },
       model_written: true,
+      practice: false,
     }
     render(<TutorMessage turn={turn({ lessons: [chambear] })} />)
     expect(screen.getByText('model-written')).toHaveAttribute('title', expect.stringContaining('Claude'))
@@ -226,6 +228,18 @@ describe('PreTaught', () => {
   it('has no shortfall note when every requested word was taught', () => {
     render(<PreTaught lessons={[lesson]} requested={1} shortfall={null} />)
     expect(screen.queryByText(/of 1 words/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: /Words to practice/ })).not.toBeInTheDocument()
+  })
+
+  it('lists known words to practice apart from the new ones, with a practice tag', () => {
+    const verde: Lesson = { ...lesson, lexeme_id: 8, lemma: 'verde', pos: 'ADJ', practice: true }
+    render(<PreTaught lessons={[lesson, verde]} requested={2} shortfall={null} />)
+    const fresh = screen.getByRole('region', { name: 'Words for today' })
+    const practice = screen.getByRole('region', { name: /Words to practice/ })
+    expect(fresh).toHaveTextContent('regar')
+    expect(fresh).not.toHaveTextContent('verde')
+    expect(practice).toHaveTextContent('verde')
+    expect(screen.getAllByText('practice')).toHaveLength(1)
   })
 })
 
@@ -239,6 +253,8 @@ const summary = (overrides: Partial<Summary> = {}): Summary => ({
   first_time: ['celular', 'videojuego'],
   pre_taught: ['escena', 'pantalla', 'videojuego'],
   pre_taught_used: ['escena', 'videojuego'],
+  practice: [],
+  practice_first_use: [],
   went_well_en: 'You kept the conversation going.',
   work_on: ['Use estar for states: "estoy cansado".', 'Try "pantalla".'],
   notes_error: null,
@@ -257,6 +273,22 @@ describe('SummaryCard', () => {
     expect(screen.getByText('pantalla')).toHaveTextContent('pantalla (not used yet)')
     expect(screen.getByText('You kept the conversation going.')).toBeInTheDocument()
     expect(screen.getByText('Try "pantalla".')).toBeInTheDocument()
+    expect(screen.queryByText(/Words you knew but had never used/)).not.toBeInTheDocument()
+  })
+
+  it('says which practice words were used for the first time', () => {
+    render(
+      <SummaryCard
+        summary={summary({
+          pre_taught: ['escena', 'pantalla', 'videojuego'],
+          practice: ['pantalla', 'videojuego'],
+          practice_first_use: ['videojuego'],
+        })}
+      />,
+    )
+    expect(screen.getByText(/Words you knew but had never used/)).toHaveTextContent(
+      'Words you knew but had never used: 1 of 2 used for the first time (videojuego).',
+    )
   })
 
   it('still shows the numbers when the notes failed', () => {

@@ -598,6 +598,8 @@ export interface components {
             example: components["schemas"]["ExampleOut"] | null;
             /** Model Written */
             model_written: boolean;
+            /** Practice */
+            practice: boolean;
         };
         /** LookUp */
         LookUp: {
@@ -897,6 +899,10 @@ export interface components {
             pre_taught: string[];
             /** Pre Taught Used */
             pre_taught_used: string[];
+            /** Practice */
+            practice: string[];
+            /** Practice First Use */
+            practice_first_use: string[];
             /** Went Well En */
             went_well_en: string | null;
             /** Work On */

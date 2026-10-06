@@ -386,6 +386,29 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
       reason (`TopicWords.fewer_because`). Any shortfall is explained to the learner
       (`TopicChoice.shortfall`: too few candidates, Claude's reason, or both), shown in
       the CLI and the web UI ("12 of 20 words: …").
+    - **Practice words fill a gap in new words (Jason, 2026-10-06).** The conversation is
+      for production, and reading/songs grow recognition fast, so a topic can run out of
+      new words. `topics.topic_pools` returns, from the same 2,000-sentence search, the
+      new candidates and the **practice** candidates (recognized, not produced, topic
+      score > 0). In the same selection call (`TopicWords.practice`, required field) Claude
+      fills any gap up to n from the practice list, never instead of a fitting new word;
+      validated like new words (off-list dropped, all-invalid → top scores, capped at the
+      gap). The shortfall names both counts.
+      - Measured (real bank, 8 topics, read-only): 254 content words recognized but not
+        produced; 14–26 practice candidates per topic; those with score ≤ 0 were noise
+        (*ya*, *dejar*, *llevar*, *acabar*), so the > 0 filter leaves 6–20.
+      - Logged with the opening turn as `seen`, source `pre_teach`, grade NULL (Jason's
+        choice: no schema change; an encounter, not a lesson). They join `focus`, not
+        `taught` or `known`. First correct use is the ordinary `used` (grade 4).
+      - `Lesson.practice` / `LessonOut.practice`: the UI lists them apart ("Words to
+        practice") with a "practice" tag. `session_stats.sql` adds `practice` and
+        `practice_first_use` (practice ∩ first-ever uses: the gap closing); `pre_taught`
+        there and in the transcript = all of today's words (source `pre_teach`), so the
+        checklist and its rebuild needed no change.
+      - Live (DB copy): with today's bank "el trabajo" got 20 new words, no fill. With all
+        but 5 of "la comida"'s new candidates marked read, Claude kept the 5 and filled
+        15 on-topic practice words (*delicioso*, *desayuno*, *verdura*…); with none left,
+        all 20 were practice. `web/e2e/conversation.mjs` walks it.
     - **The words are for the learner to practice (Jason, 2026-10-05).** The note and the
       system prompt ask the tutor to invite the learner to use them and to use *some*
       itself where natural, not all. The web UI's "Today's words" checklist ticks each one

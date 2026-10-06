@@ -44,6 +44,19 @@ export function SummaryCard({ summary }: { summary: Summary }) {
             Today’s words: {summary.pre_taught_used.length} of {summary.pre_taught.length} used
           </h3>
           <TodaysWords focus={summary.pre_taught} used={summary.pre_taught_used} />
+          {summary.practice.length > 0 && (
+            <p className="text-sm text-ink-2">
+              Words you knew but had never used: {summary.practice_first_use.length} of{' '}
+              {summary.practice.length} used for the first time
+              {summary.practice_first_use.length > 0 && (
+                <>
+                  {' '}
+                  (<span className="es">{summary.practice_first_use.join(', ')}</span>)
+                </>
+              )}
+              .
+            </p>
+          )}
         </div>
       )}
 

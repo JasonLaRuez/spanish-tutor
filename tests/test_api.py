@@ -86,7 +86,9 @@ def test_starting_a_session_returns_the_opening_and_records_it(serve, db_path):
 
 
 def test_a_session_reports_topic_words_and_why_fewer_than_requested(serve):
-    choice = TopicWords(words=["perro|NOUN", "nadar|VERB"], fewer_because="Only two fit.")
+    choice = TopicWords(
+        words=["perro|NOUN", "nadar|VERB"], practice=[], fewer_because="Only two fit."
+    )
     client, _ = serve(choice, "Hola.", topics=True)
     started = start(client, topic="los animales", new_words=5)
 
@@ -100,10 +102,31 @@ def test_a_session_reports_topic_words_and_why_fewer_than_requested(serve):
 
 
 def test_a_session_with_every_requested_word_has_no_shortfall(serve):
-    choice = TopicWords(words=["perro|NOUN", "nadar|VERB"], fewer_because=None)
+    choice = TopicWords(words=["perro|NOUN", "nadar|VERB"], practice=[], fewer_because=None)
     client, _ = serve(choice, "Hola.", topics=True)
     started = start(client, topic="los animales", new_words=2)
     assert (started["requested_words"], started["shortfall"]) == (2, None)
+
+
+def test_a_gap_in_topic_words_is_filled_with_practice_words(serve, db_path):
+    conn = db.connect(db_path)
+    conn.execute(  # río recognized from reading, never used
+        "INSERT INTO word_events (lexeme_id, mode, event_type, source) "
+        "SELECT lexeme_id, 'recognition', 'taught', 'reading' FROM lexemes WHERE lemma = 'río'"
+    )
+    conn.commit()
+    conn.close()
+    choice = TopicWords(words=["perro|NOUN"], practice=["río|NOUN"], fewer_because=None)
+    client, _ = serve(choice, "Hola.", topics=True)
+    started = start(client, topic="los animales", new_words=2)
+
+    assert [(item["lemma"], item["practice"]) for item in started["lessons"]] == [
+        ("perro", False),
+        ("río", True),
+    ]
+    assert started["shortfall"] is None
+    opening = client.get(f"/api/sessions/{started['session_id']}").json()["turns"][0]
+    assert opening["pre_taught"] == ["perro", "río"]  # both on today's checklist after a reload
 
 
 def test_a_message_expands_markers_and_logs_the_learners_words(serve, db_path):

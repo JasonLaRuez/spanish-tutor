@@ -9,6 +9,12 @@ written to verify Phase 4's slices and are meant to be re-run after changes to t
 |---|---|---|
 | `reading.mjs` | What next? → start the suggested book → study chapter 1's words → read, look a word up → Finished (not "Talk about it") → the book moves to chapter 2; the Books page | none |
 | `lyrics.mjs` | Songs & poems → Rima XXIII → study → translate line 1 → Compare → Finished; the library shows it finished | one translation and one comparison, ~2¢ |
+| `conversation.mjs` | New conversation on a topic with few new words left (20 words) → practice words fill the gap, with their tag → use one → it's ticked off → ¡Hasta luego! → the summary counts its first use | word choice, opening, one reply, goodbye, notes, ~3–5¢ |
+
+`conversation.mjs` needs a topic whose new words have run short. On the copy, first mark
+all but 5 of the topic's new candidates as read (a `taught` event, source `reading`, for
+each of `topics.topic_pools(...)[0][5:]`). Its arguments are the screenshot folder and the
+topic (default `la comida`).
 
 ## Running them
 

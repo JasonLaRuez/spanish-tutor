@@ -9,8 +9,13 @@
 --   words_taught:    distinct words taught, including the topic words taught up front
 --   first_time:      words the learner used for the first time ever, in this session: their
 --                    first `used` event (ROW_NUMBER over each word's history) is here
---   pre_taught:      topic words taught before the conversation
+--   pre_taught:      today's words, shown before the conversation (source 'pre_teach'): new
+--                    topic words (`taught`) and practice words (`seen`)
 --   pre_taught_used: ... and which of them the learner used during it
+--   practice:        the practice words among them: recognized but never used before, so
+--                    shown again to be used rather than taught
+--   practice_first_use: ... and which of them the learner used for the first time (the
+--                    passive-to-active gap closing, word by word)
 --
 -- Each measure has its own CTE at its own grain, so joining them never multiplies rows.
 WITH session_turns AS (
@@ -39,6 +44,9 @@ first_time AS (
 pre_taught AS (
     SELECT DISTINCT lexeme_id, lemma FROM session_events WHERE source = 'pre_teach'
 ),
+practice AS (
+    SELECT DISTINCT lemma FROM session_events WHERE source = 'pre_teach' AND event_type = 'seen'
+),
 used AS (
     SELECT DISTINCT lexeme_id, lemma FROM session_events WHERE event_type = 'used'
 )
@@ -60,6 +68,9 @@ SELECT s.session_id,
        (SELECT GROUP_CONCAT(lemma, ', ' ORDER BY lemma) FROM first_time) AS first_time,
        (SELECT GROUP_CONCAT(lemma, ', ' ORDER BY lemma) FROM pre_taught) AS pre_taught,
        (SELECT GROUP_CONCAT(p.lemma, ', ' ORDER BY p.lemma)
-        FROM pre_taught AS p WHERE p.lexeme_id IN (SELECT lexeme_id FROM used)) AS pre_taught_used
+        FROM pre_taught AS p WHERE p.lexeme_id IN (SELECT lexeme_id FROM used)) AS pre_taught_used,
+       (SELECT GROUP_CONCAT(lemma, ', ' ORDER BY lemma) FROM practice) AS practice,
+       (SELECT GROUP_CONCAT(p.lemma, ', ' ORDER BY p.lemma)
+        FROM practice AS p WHERE p.lemma IN (SELECT lemma FROM first_time)) AS practice_first_use
 FROM sessions AS s
 WHERE s.session_id = :session_id;

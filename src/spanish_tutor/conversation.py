@@ -33,7 +33,7 @@ import sys
 import time
 from collections import defaultdict
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -49,10 +49,11 @@ from spanish_tutor.teaching import Lesson, lesson
 from spanish_tutor.topics import (
     MAX_WORDS,
     MIN_WORDS,
+    Candidate,
     TopicWords,
     candidate_count,
     choose_words,
-    topic_candidates,
+    topic_pools,
     word_count,
 )
 from spanish_tutor.vectorstore import search_sentences
@@ -384,9 +385,15 @@ def summary_prompt(topic: str | None, transcript: list[dict], stats: dict) -> st
     ]
     if stats["pre_taught"]:
         numbers.append(
-            f"- Today's topic words, taught before the conversation: "
+            f"- Today's topic words, shown before the conversation: "
             f"{', '.join(stats['pre_taught'])}. Not used by the learner: "
             f"{', '.join(unused) or 'none'}."
+        )
+    if stats["practice"]:
+        numbers.append(
+            "- Of today's words, these were words the learner already understood but had "
+            f"never used, chosen for practice: {', '.join(stats['practice'])}. Used for the "
+            f"first time today: {', '.join(stats['practice_first_use']) or 'none'}."
         )
     about = f" about {topic}" if topic else ""
     return (
@@ -412,8 +419,10 @@ def learner_message(text: str, cached: bool = False) -> HumanMessage:
 def focus_line(focus: list[str]) -> str:
     # The words are taught so the learner has the topic's vocabulary, and the learner is the
     # one meant to practice them (Jason, 2026-10-05): the tutor uses some, not all.
+    # Practice words (known, never used) are among them: to the tutor they're all the same.
     return (
-        "Words the learner was taught for today's topic, before the conversation: "
+        "Today's words, shown to the learner before the conversation (new words for the "
+        "topic, and known words they haven't used yet): "
         + ", ".join(focus)
         + ". They are for the learner to practice: ask questions that invite the learner to "
         "use them. Use some yourself where they fit naturally; you don't need to use them all."
@@ -519,6 +528,7 @@ class Tutor:
         self.taught: list[Lexeme] = []
         self.focus: list[Lexeme] = []  # pre-taught topic words
         self._pre_taught_unlogged: list[Lexeme] = []
+        self._practice_unlogged: list[Lexeme] = []
         # Why fewer topic words were taught than requested (for the learner), if they were.
         self.pre_teach_shortfall: str | None = None
         self.turn_no = first_turn_no
@@ -542,25 +552,35 @@ class Tutor:
         """Teach n topic words before the conversation opens (call before `open`).
 
         Candidates come from the Tatoeba sentences nearest the topic, and Claude picks the
-        most useful (topics.py). It may pick fewer than n when too few are really about the
-        topic; `pre_teach_shortfall` then says why. The words join the vocabulary the
-        prompt is frozen with, and every turn's note asks the tutor to invite the learner
-        to use them. Their `taught` events (source 'pre_teach') are logged with the
-        opening turn.
+        most useful (topics.py). When it picks fewer than n new words, the gap is filled
+        with on-topic words the learner recognizes but has never used (practice words,
+        their lessons marked `practice`); `pre_teach_shortfall` says why if there are
+        still fewer than n. All of them are today's words: every turn's note asks the
+        tutor to invite the learner to use them. New words join the vocabulary the prompt
+        is frozen with. With the opening turn, new words are logged `taught` and practice
+        words `seen` (an encounter, ungraded), both with source 'pre_teach'.
         """
         if not self.topic or self.store is None or self._frozen_system is not None:
             return []
-        candidates = topic_candidates(
-            self.conn, self.store, self.topic, self.known, limit=candidate_count(n)
+        produced = db.known_vocabulary(self.conn, "production")
+        new, practice = topic_pools(
+            self.conn, self.store, self.topic, self.known, produced, limit=candidate_count(n)
         )
-        choice = choose_words(self.generate.select_words, self.topic, candidates, n)
-        lexemes = [lex for c in choice.words if (lex := self.index.lookup(c.analysis)) is not None]
+        choice = choose_words(self.generate.select_words, self.topic, new, n, practice)
+        lexemes = self._lexemes(choice.words)
+        practiced = self._lexemes(choice.practice)
         self.pre_teach_shortfall = choice.shortfall
         self.known |= {lex.analysis for lex in lexemes}
-        self.focus = lexemes
+        self.focus = lexemes + practiced
         self.taught += lexemes
         self._pre_taught_unlogged = lexemes
-        return [self._lesson(lex, met_in=None) for lex in lexemes]
+        self._practice_unlogged = practiced
+        return [self._lesson(lex, met_in=None) for lex in lexemes] + [
+            replace(self._lesson(lex, met_in=None), practice=True) for lex in practiced
+        ]
+
+    def _lexemes(self, candidates: list[Candidate]) -> list[Lexeme]:
+        return [lex for c in candidates if (lex := self.index.lookup(c.analysis)) is not None]
 
     def open(self) -> TutorTurn:
         """The tutor's first message."""
@@ -681,7 +701,13 @@ class Tutor:
                 Event(lex.lexeme_id, "taught", "pre_teach", turn_id=tutor_turn)
                 for lex in self._pre_taught_unlogged
             ]
+            # Practice words: already recognized, shown again to be used. An encounter.
+            events += [
+                Event(lex.lexeme_id, "seen", "pre_teach", turn_id=tutor_turn)
+                for lex in self._practice_unlogged
+            ]
             self._pre_taught_unlogged = []
+            self._practice_unlogged = []
             log_events(self.conn, events)
             self.known |= {lex.analysis for lex in final_new}
             self.taught += final_new
@@ -954,6 +980,10 @@ def show_ending(ending: Ending) -> None:
         )
         if unused:
             print(f"  Not used yet: {', '.join(unused)}")
+        if stats["practice_first_use"]:
+            print(
+                f"  Practice words used for the first time: {', '.join(stats['practice_first_use'])}"
+            )
     if ending.went_well_en:
         print(f"\n  Went well: {ending.went_well_en}")
         print("  Work on:")
@@ -1060,9 +1090,15 @@ def main() -> None:
     tutor = new_tutor(load_resources(), topic)
     print(HELP)
     lessons = tutor.pre_teach(new_words) if new_words else []
-    if lessons:
+    new = [item for item in lessons if not item.practice]
+    practice = [item for item in lessons if item.practice]
+    if new:
         print("\nPalabras para hoy (try to use them in your replies):")
-        for item in lessons:
+        for item in new:
+            print(format_lesson(item))
+    if practice:
+        print("\nPalabras para practicar (you know these; try using them):")
+        for item in practice:
             print(format_lesson(item))
     if tutor.pre_teach_shortfall:
         print(f"  ({len(lessons)} of {new_words} words. {tutor.pre_teach_shortfall})")

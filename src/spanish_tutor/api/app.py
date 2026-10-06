@@ -66,6 +66,7 @@ class LessonOut(BaseModel):
     definition_en: str | None
     example: ExampleOut | None
     model_written: bool  # the definition came from a model (resolve.py), not a dictionary
+    practice: bool  # a known word shown before a topic conversation to practice, not taught
 
     @classmethod
     def of(cls, item: Lesson) -> "LessonOut":
@@ -141,8 +142,10 @@ class SummaryOut(BaseModel):
     words_used: int
     words_taught: int
     first_time: list[str]  # words the learner used for the first time ever
-    pre_taught: list[str]  # today's topic words
+    pre_taught: list[str]  # today's topic words (new and practice)
     pre_taught_used: list[str]  # ... the ones the learner used
+    practice: list[str]  # today's words the learner knew but had never used
+    practice_first_use: list[str]  # ... the ones used for the first time in this session
     went_well_en: str | None  # the tutor's notes; None if they couldn't be written
     work_on: list[str]
     notes_error: str | None = None

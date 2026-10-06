@@ -43,6 +43,9 @@ class Lesson:
     # The definition (and its stored example's translation) was written by a model, not
     # taken from a dictionary: a word resolve.py added. Shown as a label on the card.
     model_written: bool = False
+    # A word the learner already recognizes, shown before a topic conversation to practice
+    # using (conversation.Tutor.pre_teach), not taught.
+    practice: bool = False
 
 
 def lesson(

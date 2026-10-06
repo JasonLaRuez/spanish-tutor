@@ -53,13 +53,14 @@ def transcript(conn: sqlite3.Connection, session_id: int) -> list[dict]:
 def session_stats(conn: sqlite3.Connection, session_id: int) -> dict | None:
     """The stats for a session's end-of-conversation summary; None if there's no session.
 
-    The word lists (first_time, pre_taught, pre_taught_used) come back as lists.
+    The word lists (first_time, pre_taught, pre_taught_used, practice, practice_first_use)
+    come back as lists.
     """
     found = rows(conn, "session_stats", session_id=session_id)
     if not found:
         return None
     stats = found[0]
-    for key in ("first_time", "pre_taught", "pre_taught_used"):
+    for key in ("first_time", "pre_taught", "pre_taught_used", "practice", "practice_first_use"):
         stats[key] = stats[key].split(", ") if stats[key] else []
     return stats
 

@@ -26,13 +26,23 @@ is cleaner, because real topic words pile up counts while coincidences fall back
 
 Broad topics stay noisy at any depth ("el trabajo": 16 of 40 on-topic), so Claude may
 choose fewer words than asked for, and says why.
+
+Practice words fill the gap (Jason, 2026-10-06). When fewer new words are chosen than
+asked for, the rest come from on-topic words the learner recognizes but has never used:
+the conversation is for production, and the reading and song skills grow recognition
+much faster, so a topic can run out of new words long before it runs out of words to
+practice. They come from the same search and ranking. Measured on the real word bank
+(254 content words recognized, not produced; 8 topics): 14-26 such candidates per topic.
+Those scoring above 0 were on-topic (calor and cielo for "el tiempo", almorzar, cenar and
+desayuno for "la comida", tren and avión for "viajar"), those at or below 0 were noise
+(ya, dejar, llevar, acabar), so practice candidates must score above 0: 6-20 per topic.
 """
 
 import math
 import sqlite3
 from collections import Counter
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from langchain_chroma import Chroma
 from pydantic import BaseModel, Field
@@ -70,6 +80,47 @@ class Candidate:
         return self.lemma, self.pos
 
 
+def topic_pools(
+    conn: sqlite3.Connection,
+    store: Chroma,
+    topic: str,
+    recognized: set[Analysis],
+    produced: set[Analysis],
+    *,
+    k: int = SENTENCES,
+    limit: int = MIN_CANDIDATES,
+) -> tuple[list[Candidate], list[Candidate]]:
+    """From one search: (new, practice) content words associated with `topic`, best first.
+
+    New words aren't recognized yet. Practice words are recognized but not produced, and
+    must score above 0 (more frequent near the topic than overall; see the module note).
+    """
+    counts: Counter[Analysis] = Counter()
+    for doc in store.similarity_search(topic, k=k):
+        for word in decode_vocab(doc.metadata["vocab"]):
+            if word[1] in CONTENT_POS:
+                counts[word] += 1
+    new, practice = [], []
+    for (lemma, pos), n in counts.items():
+        if n < MIN_OCCURRENCES or (lemma, pos) in produced:
+            continue
+        row = conn.execute(
+            "SELECT frequency_per_million, definition_en FROM lexemes WHERE lemma = ? AND pos = ?",
+            (lemma, pos),
+        ).fetchone()
+        if row is None or not row[0]:
+            continue  # not in the lexicon, or no frequency evidence
+        expected = k * WORDS_PER_SENTENCE * row[0] / 1e6
+        candidate = Candidate(lemma, pos, row[1], n, n * math.log(n / expected))
+        if (lemma, pos) not in recognized:
+            new.append(candidate)
+        elif candidate.score > 0:
+            practice.append(candidate)
+    for pool in (new, practice):
+        pool.sort(key=lambda c: (-c.score, c.key))
+    return new[:limit], practice[:limit]
+
+
 def topic_candidates(
     conn: sqlite3.Connection,
     store: Chroma,
@@ -80,51 +131,45 @@ def topic_candidates(
     limit: int = MIN_CANDIDATES,
 ) -> list[Candidate]:
     """Unknown content words associated with `topic`, best first."""
-    counts: Counter[Analysis] = Counter()
-    for doc in store.similarity_search(topic, k=k):
-        for word in decode_vocab(doc.metadata["vocab"]) - known:
-            if word[1] in CONTENT_POS:
-                counts[word] += 1
-    candidates = []
-    for (lemma, pos), n in counts.items():
-        if n < MIN_OCCURRENCES:
-            continue
-        row = conn.execute(
-            "SELECT frequency_per_million, definition_en FROM lexemes WHERE lemma = ? AND pos = ?",
-            (lemma, pos),
-        ).fetchone()
-        if row is None or not row[0]:
-            continue  # not in the lexicon, or no frequency evidence
-        expected = k * WORDS_PER_SENTENCE * row[0] / 1e6
-        candidates.append(Candidate(lemma, pos, row[1], n, n * math.log(n / expected)))
-    candidates.sort(key=lambda c: (-c.score, c.key))
-    return candidates[:limit]
+    return topic_pools(conn, store, topic, known, set(), k=k, limit=limit)[0]
 
 
 class TopicWords(BaseModel):
-    """Claude's choice of words to pre-teach."""
+    """Claude's choice of words to pre-teach, and of known words to practice."""
 
     words: list[str] = Field(
-        description="The chosen words, most useful first, each exactly as listed (lemma|POS). "
-        "Fewer than asked for if not enough candidates are really about the topic."
+        description="The chosen new words, most useful first, each exactly as listed "
+        "(lemma|POS). Fewer than asked for if not enough candidates are really about the "
+        "topic."
+    )
+    practice: list[str] = Field(
+        description="Only if `words` has fewer than asked for: words from the second list "
+        "(known, never used) to fill the gap, most useful first, each exactly as listed. "
+        "Empty otherwise."
     )
     # Required but nullable, like TutorReply.note_en: the schema the API already accepts.
     fewer_because: str | None = Field(
-        description="Only if you chose fewer words than asked for: one short sentence in "
-        "English, addressed to the learner, saying why. Null otherwise."
+        description="Only if you chose fewer words in all than asked for: one short sentence "
+        "in English, addressed to the learner, saying why. Null otherwise."
     )
 
 
 @dataclass(frozen=True)
 class TopicChoice:
-    words: list[Candidate]
+    words: list[Candidate]  # new words, to teach
     requested: int
     shortfall: str | None  # why fewer words than requested, for the learner; else None
+    practice: list[Candidate] = field(default_factory=list)  # known words to practice using
 
 
-def selection_prompt(topic: str, candidates: list[Candidate], n: int) -> str:
-    listing = "\n".join(f"- {c.key}: {c.definition_en or '(no definition)'}" for c in candidates)
-    return (
+def _listing(candidates: list[Candidate]) -> str:
+    return "\n".join(f"- {c.key}: {c.definition_en or '(no definition)'}" for c in candidates)
+
+
+def selection_prompt(
+    topic: str, candidates: list[Candidate], n: int, practice: list[Candidate] | None = None
+) -> str:
+    prompt = (
         f"A Spanish learner is about to have a conversation about: {topic}. Before it starts, "
         f"they will learn up to {n} new words, so they have the vocabulary the topic needs. "
         f"From the candidates below (each with its English meaning), choose up to {n} that "
@@ -132,40 +177,72 @@ def selection_prompt(topic: str, candidates: list[Candidate], n: int) -> str:
         "to it and common in everyday speech. Choose fewer rather than include words that "
         "aren't really about the topic or only seem to appear by coincidence; if you do, say "
         "why in one short sentence. Return the words exactly as written (lemma|POS), most "
-        "useful first.\n\n" + listing
+        "useful first.\n\n" + (_listing(candidates) or "(none)")
     )
+    if practice:
+        prompt += (
+            "\n\nThe learner already understands the words below but has never used them "
+            "in their own Spanish. If you chose fewer than "
+            f"{n} new words, fill the remaining places from this list (in `practice`), with "
+            "words really about the topic, so the learner can practice using them. Never "
+            "choose one of these instead of a new word that fits.\n\n" + _listing(practice)
+        )
+    return prompt
+
+
+def _valid(named: list[str], pool: list[Candidate], limit: int) -> list[Candidate]:
+    """The named words that are in the pool, once each, up to `limit`. If words were named
+    but none is in the pool, the pool's best `limit` instead."""
+    by_key = {c.key: c for c in pool}
+    valid = [by_key[w.strip()] for w in dict.fromkeys(named) if w.strip() in by_key][:limit]
+    return pool[:limit] if named and not valid else valid
 
 
 def choose_words(
-    select: Callable[[str], TopicWords], topic: str, candidates: list[Candidate], n: int
+    select: Callable[[str], TopicWords],
+    topic: str,
+    candidates: list[Candidate],
+    n: int,
+    practice: list[Candidate] | None = None,
 ) -> TopicChoice:
-    """Up to n candidates Claude finds most useful, validated against the list.
+    """Up to n words Claude finds most useful, validated against the lists.
 
-    Anything not on the list is dropped, so every taught word is grounded in real
-    sentences. Claude may choose fewer than n; if it named words but none were on the
-    list, the top n by score are used instead. Whenever fewer than n words result, the
-    choice says why, for the learner.
+    New words come first (`candidates`); when fewer than n are chosen, the gap is filled
+    from `practice` (known words the learner hasn't used yet). Anything not on its list is
+    dropped, so every word is grounded in real sentences. If Claude named words from a
+    list but none were on it, that list's top scores are used instead. Whenever fewer
+    than n words result, the choice says why, for the learner.
     """
-    if not candidates:
+    practice = practice or []
+    if not candidates and not practice:
         return TopicChoice([], n, f"No words about “{topic}” turned up that you don't know yet.")
-    by_key = {c.key: c for c in candidates}
-    reply = select(selection_prompt(topic, candidates, n))
-    valid = [by_key[w.strip()] for w in dict.fromkeys(reply.words) if w.strip() in by_key][:n]
-    words = candidates[:n] if reply.words and not valid else valid
-    return TopicChoice(words, n, shortfall(topic, n, len(candidates), len(words), reply))
+    reply = select(selection_prompt(topic, candidates, n, practice))
+    words = _valid(reply.words, candidates, n)
+    filled = _valid(reply.practice, practice, n - len(words)) if len(words) < n else []
+    why = shortfall(topic, n, len(candidates), len(words), reply, len(practice), len(filled))
+    return TopicChoice(words, n, why, filled)
 
 
 def shortfall(
-    topic: str, requested: int, available: int, chosen: int, reply: TopicWords
+    topic: str,
+    requested: int,
+    available: int,
+    chosen: int,
+    reply: TopicWords,
+    practice_available: int = 0,
+    practice_chosen: int = 0,
 ) -> str | None:
     """Why fewer words than requested were chosen, for the learner; None if none are missing."""
-    if chosen >= requested:
+    if chosen + practice_chosen >= requested:
         return None
-    found = f"Only {available} words about “{topic}” turned up that you don't know yet."
-    if chosen == available:
+    found = f"Only {available} words about “{topic}” turned up that you don't know yet"
+    if practice_available:
+        found += f", and {practice_available} you know but haven't used yet"
+    found += "."
+    if chosen == available and practice_chosen == practice_available:
         return found
     why = (reply.fewer_because or "").strip() or "The rest weren't really about the topic."
-    return f"{found} {why}" if available < requested else why
+    return f"{found} {why}" if available + practice_available < requested else why
 
 
 def word_count(answer: str) -> int:
