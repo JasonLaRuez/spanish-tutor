@@ -270,8 +270,8 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
   skill) are built. The real database (migration 8) holds Quiroga (too hard), *An
   Elementary Spanish Reader* (suggested) and Bécquer's 76 *Rimas* (10 within the
   ceiling). Next: slice 4.4 (evaluation), alongside more real conversations.
-  - **Built so far:** word bank schema + migrations 001–006; seed (1,030 recognized / 762
-    produced after the seed-gap marks; grows with sessions); general lexicon; Tatoeba in
+  - **Built so far:** word bank schema + migrations 001–008; seed (1,086 recognized / 803
+    produced after the seed-gap and expression marks; grows with sessions); general lexicon; Tatoeba in
     Chroma (261k sentences); the conversation skill with write-back, topic pre-teaching
     (up to 20 words), "¿cómo se dice?", typed accent markers, accent restoration, wrong-
     word vs wrong-form grading, free lookups, conversation endings with a stored summary,
@@ -293,11 +293,12 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
   - **Open items:**
     - **After each real session**, review it in SQL (`turns`, `word_events` by turn,
       `session_stats.sql`); both reviews so far surfaced real fixes.
-    - **Seed review of expressions (waiting on Jason):** expressions are new lexemes, so
-      they start unknown. The 125 at least as frequent as the rank-1,500 word (the seed's
-      depth; 41.8 per million) are appended to `seed_candidates.csv` (2026-10-05, *por
-      qué* … *llevar puesto*, ranked among the words by frequency). Jason marks them r/p,
-      then `seed build`.
+    - **Seed review of expressions: done 2026-10-06.** The 125 expressions at least as
+      frequent as the rank-1,500 word were appended to `seed_candidates.csv`; Jason marked
+      26 `p`, 16 `r`, 83 blank (unknown: *tal vez*, *de nuevo*, *por eso*, *acabar de*…),
+      and `seed build` (after a backup) loaded them: word bank 1,044 → 1,086 recognized,
+      777 → 803 produced, 68 seed events. Effect on the rankings: the reader 19.5% → 19.0%
+      unknown, Quiroga 28.4% → 27.6%, *Rimas* within the ceiling 10 → 11.
     - **Context-dependent unresolved words:** *tal* in *¿Qué tal?* once came back "not
       recognized" (an unresolved corrector tie) in a garbled message, and resolved in a
       clean one. Measure how often learner turns hit this before deciding anything.
@@ -800,7 +801,10 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
   - **4.4 Evaluation:** adherence, teaching completeness (first make lookup events
     distinguishable: they currently log `taught` on the last tutor turn, showing as false
     gaps), translation naturalness (LLM-as-judge with **Sonnet 5.5**, Jason's choice;
-    validated against his hand ratings), recommendation quality (predicted vs. taught,
+    validated against his hand ratings; **first measure the judge's consistency**: in
+    slice 4.3 the attempt comparison rated the same attempt "close" in one run and
+    "right" in another, so run each judgment several times and report agreement before
+    any judge-based number), recommendation quality (predicted vs. taught,
     default take-rate, abandonment around the ceiling); RAGAS baseline on the expression
     and Tatoeba retrievals (check install compatibility first; else implement the two
     metrics directly). Notebook 03, Progress-page panel, written case study.
