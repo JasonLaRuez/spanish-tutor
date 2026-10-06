@@ -52,10 +52,14 @@ def _by_skill(found: list[dict]) -> dict[str, dict]:
     return {row["skill"]: row for row in found}
 
 
-def adherence(conn: sqlite3.Connection, session_id: int | None = None) -> dict[str, dict]:
+def adherence(
+    conn: sqlite3.Connection, session_id: int | None = None, from_session: int | None = None
+) -> dict[str, dict]:
     """Per skill (and 'all'): replies within the one-new-word limit, draft and final."""
     result = {}
-    for skill, row in _by_skill(rows(conn, "eval_adherence", session_id=session_id)).items():
+    for skill, row in _by_skill(
+        rows(conn, "eval_adherence", session_id=session_id, from_session=from_session)
+    ).items():
         n = row["replies"]
         result[skill] = {
             "replies": n,
@@ -69,10 +73,14 @@ def adherence(conn: sqlite3.Connection, session_id: int | None = None) -> dict[s
     return result
 
 
-def completeness(conn: sqlite3.Connection, session_id: int | None = None) -> dict[str, dict]:
+def completeness(
+    conn: sqlite3.Connection, session_id: int | None = None, from_session: int | None = None
+) -> dict[str, dict]:
     """Per skill (and 'all'): replies with new words that taught every one of them."""
     result = {}
-    for skill, row in _by_skill(rows(conn, "eval_completeness", session_id=session_id)).items():
+    for skill, row in _by_skill(
+        rows(conn, "eval_completeness", session_id=session_id, from_session=from_session)
+    ).items():
         result[skill] = {
             "replies": row["replies"],
             "complete": Rate(row["complete"], row["replies_with_new_words"]),
@@ -83,18 +91,22 @@ def completeness(conn: sqlite3.Connection, session_id: int | None = None) -> dic
     return result
 
 
-def completeness_gaps(conn: sqlite3.Connection, session_id: int | None = None) -> list[dict]:
-    return rows(conn, "eval_completeness_gaps", session_id=session_id)
+def completeness_gaps(
+    conn: sqlite3.Connection, session_id: int | None = None, from_session: int | None = None
+) -> list[dict]:
+    return rows(conn, "eval_completeness_gaps", session_id=session_id, from_session=from_session)
 
 
-def reading(conn: sqlite3.Connection, session_id: int | None = None) -> dict:
+def reading(
+    conn: sqlite3.Connection, session_id: int | None = None, from_session: int | None = None
+) -> dict:
     """Reading and song sessions: the index's prediction against what was taught.
 
     studied_before_finishing: of the words predicted new, the share taught before the
     learner finished (finished sessions only). index_agreement: of the words taught in
     the sessions, the share the index had predicted.
     """
-    sessions = rows(conn, "eval_reading", session_id=session_id)
+    sessions = rows(conn, "eval_reading", session_id=session_id, from_session=from_session)
     finished = [s for s in sessions if s["finished"]]
     taught = sum(s["studied"] + s["taught_unpredicted"] for s in sessions)
     return {
@@ -107,9 +119,9 @@ def reading(conn: sqlite3.Connection, session_id: int | None = None) -> dict:
     }
 
 
-def recommendation(conn: sqlite3.Connection) -> dict:
+def recommendation(conn: sqlite3.Connection, from_session: int | None = None) -> dict:
     """The take rate of the default suggestion, and finishing by difficulty band."""
-    groups = rows(conn, "eval_recommendation")
+    groups = rows(conn, "eval_recommendation", from_session=from_session)
     starts = sum(g["starts"] for g in groups)
     recommended = sum(g["starts"] for g in groups if g["chosen_via"] == "recommended")
     bands: dict[str, list[int]] = {}
@@ -125,13 +137,17 @@ def recommendation(conn: sqlite3.Connection) -> dict:
     }
 
 
-def report(conn: sqlite3.Connection, session_id: int | None = None) -> dict:
+def report(
+    conn: sqlite3.Connection, session_id: int | None = None, from_session: int | None = None
+) -> dict:
+    """Every log metric. `from_session` keeps sessions from that one on (a benchmark run's
+    own, on a copy that also holds the real history)."""
     return {
-        "adherence": adherence(conn, session_id),
-        "completeness": completeness(conn, session_id),
-        "completeness_gaps": completeness_gaps(conn, session_id),
-        "reading": reading(conn, session_id),
-        "recommendation": recommendation(conn),
+        "adherence": adherence(conn, session_id, from_session),
+        "completeness": completeness(conn, session_id, from_session),
+        "completeness_gaps": completeness_gaps(conn, session_id, from_session),
+        "reading": reading(conn, session_id, from_session),
+        "recommendation": recommendation(conn, from_session),
     }
 
 

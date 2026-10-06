@@ -13,6 +13,8 @@
 --
 -- "Unknown at the start" is rebuilt from the log as in eval_reading.sql: no recognition
 -- `taught` event for the word before the start.
+-- :from_session keeps only sessions from that one on (NULL: all): a benchmark run's own,
+-- on a copy of the word bank that also holds the real history.
 WITH starts AS (
     SELECT ce.event_id,
            ce.content_id,
@@ -37,6 +39,7 @@ WITH starts AS (
     FROM content_events AS ce
     JOIN content_items AS c ON c.content_id = ce.content_id
     WHERE ce.event = 'started'
+      AND (:from_session IS NULL OR ce.session_id >= :from_session)
 ),
 banded AS (
     SELECT *,

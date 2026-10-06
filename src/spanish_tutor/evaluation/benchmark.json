@@ -1,0 +1,111 @@
+{
+  "version": 1,
+  "about": "The conversation benchmark (slice 4.4c): 8 topics, 5 scripted learner messages each. 24 messages carry exactly one planted mistake, labeled the way the grader classifies it (conversation.Misuse): wrong_form = the word meant, in the wrong form (gender, number, conjugation, tense; credited at a lower grade); wrong_word = a different word from the one meant (ser for estar, a misspelling that makes another real word, an English word; never credited). The other 16 are correct Spanish, to measure false alarms. `written` is the mistaken text as it appears in the message.",
+  "pre_teach": 5,
+  "topics": [
+    {
+      "topic": "el jardín",
+      "messages": [
+        {"text": "Tengo un jardín pequeño detrás de mi casa."},
+        {"text": "Mi jardín es muy bonita en primavera.",
+         "error": {"written": "bonita", "intended": "bonito", "kind": "wrong_form", "type": "gender"}},
+        {"text": "Me gusta regar las plantas por la mañana porque no hace calor."},
+        {"text": "Ayer yo plantamos unas flores rojas.",
+         "error": {"written": "plantamos", "intended": "planté", "kind": "wrong_form", "type": "conjugation"}},
+        {"text": "Cuando llueve, el jardín es mojado.",
+         "error": {"written": "es", "intended": "está", "kind": "wrong_word", "type": "ser/estar"}}
+      ]
+    },
+    {
+      "topic": "videojuegos",
+      "messages": [
+        {"text": "A veces jugo con mis amigos por la noche.",
+         "error": {"written": "jugo", "intended": "juego", "kind": "wrong_word", "type": "misspelling, another word"}},
+        {"text": "Juego a los videojuegos casi todos los días."},
+        {"text": "Los gráficos de los juegos nuevos son increíble.",
+         "error": {"written": "increíble", "intended": "increíbles", "kind": "wrong_form", "type": "number"}},
+        {"text": "Mi videojuego favorito es muy difícil pero divertido."},
+        {"text": "Mi hermano siempre ganas porque es más rápido que yo.",
+         "error": {"written": "ganas", "intended": "gana", "kind": "wrong_form", "type": "conjugation"}}
+      ]
+    },
+    {
+      "topic": "el tiempo",
+      "messages": [
+        {"text": "Hoy hace mucho frío y el cielo está gris."},
+        {"text": "Ayer hizo sol pero hoy es nublado.",
+         "error": {"written": "es", "intended": "está", "kind": "wrong_word", "type": "ser/estar"}},
+        {"text": "Las noches de invierno son muy frías y largos.",
+         "error": {"written": "largos", "intended": "largas", "kind": "wrong_form", "type": "gender"}},
+        {"text": "En verano hace calor y vamos a la playa."},
+        {"text": "Necesito mi umbrella porque va a llover.",
+         "error": {"written": "umbrella", "intended": "paraguas", "kind": "wrong_word", "type": "English word"}}
+      ]
+    },
+    {
+      "topic": "la comida",
+      "messages": [
+        {"text": "Me gusta mucho la comida mexicana, sobre todo los tacos."},
+        {"text": "Mi madre cocina muy bien, su sopa es delicioso.",
+         "error": {"written": "delicioso", "intended": "deliciosa", "kind": "wrong_form", "type": "gender"}},
+        {"text": "Me gusta poner cheese en mis tacos.",
+         "error": {"written": "cheese", "intended": "queso", "kind": "wrong_word", "type": "English word"}},
+        {"text": "Normalmente desayuno pan con café."},
+        {"text": "Quiero preparar una pastel para el cumpleaños de mi amigo.",
+         "error": {"written": "una", "intended": "un", "kind": "wrong_form", "type": "gender"}}
+      ]
+    },
+    {
+      "topic": "el trabajo",
+      "messages": [
+        {"text": "Trabajo en una oficina en el centro de la ciudad."},
+        {"text": "Ayer trabajo diez horas y estoy muy cansado.",
+         "error": {"written": "trabajo", "intended": "trabajé", "kind": "wrong_form", "type": "tense"}},
+        {"text": "Mi jefe es simpático y mis compañeros son amables."},
+        {"text": "Hoy soy muy ocupado porque tengo mucho trabajo.",
+         "error": {"written": "soy", "intended": "estoy", "kind": "wrong_word", "type": "ser/estar"}},
+        {"text": "Quiero preguntar a mi jefe un día libre.",
+         "error": {"written": "preguntar", "intended": "pedir", "kind": "wrong_word", "type": "word for something else"}}
+      ]
+    },
+    {
+      "topic": "los deportes",
+      "messages": [
+        {"text": "Me gusta jugar al fútbol con mis amigos los sábados."},
+        {"text": "Nosotros corre en el parque cada mañana.",
+         "error": {"written": "corre", "intended": "corremos", "kind": "wrong_form", "type": "conjugation"}},
+        {"text": "Mi equipo favorito ganó el partido ayer."},
+        {"text": "Las jugadoras de mi equipo son muy rápidos.",
+         "error": {"written": "rápidos", "intended": "rápidas", "kind": "wrong_form", "type": "gender"}},
+        {"text": "Ayer vi el partido en la tele con mi pero.",
+         "error": {"written": "pero", "intended": "perro", "kind": "wrong_word", "type": "misspelling, another word"}}
+      ]
+    },
+    {
+      "topic": "la familia",
+      "messages": [
+        {"text": "Mi familia es grande: tengo dos hermanos y una hermana."},
+        {"text": "Mi hermana menor tiene diez año.",
+         "error": {"written": "año", "intended": "años", "kind": "wrong_form", "type": "number"}},
+        {"text": "Mis abuelos viven en el campo."},
+        {"text": "Mis padres está muy contentos porque mi hermano se casa.",
+         "error": {"written": "está", "intended": "están", "kind": "wrong_form", "type": "conjugation"}},
+        {"text": "Mi tío es muy alto y tiene el pelo negro, pero hoy es enfermo.",
+         "error": {"written": "es enfermo", "intended": "está enfermo", "kind": "wrong_word", "type": "ser/estar"}}
+      ]
+    },
+    {
+      "topic": "viajar",
+      "messages": [
+        {"text": "Me encanta viajar a otros países."},
+        {"text": "Cuando viajo, siempre llevo una maleta pequeño.",
+         "error": {"written": "pequeño", "intended": "pequeña", "kind": "wrong_form", "type": "gender"}},
+        {"text": "El año pasado fui a México con mi familia."},
+        {"text": "Mañana viajé a Cancún con mis amigos.",
+         "error": {"written": "viajé", "intended": "voy a viajar", "kind": "wrong_form", "type": "tense"}},
+        {"text": "Me gusta tomar muchas pictures de los lugares que visito.",
+         "error": {"written": "pictures", "intended": "fotos", "kind": "wrong_word", "type": "English word"}}
+      ]
+    }
+  ]
+}

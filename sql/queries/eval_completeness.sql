@@ -7,6 +7,8 @@
 -- their own `study` turns (since 2026-10-06), so they never land on a reply either.
 -- Per skill, then 'all' (last). :session_id limits it to one session (NULL: all).
 -- eval_completeness_gaps.sql lists the replies that fall short or over.
+-- :from_session keeps only sessions from that one on (NULL: all): a benchmark run's own,
+-- on a copy of the word bank that also holds the real history.
 WITH replies AS (
     SELECT s.skill,
            t.turn_id,
@@ -21,6 +23,7 @@ WITH replies AS (
       AND t.kind = 'conversation'
       AND t.final_out_of_bank IS NOT NULL
       AND (:session_id IS NULL OR t.session_id = :session_id)
+      AND (:from_session IS NULL OR t.session_id >= :from_session)
 ),
 by_skill AS (
     SELECT skill, flagged, taught FROM replies

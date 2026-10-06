@@ -1022,19 +1022,25 @@ class Resources:
     translate: Callable[..., Generation] | None = None
 
 
-def load_resources(check_same_thread: bool = True) -> Resources:
+def load_resources(check_same_thread: bool = True, db_path: Path | None = None) -> Resources:
     """Load the database, tagger, Wiktionary and embeddings (~20 s).
 
     The web server passes check_same_thread=False: its requests run on worker threads,
-    and it serializes every use of the connection with a lock.
+    and it serializes every use of the connection with a lock. `db_path` points it at
+    another database (the evaluation benchmark's copy); default: the word bank.
     """
     from spanish_tutor import lexicon
     from spanish_tutor.ingest.expressions import definitions as expression_definitions
     from spanish_tutor.vectorstore import open_store
 
-    conn = db.connect(check_same_thread=check_same_thread)
+    conn = (
+        db.connect(check_same_thread=check_same_thread)
+        if db_path is None
+        else db.connect(db_path, check_same_thread=check_same_thread)
+    )
     if pending := db.pending_migrations(conn):
-        print(f"Upgrading the database (migrations {pending}); backup: {db.backup()}")
+        backup = db.backup() if db_path is None else db.backup(Path(db_path))
+        print(f"Upgrading the database (migrations {pending}); backup: {backup}")
     db.init_schema(conn)
     corrector = lexicon.load_corrector()
 

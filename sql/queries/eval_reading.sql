@@ -12,6 +12,8 @@
 -- "Known at the start" is rebuilt from the log: a recognition `taught` event before the
 -- session began, outside this session. Recognition only enters the word bank through
 -- `taught` (word_events' CHECK puts `used` in production).
+-- :from_session keeps only sessions from that one on: a benchmark run's own, on a copy
+-- of the word bank that also holds the real history.
 -- :session_id limits it to one session (NULL: all).
 WITH readings AS (
     SELECT s.session_id,
@@ -24,6 +26,7 @@ WITH readings AS (
     JOIN content_events AS ce ON ce.session_id = s.session_id AND ce.event = 'started'
     WHERE s.skill IN ('reading', 'lyrics')
       AND (:session_id IS NULL OR s.session_id = :session_id)
+      AND (:from_session IS NULL OR s.session_id >= :from_session)
 ),
 predicted AS (
     SELECT r.session_id, v.lexeme_id, v.occurrences
