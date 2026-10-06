@@ -1,0 +1,92 @@
+{
+  "ebook": 13507,
+  "title": "Cuentos de amor de locura y de muerte",
+  "author": "Horacio Quiroga",
+  "note": "Headings are wrapped in #...#; chapter headings in capitals, section headings mixed-case. Titles from the book's INDICE, which keeps the accents the headings drop.",
+  "end": null,
+  "remove": [],
+  "replace": [
+    [
+      "^#([^#\\n]+)#[ \\t]*$",
+      "\\1"
+    ],
+    [
+      "--",
+      " — "
+    ]
+  ],
+  "chapters": [
+    [
+      "#UNA ESTACION DE AMOR#",
+      "Una estación de amor"
+    ],
+    [
+      "#LOS OJOS SOMBRIOS#",
+      "Los ojos sombríos"
+    ],
+    [
+      "#EL SOLITARIO#",
+      "El solitario"
+    ],
+    [
+      "#LA MUERTE DE ISOLDA#",
+      "La muerte de Isolda"
+    ],
+    [
+      "#EL INFIERNO ARTIFICIAL#",
+      "El infierno artificial"
+    ],
+    [
+      "#LA GALLINA DEGOLLADA#",
+      "La gallina degollada"
+    ],
+    [
+      "#LOS BUQUES SUICIDANTES#",
+      "Los buques suicidantes"
+    ],
+    [
+      "#EL ALMOHADON DE PLUMA#",
+      "El almohadón de pluma"
+    ],
+    [
+      "#EL PERRO RABIOSO#",
+      "El perro rabioso"
+    ],
+    [
+      "#A LA DERIVA#",
+      "A la deriva"
+    ],
+    [
+      "#LA INSOLACION#",
+      "La insolación"
+    ],
+    [
+      "#EL ALAMBRE DE PUA#",
+      "El alambre de púa"
+    ],
+    [
+      "#LOS MENSÚ#",
+      "Los Mensú"
+    ],
+    [
+      "#YAGUAÍ#",
+      "Yaguaí"
+    ],
+    [
+      "#LOS PESCADORES DE VIGAS#",
+      "Los pescadores de vigas"
+    ],
+    [
+      "#LA MIEL SILVESTRE#",
+      "La miel silvestre"
+    ],
+    [
+      "#NUESTRO PRIMER CIGARRO#",
+      "Nuestro primer cigarro"
+    ],
+    [
+      "#LA MENINGITIS Y SU SOMBRA#",
+      "La meningitis y su sombra"
+    ]
+  ]
+}

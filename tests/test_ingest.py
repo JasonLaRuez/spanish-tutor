@@ -293,6 +293,20 @@ def test_only_spellings_the_1952_reform_superseded_are_respelled(tmp_path):
     assert wiktionary.reform_1952_spellings() == {"fué": "fue", "dió": "dio"}
 
 
+def test_obsolete_spellings_that_differ_only_in_accents_are_respelled(tmp_path):
+    wiktionary = wiktionary_of(
+        tmp_path,
+        [
+            alt("á", "prep", "a", "obsolete"),
+            alt("ántes", "adv", "antes", "obsolete"),
+            alt("ay", "intj", "hay", "obsolete"),  # not an accent-only change
+            alt("sólo", "adv", "solo", "archaic"),  # superseded in 2010, not obsolete
+            alt("buen", "adj", "bueno", "alternative"),
+        ],
+    )
+    assert wiktionary.obsolete_accent_spellings() == {"á": "a", "ántes": "antes"}
+
+
 def test_alternative_forms_and_words_with_real_senses_are_not_redirected(tmp_path):
     wiktionary = wiktionary_of(
         tmp_path,
@@ -399,10 +413,23 @@ License text.
 """
 
 
-def test_a_gutenberg_book_splits_into_titled_chapters(tmp_path):
+def manifest(chapters, **rules):
+    from spanish_tutor.ingest.gutenberg import Manifest
+
+    return Manifest(ebook=1, title="Libro", author=None, chapters=chapters, **rules)
+
+
+def test_a_book_with_hash_headings_splits_into_titled_chapters(tmp_path):
     from spanish_tutor.ingest.gutenberg import body, split_chapters, write_chapters
 
-    chapters = split_chapters(body(GUTENBERG_BOOK))
+    quiroga_rules = {"replace": (("^#([^#\n]+)#[ \t]*$", r"\1"), ("--", " — "))}
+    chapters = split_chapters(
+        body(GUTENBERG_BOOK),
+        manifest(
+            [("#LA GALLINA DEGOLLADA#", "La gallina degollada"), ("#A LA DERIVA#", "A la deriva")],
+            **quiroga_rules,
+        ),
+    )
     assert chapters == [
         # The section heading is a plain line; the dialogue dash is spaced out.
         ("La gallina degollada", "Primavera\n\nTodo el día  — dijo —  estaban sentados."),
@@ -412,8 +439,78 @@ def test_a_gutenberg_book_splits_into_titled_chapters(tmp_path):
     assert [p.name for p in paths] == ["01 La gallina degollada.txt", "02 A la deriva.txt"]
 
 
-def test_a_book_whose_headings_dont_match_its_contents_is_refused():
+READER = """CONTENTS
+
+I. EL POLLO
+II. LOS OSOS[1]
+
+EL POLLO
+
+Un día un pollo entra en un bosque.                                   5
+--¿A dónde vas?--pregunta la gallina.
+
+[Illustration: Un pollo]
+
+    LOS OSOS[1]                                                        10
+
+Había una vez tres osos.
+
+[Note 1: The bears are a
+well-known English tale.]
+
+VOCABULARY
+
+a, to
+"""
+
+READER_RULES = {
+    "end": "VOCABULARY",
+    "remove": (
+        r"[ \t]{3,}\d{1,3}[ \t]*$",
+        r"\[Note \d+:[^\]]*\]",
+        r"\[Illustration[^\]]*\]",
+        r"\[\d+\]",
+    ),
+    "replace": (("--", " — "),),
+}
+
+
+def test_a_graded_reader_loses_its_margin_numbers_notes_and_vocabulary():
     from spanish_tutor.ingest.gutenberg import split_chapters
 
-    with pytest.raises(ValueError, match="1 chapter headings, but 2 titles"):
-        split_chapters("#INDICE#\n\nUno\nDos\n\n#UNO#\n\nTexto.\n")
+    chapters = split_chapters(
+        READER, manifest([("EL POLLO", "El pollo"), ("LOS OSOS", "Los osos")], **READER_RULES)
+    )
+    assert chapters == [
+        # The contents list ("I. EL POLLO") isn't a heading: headings are whole lines.
+        (
+            "El pollo",
+            "Un día un pollo entra en un bosque.\n — ¿A dónde vas? — pregunta la gallina.",
+        ),
+        ("Los osos", "Había una vez tres osos."),  # the note and the vocabulary are gone
+    ]
+
+
+def test_a_manifest_that_doesnt_fit_the_text_is_refused():
+    from spanish_tutor.ingest.gutenberg import split_chapters
+
+    with pytest.raises(ValueError, match="heading not found .*'LOS LOBOS'"):
+        split_chapters(READER, manifest([("EL POLLO", "a"), ("LOS LOBOS", "b")]))
+    with pytest.raises(ValueError, match="end line not found"):
+        split_chapters(READER, manifest([("EL POLLO", "a")], end="ÍNDICE"))
+    with pytest.raises(ValueError, match="heading not found"):  # headings come in order
+        split_chapters(READER, manifest([("VOCABULARY", "a"), ("EL POLLO", "b")]))
+
+
+def test_every_committed_manifest_loads_with_unique_headings(tmp_path):
+    from spanish_tutor.ingest.gutenberg import MANIFESTS, load_manifest
+
+    paths = sorted(MANIFESTS.glob("*.json"))
+    assert paths, "no manifests found"
+    for path in paths:
+        book = load_manifest(int(path.stem))
+        headings = [heading for heading, _ in book.chapters]
+        assert book.ebook == int(path.stem) and book.title and headings, path.name
+        assert len(set(headings)) == len(headings), path.name
+    with pytest.raises(FileNotFoundError, match="no manifest for ebook 1"):
+        load_manifest(1, tmp_path)

@@ -20,9 +20,12 @@ from spanish_tutor.progress import rows
 
 SURPRISE_FROM = 5  # "Surprise me" picks among this many of the easiest songs and stories
 # The ceiling: more than this share of an item's running words unknown, and it's too hard to
-# suggest (books: across the whole book). With every new word pre-taught, 90% known is
-# workable; reading research puts the usual minimum for assisted reading at 95%.
-MAX_UNKNOWN_SHARE = 0.10
+# suggest (books: across the whole book). Jason first chose 10% (every new word is
+# pre-taught; reading research puts assisted reading at 95% known), then raised it to 20%
+# (2026-10-06) after measuring nine public-domain candidates: the easiest was 19.7% unknown,
+# and still 12% if the word bank held every word to frequency rank 5,000. So real texts
+# could only be suggested at 20%.
+MAX_UNKNOWN_SHARE = 0.20
 
 
 def items(conn: sqlite3.Connection, limit: int = 10, *, too_hard: bool = False) -> list[dict]:

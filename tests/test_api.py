@@ -408,6 +408,8 @@ def test_the_catalog_and_a_surprise(serve, db_path, no_ceiling):
 
 
 def test_items_over_the_ceiling_are_listed_apart(serve, db_path):
+    from spanish_tutor import recommend
+
     add_indexed(db_path, "Conocida", ["gato", "casa"])  # all known
     add_indexed(db_path, "Difícil", ["gato", "perro"])  # half unknown: over 10%
     add_indexed(db_path, "Capítulo uno", ["perro"], book=("Libro", 1))
@@ -419,4 +421,4 @@ def test_items_over_the_ceiling_are_listed_apart(serve, db_path):
     assert [i["title"] for i in found["too_hard_items"]] == ["Difícil"]
     assert found["too_hard_items"][0]["unknown_share"] == pytest.approx(0.5)
     assert (found["books"], [b["title"] for b in found["too_hard_books"]]) == ([], ["Libro"])
-    assert found["max_unknown_share"] == pytest.approx(0.10)
+    assert found["max_unknown_share"] == recommend.MAX_UNKNOWN_SHARE

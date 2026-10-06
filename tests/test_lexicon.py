@@ -363,6 +363,13 @@ def test_model_analyzes_a_respelled_fue_like_a_modern_one(corrector):
     assert old[1] == modern[1] == ("fue", [("ser", "VERB")])
 
 
+def test_old_accented_spellings_are_modernized_in_the_text():
+    restorer = AccentRestorer(set(), {}, respellings={"á": "a", "ántes": "antes"})
+    assert (
+        restorer.restore_text("Á su lado, ántes de ir á casa.") == "A su lado, antes de ir a casa."
+    )
+
+
 def test_typed_accents_are_never_changed():
     restorer = AccentRestorer({"sudan"}, {"sudan": 300})
     assert restorer.restore("sudán") is None  # only missing marks are added

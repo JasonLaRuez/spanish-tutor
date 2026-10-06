@@ -6,9 +6,9 @@
 -- Known means recognized (word_bank mode 'recognition'): content is read or heard. Items
 -- the learner finished, and items not indexed yet, are left out.
 --
--- The ceiling (Jason, 2026-10-05): an item whose running words are more than
--- :max_unknown unknown (0.10) is too hard to suggest. :too_hard picks the side: 0 for the
--- suggestions, 1 for the "too hard for now" list. Both are ranked the same way.
+-- The ceiling (Jason): an item whose running words are more than :max_unknown unknown
+-- (recommend.MAX_UNKNOWN_SHARE, 0.20) is too hard to suggest. :too_hard picks the side:
+-- 0 for the suggestions, 1 for the "too hard for now" list. Both are ranked the same way.
 --
 -- The LEFT JOIN keeps every word of an item; known words find a word_bank row and unknown
 -- ones find NULL, which the CASE expressions count. SUM(CASE ...) rather than FILTER, so

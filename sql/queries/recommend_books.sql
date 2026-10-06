@@ -10,9 +10,10 @@
 -- density for the whole book), are left out. One row per book; the first row is the
 -- default suggestion.
 --
--- The ceiling (Jason, 2026-10-05): a book whose running words are more than :max_unknown
--- unknown (0.10) across the whole book is too hard to suggest, started or not. :too_hard
--- picks the side: 0 for the suggestions, 1 for the "too hard for now" list.
+-- The ceiling (Jason): a book whose running words are more than :max_unknown unknown
+-- (recommend.MAX_UNKNOWN_SHARE, 0.20) across the whole book is too hard to suggest,
+-- started or not. :too_hard picks the side: 0 for the suggestions, 1 for the "too hard
+-- for now" list.
 WITH known AS (
     SELECT lexeme_id FROM word_bank WHERE mode = 'recognition'
 ),

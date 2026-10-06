@@ -265,8 +265,9 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
   (schema, indexer, model resolver, both ranking queries, the API and the "what next?"
   screen with a simple reader; see "Content index and recommender" below). Quiroga's
   story collection is in the real database. **Phase 4 is planned** (see "Phase 4 plan"
-  below); slice 4.0 (the 10% difficulty ceiling) is built. Next: slice 4.1 (easier
-  public-domain texts), alongside more real conversations reviewed in SQL.
+  below); slices 4.0 (the difficulty ceiling, now 20%) and 4.1 (book manifests, older
+  accent respellings, candidate measurement) are built. Next: slice 4.2 (the reading
+  skill), alongside more real conversations reviewed in SQL.
   - **Built so far:** word bank schema + migrations 001–006; seed (1,030 recognized / 762
     produced after the seed-gap marks; grows with sessions); general lexicon; Tatoeba in
     Chroma (261k sentences); the conversation skill with write-back, topic pre-teaching
@@ -691,16 +692,37 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
       regenerated from the text.
 - **Phase 4 plan (approved by Jason 2026-10-05).** Slices, in order; each starts with a
   short detailed plan, and new SQL is proposed for approval:
-  - **4.0 Ceiling (built):** an item with more than `recommend.MAX_UNKNOWN_SHARE` = 10% of
+  - **4.0 Ceiling (built):** an item with more than `recommend.MAX_UNKNOWN_SHARE` = 20% of
     its running words unknown (books: whole-book density, started or not) is never
     suggested or surprised; it's listed under "Too hard for now" with its % known, and can
     still be opened. The queries take `:max_unknown` and `:too_hard` (one ranking, either
-    side). Jason chose 10% because every new word is pre-taught; reading research puts
-    assisted reading at 95% known. Measured: Quiroga is 28% unknown, so it's too hard now.
-  - **4.1 Easier public-domain texts:** fables (Samaniego, Iriarte), children's stories,
-    early-1900s school readers from Gutenberg; per-book JSON manifests for splitting
-    (committed; text never); measure coverage with `--no-resolve` on a DB copy first, Jason
-    picks what to add. No generated stories (Jason's choice).
+    side). Jason first chose 10% (every new word is pre-taught; reading research puts
+    assisted reading at 95% known), then **raised it to 20% on 2026-10-06** after slice
+    4.1's measurement showed no public-domain text could pass 10% (below). Quiroga is 28%
+    unknown, so it's too hard now.
+  - **4.1 Easier public-domain texts (built 2026-10-06):**
+    - **Manifests:** `ingest/gutenberg.py` splits by a hand-written manifest per book
+      (`ingest/books/<ebook>.json`, committed; the text never): `chapters` = [heading as in
+      the text, title], `end` (line where reading text stops), `remove` (regexes: margin
+      numbers, `[Note …]`, illustrations, footnote markers), `replace` (markup, `--`).
+      Headings match whole lines in order, or the split fails loudly. 13507's manifest
+      reproduces the earlier chapter files byte for byte.
+    - **Measured nine candidates** (read-only, against the word bank): no real text came
+      near 10% unknown. Best: *An Elementary Spanish Reader* (Harrison 1912, ebook
+      22065) 19.7% rough / 19.4% properly split; *Libro segundo de lectura* 23.2%; the
+      rest 26–33%. Even with every unreviewed word to frequency rank 5,000 in the bank, the
+      best would be 12%. So Jason raised the ceiling to 20%. About 6% of these books'
+      running words are frequent words (rank ≤ 1,500) not in the bank: a third are the 125
+      unmarked expressions, the rest words left unmarked in the seed review (*aquel*,
+      *notar*, *hallar*, *coger*). Jason declined a seed review of ranks 1,501+ for now.
+    - **Older accent spellings (Jason approved):** Wiktionary's 38 "obsolete spellings"
+      that differ from the modern word only in accents (*á*, *é*, *ú*, *ántes*, *órden*,
+      *fuéron*, *segun*) are respelled before tagging along with the 1952 ones
+      (`Wiktionary.obsolete_accent_spellings`; 49 respellings in all). *ó* (listed as a
+      2010 numerals rule) is not among them. Worth 2.4 points of a 1909 reader's unknown
+      share. Not yet in the Tatoeba cache or the real Quiroga index (re-index is free).
+    - The plain-text 15353 (*A First Spanish Reader*) lost all accents (`?` for `¿`); its
+      HTML edition has them. Manifests read the `.txt` edition only, for now.
   - **4.2 Reading skill:** pre-teach **every** new word in batches of ~20 in order of
     **first appearance** (Jason), logged `taught` (source `reading`) as each batch is
     studied; read anytime with click-to-lookup (unknown taught, known free); finishing logs

@@ -128,7 +128,8 @@ class AccentRestorer:
     `respellings` maps superseded spellings to modern ones (fué -> fue, dió -> dio;
     Wiktionary.reform_1952_spellings), so an old book's "fué" is analyzed exactly like a
     modern "fue" instead of becoming a word of its own (74 times in a 1917 story
-    collection, measured 2026-10-05). Known tagger limit, the same for both spellings:
+    collection, measured 2026-10-05). The same goes for older accent-only spellings
+    (á -> a, ántes -> antes; Wiktionary.obsolete_accent_spellings, added 2026-10-06). Known tagger limit, the same for both spellings:
     es_dep_news_trf lemmatizes "fue"/"fueron" as ser even when they mean "went" (all
     7,098 Tatoeba tokens), and "fui"/"fuimos" as ir.
     """
@@ -421,7 +422,9 @@ def load_corrector() -> LemmaCorrector:
         parts_of_speech=wiktionary.parts_of_speech,
         misspellings=misspellings,
         restorer=AccentRestorer(
-            words | set(form_links), prior, respellings=wiktionary.reform_1952_spellings()
+            words | set(form_links),
+            prior,
+            respellings=wiktionary.reform_1952_spellings() | wiktionary.obsolete_accent_spellings(),
         ),
         expressions=load_expression_matcher(),
     )

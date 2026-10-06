@@ -8,6 +8,9 @@ import json
 from collections import defaultdict
 from pathlib import Path
 
+# Acute accents and the diaeresis, as words.fold_accents (which imports this module).
+_FOLD = str.maketrans("áéíóúü", "aeiouu")
+
 # Wiktionary POS name -> UD tags it can correspond to. Names, affixes, symbols etc. are
 # not vocabulary and are left out.
 POS_MAP: dict[str, tuple[str, ...]] = {
@@ -154,6 +157,33 @@ class Wiktionary:
                 and all("deprecated in 1952" in s.get("gloss", "") for s in senses)
             ):
                 respellings[word] = targets.pop()
+        return respellings
+
+    def obsolete_accent_spellings(self) -> dict[str, str]:
+        """Obsolete spellings that differ from the modern word only in accent marks.
+
+        Texts from before the 1911-1952 reforms wrote the one-letter words á, é, ó, ú and
+        accents such as ántes, órden, márgen and volúmen; Wiktionary lists 38 such entries
+        ("á: obsolete spelling of a"), so in an old book the preposition a became a separate,
+        frequent "unknown" word (measured 2026-10-06: about 1.5% of the running words of a
+        1909 reader, 2.4 points of its unknown share). Only accent-only changes qualify, so
+        obsolete spellings with other changes (ay -> hay) are left alone.
+        """
+        by_word: dict[str, list[dict]] = defaultdict(list)
+        for (word, _), senses in self.senses.items():
+            by_word[word].extend(senses)
+        respellings = {}
+        for word, senses in by_word.items():
+            targets = {s.get("alt_of") for s in senses}
+            if len(targets) != 1 or None in targets:
+                continue
+            target = targets.pop()
+            if (
+                target != word
+                and target.translate(_FOLD) == word.translate(_FOLD)
+                and all("obsolete" in s["tags"] for s in senses)
+            ):
+                respellings[word] = target
         return respellings
 
     def definition(self, lemma: str, pos: str, *, follow_alt: bool = True) -> str | None:
