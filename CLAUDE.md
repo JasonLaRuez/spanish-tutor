@@ -834,6 +834,38 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
     default take-rate, abandonment around the ceiling); RAGAS baseline on the expression
     and Tatoeba retrievals (check install compatibility first; else implement the two
     metrics directly). Notebook 03, Progress-page panel, written case study.
+    - **Plan (approved 2026-10-06).** The real log is thin (2 conversations, 25 tutor
+      replies, no reading or lyrics use yet), so every metric is SQL that runs both on the
+      real log (it fills during Jason's testing stretch) and on a **benchmark**: scripted
+      learner messages with planted errors, run with the real model on a database copy.
+      Slices: 4.4a instrumentation, 4.4b log metrics, 4.4c conversation benchmark
+      (adherence, completeness, grading accuracy on planted errors, new-word detector
+      precision from a hand-checked sample), 4.4d translation naturalness (judge
+      consistency first, then calibration against Jason, then scores), 4.4e retrieval
+      (context relevance, faithfulness), 4.4f notebook 03, Progress panel, write-up.
+      Budget about $2-3 for one full pass (Jason approved; pilot first, re-approve if the
+      estimate moves).
+    - **Jason's decisions:** no table of known-word lookups (they stay unlogged); hand
+      ratings on a **rating page in the app** (not a CSV); Sonnet 5.5 as judge.
+    - **RAGAS can't be installed:** ragas 0.4.3's dependencies need `huggingface-hub` ≥
+      1.0, but the pinned `transformers` 4.53.2 requires < 1.0 (checked 2026-10-06; it
+      would also pull in openai, langchain-openai, sqlalchemy, pyarrow). Its two metrics
+      are implemented directly instead, as the plan allowed.
+    - **4.4a (built):** a conversation lookup of an unknown word is taught on its own
+      one-word `study` turn (as in the reader), not on the last tutor reply. No real
+      session had one, so the measured gap count on the real log was 0 either way.
+      **Migration 9** (approved): `eval_runs`, `eval_items` (what's rated: a JSON
+      snapshot plus a text `source_ref`, no foreign key, since items come from several
+      tables and benchmark copies), `ratings` (append-only; judges and Jason in one table,
+      `rater = 'human'` iff no run; judge repeats are rows).
+    - **4.4b (built):** `sql/queries/eval_adherence.sql`, `eval_completeness.sql`,
+      `eval_completeness_gaps.sql`, `eval_reading.sql` (predicted new words vs taught,
+      studied before finishing; "known at the start" rebuilt from the log),
+      `eval_recommendation.sql` (take rate; finished by difficulty band at the time of
+      the start). `evaluation/metrics.py` turns counts into rates with n and a 95% Wilson
+      interval; `python -m spanish_tutor.evaluation report [--db] [--session]` (read-only).
+      Real log, 2026-10-06: adherence 25/25 (95% CI 87-100%), completeness 5/5 (57-100%),
+      reading and recommendation n = 0.
   - **4.5 Readiness rings:** only after researching the PCIC license with Jason.
   - **Listening (built 2026-10-06; Jason's choices).** Text-to-speech in every skill, as
     the last feature before 4.4. A speaking skill was dropped (pronunciation scoring was
