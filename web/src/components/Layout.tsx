@@ -33,7 +33,6 @@ const navClass = ({ isActive }: { isActive: boolean }) =>
   }`
 
 const LATER = [
-  { name: 'Recommend', phase: 'Phase 3' },
   { name: 'Songs', phase: 'Phase 4' },
   { name: 'Books', phase: 'Phase 4' },
 ]
@@ -83,6 +82,9 @@ export function Layout() {
           </NavLink>
           <NavLink to="/progress" className={navClass}>
             Progress
+          </NavLink>
+          <NavLink to="/next" className={navClass}>
+            What next?
           </NavLink>
           {LATER.map((item) => (
             <span

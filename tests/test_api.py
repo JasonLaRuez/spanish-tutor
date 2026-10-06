@@ -278,3 +278,120 @@ def test_an_open_conversation_has_no_summary(serve):
     session = start(client)["session_id"]
     transcript = client.get(f"/api/sessions/{session}").json()
     assert transcript["summary"] is None and transcript["session"]["ended_at"] is None
+
+
+# --- Content and recommendations ---------------------------------------------------------
+
+
+def add_indexed(db_path, title, lemmas, kind="song", book=None):
+    """An indexed item whose vocabulary is `lemmas` (each once); a chapter if `book` is
+    (title, chapter_no). Returns its content_id."""
+    from spanish_tutor import content
+
+    conn = db.connect(db_path)
+    with conn:
+        if book:
+            book_id = conn.execute(
+                "SELECT book_id FROM books WHERE title = ?", (book[0],)
+            ).fetchone()
+            if book_id is None:
+                book_id, _ = content.add_book(
+                    conn, book[0], [], source="gutenberg:1", is_private=False
+                )
+            else:
+                book_id = book_id[0]
+            content_id = conn.execute(
+                "INSERT INTO content_items (kind, title, book_id, chapter_no, text_es) "
+                "VALUES ('chapter', ?, ?, ?, ?)",
+                (title, book_id, book[1], f"Texto de {title}."),
+            ).lastrowid
+        else:
+            content_id = content.add_item(
+                conn, kind, title, f"Texto de {title}.", source="private", is_private=True
+            )
+        ids = [
+            conn.execute("SELECT lexeme_id FROM lexemes WHERE lemma = ?", (lemma,)).fetchone()[0]
+            for lemma in lemmas
+        ]
+        conn.executemany(
+            "INSERT INTO content_vocab VALUES (?, ?, 1)", [(content_id, i) for i in ids]
+        )
+        conn.execute(
+            "UPDATE content_items SET tokens = ?, unresolved_tokens = 0, analyzer = 't', "
+            "indexed_at = CURRENT_TIMESTAMP WHERE content_id = ?",
+            (len(ids), content_id),
+        )
+    conn.close()
+    return content_id
+
+
+def test_recommendations_rank_songs_by_new_words_and_books_with_their_next_chapter(serve, db_path):
+    add_indexed(db_path, "Difícil", ["gato", "perro", "nadar"])
+    add_indexed(db_path, "Fácil", ["gato", "casa", "perro"])
+    add_indexed(db_path, "Capítulo uno", ["gato"], book=("Libro", 1))
+    add_indexed(db_path, "Capítulo dos", ["río"], book=("Libro", 2))
+    client, _ = serve()
+
+    found = client.get("/api/recommend").json()
+
+    assert [(i["title"], i["new_words"]) for i in found["items"]] == [("Fácil", 1), ("Difícil", 2)]
+    (libro,) = found["books"]
+    assert (libro["title"], libro["state"], libro["next_chapter_title"]) == (
+        "Libro",
+        "new",
+        "Capítulo uno",
+    )
+    assert libro["density"] == pytest.approx(0.5)
+
+
+def test_starting_and_finishing_moves_a_book_to_its_next_chapter(serve, db_path):
+    first = add_indexed(db_path, "Capítulo uno", ["gato"], book=("Libro", 1))
+    add_indexed(db_path, "Capítulo dos", ["río"], book=("Libro", 2))
+    client, _ = serve()
+
+    assert client.post(f"/api/content/{first}/start", json={"chosen_via": "recommended"}).is_success
+    assert client.post(f"/api/content/{first}/finish").is_success
+
+    libro = client.get("/api/recommend").json()["books"][0]
+    assert (libro["state"], libro["next_chapter_no"]) == ("in progress", 2)
+    assert rows(db_path, "SELECT event, chosen_via FROM content_events ORDER BY event_id") == [
+        ("started", "recommended"),
+        ("finished", None),
+    ]
+
+
+def test_a_start_must_say_how_the_item_was_chosen_and_name_a_real_item(serve, db_path):
+    song = add_indexed(db_path, "Canción", ["gato"])
+    client, _ = serve()
+    assert client.post(f"/api/content/{song}/start", json={"chosen_via": "whim"}).status_code == 422
+    assert client.post("/api/content/99/start", json={"chosen_via": "requested"}).status_code == 404
+    assert client.post("/api/content/99/finish").status_code == 404
+    assert rows(db_path, "SELECT COUNT(*) FROM content_events") == [(0,)]
+
+
+def test_an_item_comes_with_its_text_and_new_words(serve, db_path):
+    song = add_indexed(db_path, "Canción", ["gato", "perro", "río"])
+    client, _ = serve()
+
+    detail = client.get(f"/api/content/{song}").json()
+
+    assert (detail["title"], detail["text_es"], detail["chapters"]) == (
+        "Canción",
+        "Texto de Canción.",
+        0,
+    )
+    assert sorted(w["lemma"] for w in detail["new_words"]) == ["perro", "río"]
+    assert (detail["started"], detail["finished"]) == (False, False)
+    assert client.get("/api/content/99").status_code == 404
+
+
+def test_the_catalog_and_a_surprise(serve, db_path):
+    client, _ = serve()
+    assert client.get("/api/recommend/surprise").status_code == 404  # nothing to read yet
+    assert client.get("/api/content").json() == []
+
+    song = add_indexed(db_path, "Canción", ["gato", "perro"])
+    pick = client.get("/api/recommend/surprise").json()
+    assert (pick["content_id"], pick["kind"], pick["new_words"]) == (song, "song", 1)
+    (entry,) = client.get("/api/content").json()
+    assert (entry["title"], entry["new_words"], entry["state"]) == ("Canción", 1, None)

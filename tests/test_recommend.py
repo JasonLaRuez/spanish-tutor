@@ -215,3 +215,55 @@ def test_with_two_started_books_the_most_recently_read_leads(conn, words):
     assert titles(recommend.books(conn)) == ["B", "A"]
     content.finish(conn, a[0])
     assert titles(recommend.books(conn)) == ["A", "B"]
+
+
+# --- Surprise me, the catalog, and one item -------------------------------------------
+
+
+def test_a_surprise_comes_from_the_easiest_items_or_a_started_books_next_chapter(conn, words):
+    w = words
+    for n in range(8):  # item n has n new words
+        item(conn, f"song {n}", {w[f"w{i}"]: 1 for i in range(10, 10 + n)} | {w["w0"]: 1})
+    know(conn, w["w0"])
+    _, started = book(conn, "Started", [{w["w1"]: 1}, {w["w2"]: 1}])
+    book(conn, "Unstarted", [{w["w0"]: 1}])  # easy, but never a surprise: not begun
+    content.start(conn, started[0], "requested")
+    content.finish(conn, started[0])
+
+    picks = {recommend.surprise(conn, random.Random(seed))["title"] for seed in range(200)}
+
+    assert picks == {f"song {n}" for n in range(5)} | {"Started, Started 2"}
+
+
+def test_a_surprise_with_nothing_to_choose_from_is_none(conn):
+    assert recommend.surprise(conn) is None
+
+
+def test_the_catalog_lists_everything_with_its_reading_state(conn, words):
+    w = words
+    know(conn, w["w0"])
+    song = item(conn, "Una canción", {w["w0"]: 2, w["w1"]: 1})
+    _, chapters = book(conn, "Libro", [{w["w2"]: 1}, None])
+    content.start(conn, song, "recommended")
+    content.finish(conn, song)
+    content.start(conn, song, "requested")  # opened again: still finished
+    content.start(conn, chapters[0], "recommended")
+
+    rows = {r["title"]: r for r in recommend.catalog(conn)}
+
+    assert [r["title"] for r in recommend.catalog(conn)] == ["Una canción", "Libro 1", "Libro 2"]
+    assert (rows["Una canción"]["new_words"], rows["Una canción"]["state"]) == (1, "finished")
+    assert rows["Una canción"]["coverage"] == pytest.approx(2 / 3)
+    assert (rows["Libro 1"]["book_title"], rows["Libro 1"]["state"]) == ("Libro", "started")
+    assert rows["Libro 2"]["indexed"] is False and rows["Libro 2"]["new_words"] is None
+    assert rows["Libro 2"]["state"] is None
+
+
+def test_one_item_has_its_text_book_position_and_state(conn, words):
+    _, chapters = book(conn, "Libro", [{words["w0"]: 1}, {words["w1"]: 1}])
+    content.start(conn, chapters[1], "requested")
+    detail = recommend.item(conn, chapters[1])
+    assert (detail["book_title"], detail["chapter_no"], detail["chapters"]) == ("Libro", 2, 2)
+    assert (detail["author"], detail["source"], detail["text_es"]) == (None, "gutenberg:1", "...")
+    assert (detail["started"], detail["finished"], detail["indexed"]) == (True, False, True)
+    assert recommend.item(conn, 999) is None

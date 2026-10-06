@@ -8,8 +8,9 @@ them, though their transcripts stay in the database and are shown read-only.
 
 Threads: FastAPI runs these (sync) endpoints on worker threads. The conversations share
 one database connection and the lexicon index, so every use of them holds `lock`. The
-read-only endpoints (progress, history) open their own connection per request instead,
-so they answer immediately even while a reply (~6 s of model time) is being generated.
+other endpoints (progress, history, recommendations, the reading log) open their own
+connection per request instead, so they answer immediately even while a reply (~6 s of
+model time) is being generated. None of them calls the model.
 """
 
 import sqlite3
@@ -24,7 +25,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from spanish_tutor import db, progress
+from spanish_tutor import content, db, progress, recommend
 from spanish_tutor.config import DB_PATH
 from spanish_tutor.conversation import (
     Ending,
@@ -244,6 +245,97 @@ class Transcript(BaseModel):
     summary: SummaryOut | None  # for an ended conversation
 
 
+# --- Content and recommendations (Phase 3) ---------------------------------------------
+
+
+class RecommendedItem(BaseModel):
+    content_id: int
+    kind: Literal["song", "story"]
+    title: str
+    author: str | None
+    new_words: int  # distinct words it would teach
+    tokens: int  # running words counted as vocabulary
+    coverage: float | None  # share of running words already known
+
+
+class RecommendedBook(BaseModel):
+    book_id: int
+    title: str
+    author: str | None
+    state: Literal["new", "in progress"]
+    chapters: int
+    density: float | None  # unknown running words / all, across the whole book
+    new_words: int  # distinct new words in the whole book
+    next_content_id: int
+    next_chapter_no: int
+    next_chapter_title: str
+    next_chapter_new_words: int
+
+
+class Recommendations(BaseModel):
+    """Two rankings; the first of each is the default suggestion."""
+
+    items: list[RecommendedItem]
+    books: list[RecommendedBook]
+
+
+class Pick(BaseModel):
+    content_id: int
+    kind: Literal["song", "story", "chapter"]
+    title: str
+    new_words: int
+
+
+class CatalogItem(BaseModel):
+    content_id: int
+    kind: Literal["song", "story", "chapter"]
+    title: str
+    author: str | None
+    book_id: int | None
+    book_title: str | None
+    chapter_no: int | None
+    indexed: bool
+    new_words: int | None  # None until indexed
+    tokens: int | None
+    coverage: float | None
+    state: Literal["started", "finished"] | None
+
+
+class NewWord(BaseModel):
+    lexeme_id: int
+    lemma: str
+    pos: str
+    definition_en: str | None
+    occurrences: int  # in this item
+    model_written: bool
+
+
+class ContentDetail(BaseModel):
+    content_id: int
+    kind: Literal["song", "story", "chapter"]
+    title: str
+    author: str | None
+    source: str | None
+    book_id: int | None
+    book_title: str | None
+    chapter_no: int | None
+    chapters: int  # in its book; 0 for a song or story
+    tokens: int | None
+    unresolved_tokens: int | None
+    indexed: bool
+    started: bool
+    finished: bool
+    text_es: str
+    new_words: list[NewWord]  # most frequent in the item first
+
+
+class StartReading(BaseModel):
+    chosen_via: Literal["recommended", "requested"] = Field(
+        description="recommended: the default suggestion or a surprise; requested: the "
+        "learner's own choice."
+    )
+
+
 # --- The app ----------------------------------------------------------------------------
 
 
@@ -383,6 +475,48 @@ def create_app(
                 growth=progress.growth_by_session(conn),
                 try_using=progress.try_using(conn, try_using),
             )
+
+    @app.get("/api/recommend")
+    def get_recommendations(limit: int = 10) -> Recommendations:
+        with reader() as conn:
+            return Recommendations(items=recommend.items(conn, limit), books=recommend.books(conn))
+
+    @app.get("/api/recommend/surprise")
+    def get_surprise() -> Pick:
+        with reader() as conn:
+            pick = recommend.surprise(conn)
+        if pick is None:
+            raise HTTPException(404, "There's nothing to read yet: add a song, story or book.")
+        return Pick(**pick)
+
+    @app.get("/api/content")
+    def list_content() -> list[CatalogItem]:
+        with reader() as conn:
+            return [CatalogItem(**row) for row in recommend.catalog(conn)]
+
+    @app.get("/api/content/{content_id}")
+    def get_content(content_id: int) -> ContentDetail:
+        with reader() as conn:
+            detail = recommend.item(conn, content_id)
+            if detail is None:
+                raise HTTPException(404, "No such song, story or chapter.")
+            return ContentDetail(**detail, new_words=recommend.new_words(conn, content_id))
+
+    @app.post("/api/content/{content_id}/start")
+    def start_reading(content_id: int, request: StartReading) -> dict:
+        with reader() as conn:
+            if recommend.item(conn, content_id) is None:
+                raise HTTPException(404, "No such song, story or chapter.")
+            content.start(conn, content_id, request.chosen_via)
+        return {"ok": True}
+
+    @app.post("/api/content/{content_id}/finish")
+    def finish_reading(content_id: int) -> dict:
+        with reader() as conn:
+            if recommend.item(conn, content_id) is None:
+                raise HTTPException(404, "No such song, story or chapter.")
+            content.finish(conn, content_id)
+        return {"ok": True}
 
     # The built web UI. Any other path gets index.html, so the UI's own routes
     # (/history/3) work on reload.

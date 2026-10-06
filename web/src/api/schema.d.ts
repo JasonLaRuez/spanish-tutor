@@ -127,6 +127,108 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/recommend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Recommendations */
+        get: operations["get_recommendations_api_recommend_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/recommend/surprise": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Surprise */
+        get: operations["get_surprise_api_recommend_surprise_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Content */
+        get: operations["list_content_api_content_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/content/{content_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Content */
+        get: operations["get_content_api_content__content_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/content/{content_id}/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start Reading */
+        post: operations["start_reading_api_content__content_id__start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/content/{content_id}/finish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Finish Reading */
+        post: operations["finish_reading_api_content__content_id__finish_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -143,6 +245,74 @@ export interface components {
             recognized: number;
             /** Produced */
             produced: number;
+        };
+        /** CatalogItem */
+        CatalogItem: {
+            /** Content Id */
+            content_id: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "song" | "story" | "chapter";
+            /** Title */
+            title: string;
+            /** Author */
+            author: string | null;
+            /** Book Id */
+            book_id: number | null;
+            /** Book Title */
+            book_title: string | null;
+            /** Chapter No */
+            chapter_no: number | null;
+            /** Indexed */
+            indexed: boolean;
+            /** New Words */
+            new_words: number | null;
+            /** Tokens */
+            tokens: number | null;
+            /** Coverage */
+            coverage: number | null;
+            /** State */
+            state: ("started" | "finished") | null;
+        };
+        /** ContentDetail */
+        ContentDetail: {
+            /** Content Id */
+            content_id: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "song" | "story" | "chapter";
+            /** Title */
+            title: string;
+            /** Author */
+            author: string | null;
+            /** Source */
+            source: string | null;
+            /** Book Id */
+            book_id: number | null;
+            /** Book Title */
+            book_title: string | null;
+            /** Chapter No */
+            chapter_no: number | null;
+            /** Chapters */
+            chapters: number;
+            /** Tokens */
+            tokens: number | null;
+            /** Unresolved Tokens */
+            unresolved_tokens: number | null;
+            /** Indexed */
+            indexed: boolean;
+            /** Started */
+            started: boolean;
+            /** Finished */
+            finished: boolean;
+            /** Text Es */
+            text_es: string;
+            /** New Words */
+            new_words: components["schemas"]["NewWord"][];
         };
         /** Ended */
         Ended: {
@@ -246,6 +416,35 @@ export interface components {
              */
             new_words: number;
         };
+        /** NewWord */
+        NewWord: {
+            /** Lexeme Id */
+            lexeme_id: number;
+            /** Lemma */
+            lemma: string;
+            /** Pos */
+            pos: string;
+            /** Definition En */
+            definition_en: string | null;
+            /** Occurrences */
+            occurrences: number;
+            /** Model Written */
+            model_written: boolean;
+        };
+        /** Pick */
+        Pick: {
+            /** Content Id */
+            content_id: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "song" | "story" | "chapter";
+            /** Title */
+            title: string;
+            /** New Words */
+            new_words: number;
+        };
         /** Progress */
         Progress: {
             /** Recognition */
@@ -258,6 +457,64 @@ export interface components {
             growth: components["schemas"]["Growth"][];
             /** Try Using */
             try_using: components["schemas"]["GapWord"][];
+        };
+        /**
+         * Recommendations
+         * @description Two rankings; the first of each is the default suggestion.
+         */
+        Recommendations: {
+            /** Items */
+            items: components["schemas"]["RecommendedItem"][];
+            /** Books */
+            books: components["schemas"]["RecommendedBook"][];
+        };
+        /** RecommendedBook */
+        RecommendedBook: {
+            /** Book Id */
+            book_id: number;
+            /** Title */
+            title: string;
+            /** Author */
+            author: string | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "new" | "in progress";
+            /** Chapters */
+            chapters: number;
+            /** Density */
+            density: number | null;
+            /** New Words */
+            new_words: number;
+            /** Next Content Id */
+            next_content_id: number;
+            /** Next Chapter No */
+            next_chapter_no: number;
+            /** Next Chapter Title */
+            next_chapter_title: string;
+            /** Next Chapter New Words */
+            next_chapter_new_words: number;
+        };
+        /** RecommendedItem */
+        RecommendedItem: {
+            /** Content Id */
+            content_id: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "song" | "story";
+            /** Title */
+            title: string;
+            /** Author */
+            author: string | null;
+            /** New Words */
+            new_words: number;
+            /** Tokens */
+            tokens: number;
+            /** Coverage */
+            coverage: number | null;
         };
         /** SessionStarted */
         SessionStarted: {
@@ -299,6 +556,15 @@ export interface components {
             ended_at: string | null;
             /** Active */
             active: boolean;
+        };
+        /** StartReading */
+        StartReading: {
+            /**
+             * Chosen Via
+             * @description recommended: the default suggestion or a surprise; requested: the learner's own choice.
+             * @enum {string}
+             */
+            chosen_via: "recommended" | "requested";
         };
         /**
          * SummaryOut
@@ -644,6 +910,178 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Progress"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_recommendations_api_recommend_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Recommendations"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_surprise_api_recommend_surprise_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Pick"];
+                };
+            };
+        };
+    };
+    list_content_api_content_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatalogItem"][];
+                };
+            };
+        };
+    };
+    get_content_api_content__content_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                content_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContentDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_reading_api_content__content_id__start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                content_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StartReading"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    finish_reading_api_content__content_id__finish_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                content_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */

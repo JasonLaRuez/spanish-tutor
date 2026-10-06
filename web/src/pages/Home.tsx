@@ -10,9 +10,9 @@ const SKILLS = [
     to: '/new',
   },
   {
-    name: 'Recommend',
+    name: 'What next?',
     description: 'The next song, story or chapter that needs the fewest new words.',
-    phase: 'Phase 3',
+    to: '/next',
   },
   {
     name: 'Songs',

@@ -17,6 +17,15 @@ export type Growth = Schemas['Growth']
 export type GapWord = Schemas['GapWord']
 export type Summary = Schemas['SummaryOut']
 export type Ended = Schemas['Ended']
+export type Recommendations = Schemas['Recommendations']
+export type RecommendedItem = Schemas['RecommendedItem']
+export type RecommendedBook = Schemas['RecommendedBook']
+export type Pick = Schemas['Pick']
+export type CatalogItem = Schemas['CatalogItem']
+export type ContentDetail = Schemas['ContentDetail']
+export type NewWord = Schemas['NewWord']
+/** How an item was chosen: the default suggestion (or a surprise), or the learner's own pick. */
+export type ChosenVia = Schemas['StartReading']['chosen_via']
 
 /** An HTTP error from the API, with the server's message (FastAPI's `detail`). */
 export class ApiError extends Error {
@@ -61,4 +70,12 @@ export const api = {
   lookUp: (sessionId: number, word: string) =>
     post<Lesson>(`/api/sessions/${sessionId}/lookup`, { word }),
   end: (sessionId: number) => post<Ended>(`/api/sessions/${sessionId}/end`, {}),
+  recommend: () => request<Recommendations>('/api/recommend'),
+  surprise: () => request<Pick>('/api/recommend/surprise'),
+  catalog: () => request<CatalogItem[]>('/api/content'),
+  content: (contentId: number) => request<ContentDetail>(`/api/content/${contentId}`),
+  startReading: (contentId: number, chosenVia: ChosenVia) =>
+    post<{ ok: boolean }>(`/api/content/${contentId}/start`, { chosen_via: chosenVia }),
+  finishReading: (contentId: number) =>
+    post<{ ok: boolean }>(`/api/content/${contentId}/finish`, {}),
 }

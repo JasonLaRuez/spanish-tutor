@@ -261,10 +261,11 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
 
 - **Status (as of 2026-10-05):** Phase 0 is complete. Phase 1 has 5 of 7 roadmap steps
   done (the ~20 real conversations are in progress: 2 so far). Phase 2's core
-  (pre-teaching) and the new **Phase 2.5 web UI** are done. **Phase 3's core is built**
-  (schema, indexer, model resolver, both ranking queries; see "Content index and
-  recommender" below), tested on a Gutenberg book on a copy of the word bank. Next: the
-  Phase 3 API + "what next?" screen (U2); more real conversations, each reviewed in SQL.
+  (pre-teaching) and the new **Phase 2.5 web UI** are done. **Phase 3 is built**
+  (schema, indexer, model resolver, both ranking queries, the API and the "what next?"
+  screen with a simple reader; see "Content index and recommender" below). Quiroga's
+  story collection is in the real database. Next: more real conversations, each
+  reviewed in SQL; then Phase 4 (lyrics and reading skills, evaluation).
   - **Built so far:** word bank schema + migrations 001–006; seed (1,030 recognized / 762
     produced after the seed-gap marks; grows with sessions); general lexicon; Tatoeba in
     Chroma (261k sentences); the conversation skill with write-back, topic pre-teaching
@@ -298,13 +299,9 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
       clean one. Measure how often learner turns hit this before deciding anything.
     - **Resuming a conversation after a server restart** isn't built: the transcript is
       shown read-only. It would mean rebuilding `Tutor.history` from `turns`.
-    - **The real word bank is still at migration 5.** Migration 6 (content tables) is
-      additive and was verified on a copy (word bank unchanged row for row). The server
-      and every CLI apply pending migrations at startup (after a backup), so the next
-      `spanish-tutor serve` applies it.
-    - **Phase 3 remaining:** API endpoints and the "what next?" screen (U2: ranked
-      items with new-word counts, surprise-me, explicit request); then real content
-      (Phase 4).
+    - **The reader logs no word events:** opening or finishing an item records only
+      `content_events`. Teaching an item's new words before reading (and crediting what
+      was read) is Phase 4's reading/lyrics skill.
     - ***fue* is always *ser*:** the transformer lemmatizes *fue*/*fueron* as *ser* even
       meaning "went" (all 7,098 Tatoeba tokens), *fui*/*fuimos* always as *ir*. A
       learner's "fue al cine" is credited as *ser*. Predates Phase 3; not yet discussed.
@@ -711,6 +708,22 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
     `item_new_words.sql`; wrappers in `recommend.py`. `SUM(CASE …)`, not `FILTER`, for
     portability.
   - **Topics stay out of Phase 3 (Jason):** free text with on-the-fly pre-teaching.
+  - **"What next?" screen and reader (U2, built 2026-10-05; Jason's choices):**
+    - API: `GET /api/recommend` (both rankings), `GET /api/recommend/surprise`,
+      `GET /api/content` (catalog: every item with new words and reading state,
+      `content_catalog.sql`), `GET /api/content/{id}` (text, book position, state,
+      new words; `content_item.sql`), `POST /api/content/{id}/start` (`chosen_via`) and
+      `/finish`. All on per-request connections; none calls the model.
+    - The page shows two defaults side by side, the easiest song/story and the first book
+      (a started book's next chapter), since the rankings use different measures; then
+      both ranked tables and "Choose anything" (every item, any chapter).
+    - `chosen_via`: `recommended` for a default (a card, or a table's first row) or a
+      surprise; `requested` for any other pick.
+    - **Surprise me (Jason):** random among the 5 easiest songs/stories plus every started
+      book's next chapter; never the start of a new book (`recommend.surprise`).
+    - **Simple reader (Jason), until Phase 4:** the item's new words (most frequent in it
+      first; 20 shown, "show all"), then the text (prose paragraphs rejoined), and
+      Finished, which logs `finished` and returns to the suggestions.
   - **Indexing (`content.py`):** `analyze()` on sentences (songs by line; prose by
     paragraph with hard-wrapped lines rejoined, split after final punctuation and before
     an opening ¿/¡ that follows it). Counts are per analysis (*del* = *de* + *el*; an

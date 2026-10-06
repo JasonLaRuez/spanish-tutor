@@ -61,7 +61,10 @@ uv run spanish-tutor serve        # http://127.0.0.1:8000 (API docs at /docs)
 The browser UI: start a conversation (with a topic and how many words to learn first), chat
 in a chat box with clickable words, an accent keyboard and a "¿Cómo se dice…?" button,
 browse past conversations, and see your progress (words you recognize and can produce,
-coverage by word frequency, growth per conversation, and words to try using). It serves the
+coverage by word frequency, growth per conversation, and words to try using). **What next?**
+suggests the song or story with the fewest new words and the next chapter of your book, with
+a surprise pick and the full list to choose from yourself; a simple reader shows an item's
+new words, then its text, and marks it finished. It serves the
 built UI from `web/dist`; build it once with Node.js installed:
 
 ```sh
