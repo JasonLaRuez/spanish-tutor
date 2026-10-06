@@ -98,6 +98,29 @@ def test_ensure_lexeme_without_wiktionary_only_finds_existing_words(conn):
     assert ensure_lexeme(conn, None, "nadar", "VERB") is None
 
 
+def test_approved_expression_missing_from_the_lexicon_is_added(conn, make_wiktionary):
+    """Wiktionary has no EXPR entries; an approved phrase never found in Tatoeba (so not in
+    the lexicon) is added with its reviewed definition. An unapproved phrase is not."""
+    index = LexiconIndex(conn, make_wiktionary([]), {"a la par": "at the same time"})
+    lexeme = index.resolve(("a la par", "EXPR"))
+    row = conn.execute(
+        "SELECT definition_en, definition_source FROM lexemes WHERE lexeme_id = ?",
+        (lexeme.lexeme_id,),
+    ).fetchone()
+    assert tuple(row) == ("at the same time", "wiktionary")
+    assert index.resolve(("de la", "EXPR")) is None
+
+
+def test_find_and_in_dictionary_never_write(conn, make_wiktionary):
+    jardin = add_lexeme(conn, "jardín")
+    index = LexiconIndex(conn, make_wiktionary([("nadar", "verb", "to swim")]))
+    assert index.find(("jardin", "NOUN")).lexeme_id == jardin
+    assert index.find(("nadar", "VERB")) is None
+    assert index.in_dictionary(("nadar", "VERB"))
+    assert not index.in_dictionary(("sabo", "VERB"))
+    assert conn.execute("SELECT COUNT(*) FROM lexemes").fetchone()[0] == 1
+
+
 def test_resolved_new_words_are_cached_in_the_index(conn, make_wiktionary):
     index = LexiconIndex(conn, make_wiktionary([("nadar", "verb", "to swim")]))
     first = index.resolve(("nadar", "VERB"))

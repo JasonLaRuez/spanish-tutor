@@ -1,7 +1,8 @@
 import type { Lesson } from '../api/client'
 import { posName } from '../lib/text'
 
-/** A taught word: its definition and a readable example, with Tatoeba's author credit. */
+/** A taught word: its definition and a readable example, with Tatoeba's author credit.
+ * Words no dictionary has carry a "model-written" label (their definition is Claude's). */
 export function LessonCard({ lesson }: { lesson: Lesson }) {
   const example = lesson.example
   const tatoebaId = example?.source?.startsWith('tatoeba:') ? example.source.slice(8) : null
@@ -10,6 +11,14 @@ export function LessonCard({ lesson }: { lesson: Lesson }) {
       <div className="flex items-baseline gap-2">
         <span className="es font-semibold text-ink">{lesson.lemma}</span>
         <span className="text-xs text-muted">{posName(lesson.pos)}</span>
+        {lesson.model_written && (
+          <span
+            className="rounded border border-line px-1 text-[0.65rem] uppercase tracking-wide text-muted"
+            title="This word isn't in the dictionaries: Claude wrote its definition and translated the example."
+          >
+            model-written
+          </span>
+        )}
       </div>
       <p className="mt-0.5 text-sm text-ink-2">{lesson.definition_en ?? '(no definition)'}</p>
       {example && (

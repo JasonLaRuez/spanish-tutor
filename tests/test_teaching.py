@@ -90,3 +90,20 @@ def test_word_with_no_example_anywhere_gets_definition_only(conn):
     result = lesson(conn, Lexeme(lexeme_id, "chapotear", "VERB"), set(), vocab_of)
     assert result.example is None
     assert result.definition_en == "to splash"
+    assert not result.model_written
+
+
+def test_a_model_defined_word_is_marked_model_written(conn, monkeypatch):
+    """A word resolve.py added: Claude's definition, and the real sentence it was met in."""
+    lexeme_id = conn.execute(
+        """
+        INSERT INTO lexemes (lemma, pos, definition_en, definition_source, example_es,
+                             example_en, example_source, example_en_source)
+        VALUES ('chambear', 'VERB', 'to work (informal)', 'model:claude-opus-5-5',
+                'Hay que chambear.', 'You have to work.', 'content:3', 'model:claude-opus-5-5')
+        """
+    ).lastrowid
+    monkeypatch.setitem(VOCAB, "Hay que chambear.", {("chambear", "VERB")})
+    result = lesson(conn, Lexeme(lexeme_id, "chambear", "VERB"), set(), vocab_of)
+    assert result.model_written
+    assert (result.example.es, result.example.source) == ("Hay que chambear.", "content:3")

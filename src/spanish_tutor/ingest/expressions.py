@@ -289,6 +289,11 @@ def load_expressions(path: Path = EXPRESSIONS_PATH) -> list[dict]:
     return read_jsonl(path) if path.exists() else []
 
 
+def definitions(path: Path = EXPRESSIONS_PATH) -> dict[str, str]:
+    """Each approved phrase's reviewed definition: what an expression's lexeme is given."""
+    return {e["phrase"]: e["definition_en"] for e in load_expressions(path)}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("step", choices=["candidates", "review", "collect"])

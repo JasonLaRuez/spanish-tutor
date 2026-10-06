@@ -40,6 +40,9 @@ class Lesson:
     pos: str
     definition_en: str | None
     example: Example | None
+    # The definition (and its stored example's translation) was written by a model, not
+    # taken from a dictionary: a word resolve.py added. Shown as a label on the card.
+    model_written: bool = False
 
 
 def lesson(
@@ -57,7 +60,8 @@ def lesson(
     """
     row = conn.execute(
         """
-        SELECT definition_en, example_es, example_en, example_source, example_author
+        SELECT definition_en, definition_source, example_es, example_en, example_source,
+               example_author
         FROM lexemes WHERE lexeme_id = ?
         """,
         (lexeme.lexeme_id,),
@@ -82,7 +86,10 @@ def lesson(
             )
     elif stored is None and met_in:
         example = Example(met_in, None, None, None)
-    return Lesson(lexeme.lexeme_id, lexeme.lemma, lexeme.pos, row["definition_en"], example)
+    model_written = (row["definition_source"] or "").startswith("model:")
+    return Lesson(
+        lexeme.lexeme_id, lexeme.lemma, lexeme.pos, row["definition_en"], example, model_written
+    )
 
 
 def glosses(conn: sqlite3.Connection, words: set[Analysis]) -> tuple[tuple[str, str], ...]:

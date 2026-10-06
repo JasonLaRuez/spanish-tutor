@@ -195,6 +195,10 @@ class ClaudeGenerator:
     def summarize(self, prompt: str) -> Generation:
         return self._invoke(SessionNotes, [HumanMessage(prompt)])
 
+    def ask(self, schema: type[BaseModel], prompt: str) -> Generation:
+        """Any other one-off structured request (e.g. resolve.Resolutions)."""
+        return self._invoke(schema, [HumanMessage(prompt)])
+
     def _invoke(self, schema: type[BaseModel], messages: list[BaseMessage]) -> Generation:
         if schema not in self.chains:
             self.chains[schema] = self.llm.with_structured_output(
@@ -953,6 +957,7 @@ def load_resources(check_same_thread: bool = True) -> Resources:
     and it serializes every use of the connection with a lock.
     """
     from spanish_tutor import lexicon
+    from spanish_tutor.ingest.expressions import definitions as expression_definitions
     from spanish_tutor.vectorstore import open_store
 
     conn = db.connect(check_same_thread=check_same_thread)
@@ -967,7 +972,7 @@ def load_resources(check_same_thread: bool = True) -> Resources:
     return Resources(
         conn,
         ClaudeGenerator(),
-        LexiconIndex(conn, lexicon.load_wiktionary()),
+        LexiconIndex(conn, lexicon.load_wiktionary(), expression_definitions()),
         analyze,
         store=open_store(),
     )

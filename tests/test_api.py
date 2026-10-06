@@ -144,6 +144,7 @@ def test_a_known_word_can_be_looked_up_and_a_non_word_is_404(serve, db_path):
 
     found = client.post(f"/api/sessions/{session}/lookup", json={"word": "gato"})
     assert (found.status_code, found.json()["definition_en"]) == (200, "<gato>")
+    assert found.json()["model_written"] is False
     assert rows(db_path, "SELECT COUNT(*) FROM word_events WHERE event_type = 'looked_up'") == [
         (0,)
     ]  # a reminder, not a miss

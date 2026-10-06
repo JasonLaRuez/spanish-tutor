@@ -9,10 +9,12 @@ import re
 
 from langchain_core.embeddings import DeterministicFakeEmbedding
 
+from spanish_tutor.content import add_item, index_item
 from spanish_tutor.conversation import Generation, TutorReply
 from spanish_tutor.ingest.index_tatoeba import index_sentences
 from spanish_tutor.ingest.tatoeba import AnalyzedSentence
 from spanish_tutor.vectorstore import open_store
+from spanish_tutor.words import LexiconIndex
 
 FORMS = {
     "yo": ("yo", "PRON"),
@@ -138,3 +140,89 @@ def make_topic_store(conn, directory):
     ]
     index_sentences(store, sentences, report=lambda _: None)
     return store
+
+
+# --- Content (test_content, test_resolve) ------------------------------------------------
+
+# The fake tagger for content: a form maps to its analyses. "del" is a contraction (two analyses), a
+# capitalized name has none, and "sin embargo" is an approved expression: its first token
+# carries the phrase and the second has no analyses, as lexicon.ExpressionMatcher does.
+CONTENT_FORMS = {
+    "el": [("el", "DET")],
+    "gato": [("gato", "NOUN")],
+    "come": [("comer", "VERB")],
+    "duerme": [("dormir", "VERB")],
+    "sale": [("salir", "VERB")],
+    "del": [("de", "ADP"), ("el", "DET")],
+    "jardín": [("jardín", "NOUN")],
+    "llueve": [("llover", "VERB")],
+    "nada": [("nadar", "VERB")],
+    "fué": [("fuar", "VERB")],  # an old spelling the tagger gets wrong
+    "yeah": [("yeah", "NOUN")],
+}
+CONTENT_NAMES = {"María"}
+CONTENT_LEXICON = [
+    ("el", "DET"), ("gato", "NOUN"), ("comer", "VERB"), ("dormir", "VERB"),
+    ("salir", "VERB"), ("de", "ADP"), ("jardín", "NOUN"), ("llover", "VERB"),
+    ("sin embargo", "EXPR"), ("ser", "VERB"),
+]  # fmt: skip
+
+
+def analyze_content(text):
+    words = re.findall(r"\w+", text)
+    tokens, i = [], 0
+    while i < len(words):
+        word = words[i]
+        if word.lower() == "sin" and i + 1 < len(words) and words[i + 1].lower() == "embargo":
+            tokens += [("sin embargo", [("sin embargo", "EXPR")]), ("embargo", [])]
+            i += 2
+            continue
+        if word in CONTENT_NAMES:
+            tokens.append((word.lower(), []))
+        else:
+            form = word.lower()
+            tokens.append((form, CONTENT_FORMS.get(form, [(form, "NOUN")])))
+        i += 1
+    return tokens
+
+
+def analyze_many(units):
+    return [analyze_content(u) for u in units]
+
+
+def add_content_lexicon(conn):
+    """The content tests' lexicon: lemma -> lexeme_id."""
+    return {
+        lemma: conn.execute(
+            "INSERT INTO lexemes (lemma, pos) VALUES (?, ?)", (lemma, pos)
+        ).lastrowid
+        for lemma, pos in CONTENT_LEXICON
+    }
+
+
+def story(conn, text):
+    return add_item(conn, "story", "Cuento", text, source="gutenberg:1", is_private=False)
+
+
+def vocab(conn, content_id):
+    return dict(
+        conn.execute(
+            """
+            SELECT l.lemma, v.occurrences FROM content_vocab AS v JOIN lexemes AS l USING (lexeme_id)
+            WHERE v.content_id = ?
+            """,
+            (content_id,),
+        ).fetchall()
+    )
+
+
+def index_content(conn, content_id, wiktionary=None, resolver=None, analyzer="setup-1"):
+    return index_item(
+        conn,
+        LexiconIndex(conn, wiktionary),
+        content_id,
+        analyze_many,
+        analyzer,
+        resolver=resolver,
+        reviewer="model:test",
+    )

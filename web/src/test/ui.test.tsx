@@ -21,6 +21,7 @@ const lesson: Lesson = {
   pos: 'VERB',
   definition_en: 'to water',
   example: { es: 'Riego las plantas.', en: 'I water the plants.', source: 'tatoeba:42', author: 'ana', glosses: [] },
+  model_written: false,
 }
 
 const turn = (overrides: Partial<Turn> = {}): Turn => ({
@@ -114,6 +115,20 @@ describe('TutorMessage', () => {
     expect(screen.queryByText('Do you water your garden?')).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'English' }))
     expect(screen.getByText('Do you water your garden?')).toBeInTheDocument()
+    expect(screen.queryByText('model-written')).not.toBeInTheDocument()
+  })
+
+  it('labels a word whose definition a model wrote', () => {
+    const chambear: Lesson = {
+      ...lesson,
+      lemma: 'chambear',
+      definition_en: 'to work (informal)',
+      example: { es: 'Hay que chambear.', en: 'You have to work.', source: 'content:3', author: null, glosses: [] },
+      model_written: true,
+    }
+    render(<TutorMessage turn={turn({ lessons: [chambear] })} />)
+    expect(screen.getByText('model-written')).toHaveAttribute('title', expect.stringContaining('Claude'))
+    expect(screen.queryByRole('link', { name: /Tatoeba/ })).not.toBeInTheDocument()
   })
 
   it('looks up a clicked word', async () => {

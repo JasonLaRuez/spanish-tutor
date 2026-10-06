@@ -24,7 +24,7 @@ from spanish_tutor import db
 from spanish_tutor.config import DB_PATH, SQL_DIR
 from spanish_tutor.ingest import subtlex
 from spanish_tutor.ingest.download import RAW_DIR, WIKTIONARY_FILE
-from spanish_tutor.ingest.expressions import load_expressions
+from spanish_tutor.ingest.expressions import definitions as expression_definitions
 from spanish_tutor.ingest.tatoeba import (
     ANALYZED_PATH,
     AnalyzedSentence,
@@ -274,7 +274,7 @@ def main() -> None:
         lambda: read_analyzed(ANALYZED_PATH),
         subtlex.load_counts(paths[1]),
         Wiktionary(paths[0]),
-        expressions={e["phrase"]: e["definition_en"] for e in load_expressions()},
+        expressions=expression_definitions(),
     )
     with_example = sum(1 for e in entries if e.example)
     print(f"  {len(entries):,} entries, {with_example:,} with an example sentence")

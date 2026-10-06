@@ -210,6 +210,8 @@ export interface components {
             /** Definition En */
             definition_en: string | null;
             example: components["schemas"]["ExampleOut"] | null;
+            /** Model Written */
+            model_written: boolean;
         };
         /** LookUp */
         LookUp: {
@@ -364,7 +366,7 @@ export interface components {
         };
         /**
          * TurnOut
-         * @description A tutor reply. For a "�c�mo se dice?" answer, kind is "translation", reply_es is
+         * @description A tutor reply. For a "¿cómo se dice?" answer, kind is "translation", reply_es is
          *     the Spanish asked for, note_en its explanation, and pending the question the learner
          *     still has to answer.
          */

@@ -9,7 +9,7 @@ never logged as vocabulary.
 
 import sqlite3
 from collections import defaultdict
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
 from spanish_tutor.ingest.wiktionary import Wiktionary
@@ -41,12 +41,37 @@ class Lexeme:
         return self.lemma, self.pos
 
 
+def dictionary_definition(
+    wiktionary: Wiktionary | None,
+    expressions: Mapping[str, str] | None,
+    analysis: Analysis,
+) -> str | None | bool:
+    """Whether (lemma, pos) is a real word: its definition if it is, False if not.
+
+    Words come from Wiktionary. Expressions come from the approved list (phrase ->
+    reviewed definition, ingest/expressions.py), since Wiktionary is keyed by single-word
+    parts of speech and has no EXPR entries. A word Wiktionary knows without a usable
+    definition gives None, which is still a word.
+    """
+    lemma, pos = analysis
+    if pos == "EXPR":
+        return (expressions or {}).get(lemma, False)
+    if wiktionary is None or analysis not in wiktionary:
+        return False
+    return wiktionary.definition(lemma, pos)
+
+
 def ensure_lexeme(
-    conn: sqlite3.Connection, wiktionary: Wiktionary | None, lemma: str, pos: str
+    conn: sqlite3.Connection,
+    wiktionary: Wiktionary | None,
+    lemma: str,
+    pos: str,
+    expressions: Mapping[str, str] | None = None,
 ) -> int | None:
     """The lexeme_id for (lemma, pos), adding the word from Wiktionary if it's missing.
 
-    Returns None, writing nothing, for anything Wiktionary doesn't know: misspellings
+    Approved expressions the lexicon lacks (those never found in Tatoeba) are added from
+    `expressions`. Returns None, writing nothing, for anything neither knows: misspellings
     ("sabo") and tagger inventions must never enter the word bank. New rows have no
     frequency or example; like the lexicon build, this only ever adds rows.
     """
@@ -55,14 +80,15 @@ def ensure_lexeme(
     ).fetchone()
     if row:
         return row[0]
-    if wiktionary is None or (lemma, pos) not in wiktionary:
+    definition = dictionary_definition(wiktionary, expressions, (lemma, pos))
+    if definition is False:
         return None
     return conn.execute(
         """
         INSERT INTO lexemes (lemma, pos, definition_en, definition_source)
         VALUES (?, ?, ?, 'wiktionary')
         """,
-        (lemma, pos, wiktionary.definition(lemma, pos)),
+        (lemma, pos, definition),
     ).lastrowid
 
 
@@ -75,13 +101,20 @@ class LexiconIndex:
        types "jardin" means "jardín". Ambiguous cases are left alone ("si" could be si or
        sí), and so is any spelling that is a word in its own right ("esta"), because
        resolution only reaches this step when there is no exact match.
-    3. A word Wiktionary knows, added to `lexemes` (ensure_lexeme).
+    3. A word Wiktionary knows (or an approved expression), added to `lexemes`
+       (ensure_lexeme).
     Anything else is not a word, and resolves to None.
     """
 
-    def __init__(self, conn: sqlite3.Connection, wiktionary: Wiktionary | None = None):
+    def __init__(
+        self,
+        conn: sqlite3.Connection,
+        wiktionary: Wiktionary | None = None,
+        expressions: Mapping[str, str] | None = None,
+    ):
         self.conn = conn
         self.wiktionary = wiktionary
+        self.expressions = expressions
         self.ids: dict[Analysis, int] = {}
         self.by_folded: dict[Analysis, list[str]] = defaultdict(list)
         # Headword -> its lexemes, most frequent first (for looking up a typed word).
@@ -93,9 +126,10 @@ class LexiconIndex:
             """
         )
         for lexeme_id, lemma, pos in rows:
-            self._add(lexeme_id, lemma, pos)
+            self.add(lexeme_id, lemma, pos)
 
-    def _add(self, lexeme_id: int, lemma: str, pos: str) -> None:
+    def add(self, lexeme_id: int, lemma: str, pos: str) -> None:
+        """Index a lexeme added to the table after this index was built."""
         self.ids[lemma, pos] = lexeme_id
         self.by_folded[fold_accents(lemma), pos].append(lemma)
         self.headwords[fold_accents(lemma)].append(Lexeme(lexeme_id, lemma, pos))
@@ -113,17 +147,28 @@ class LexiconIndex:
             return exact[0]
         return candidates[0] if len({lex.lemma for lex in candidates}) == 1 else None
 
-    def resolve(self, analysis: Analysis) -> Lexeme | None:
+    def find(self, analysis: Analysis) -> Lexeme | None:
+        """Steps 1-2 of resolve: a lexeme already in `lexemes`. Never writes."""
         lemma, pos = analysis
         if (lexeme_id := self.ids.get(analysis)) is not None:
             return Lexeme(lexeme_id, lemma, pos)
         accented = self.by_folded.get((fold_accents(lemma), pos), [])
         if len(accented) == 1:
             return Lexeme(self.ids[accented[0], pos], accented[0], pos)
-        lexeme_id = ensure_lexeme(self.conn, self.wiktionary, lemma, pos)
+        return None
+
+    def in_dictionary(self, analysis: Analysis) -> bool:
+        """Whether resolve's step 3 would add this word. Never writes."""
+        return dictionary_definition(self.wiktionary, self.expressions, analysis) is not False
+
+    def resolve(self, analysis: Analysis) -> Lexeme | None:
+        if (found := self.find(analysis)) is not None:
+            return found
+        lemma, pos = analysis
+        lexeme_id = ensure_lexeme(self.conn, self.wiktionary, lemma, pos, self.expressions)
         if lexeme_id is None:
             return None
-        self._add(lexeme_id, lemma, pos)
+        self.add(lexeme_id, lemma, pos)
         return Lexeme(lexeme_id, lemma, pos)
 
     def lookup(self, analysis: Analysis) -> Lexeme | None:

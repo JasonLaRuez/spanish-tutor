@@ -61,6 +61,7 @@ class LessonOut(BaseModel):
     pos: str
     definition_en: str | None
     example: ExampleOut | None
+    model_written: bool  # the definition came from a model (resolve.py), not a dictionary
 
     @classmethod
     def of(cls, item: Lesson) -> "LessonOut":
