@@ -26,3 +26,6 @@ dist-ssr
 # Generated from the API by `npm run gen:api`; only the TypeScript types are kept
 openapi.json
 dist
+
+# Browser walkthrough screenshots (e2e/README.md)
+e2e/out

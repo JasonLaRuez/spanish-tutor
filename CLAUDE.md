@@ -596,7 +596,8 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
     shows "¿cómo se dice?" turns and corrections (tutor replies with a note).
   - Charts follow the dataviz palette check: blue = recognize, orange = can produce, both
     validated in light and dark; each chart has a table view.
-  - Verified end to end in headless Edge (Playwright, scratch folder) against a **copy**
+  - Verified end to end in headless Edge (`playwright-core`; the current walkthroughs are
+    `web/e2e/reading.mjs` and `lyrics.mjs`, see its README) against a **copy**
     of the word bank (`TUTOR_DB_PATH`), which found and fixed two cursor races (accent
     keyboard, "¿cómo se dice?" template). Never test the UI against the real database.
 - **All text → `(lemma, pos)` goes through `src/spanish_tutor/lexicon.py`** (spaCy
