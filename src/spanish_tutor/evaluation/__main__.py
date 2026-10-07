@@ -51,6 +51,13 @@ def main() -> None:
     tr.add_argument("--pilot", action="store_true", help="Rima XXIII and Rima XVII only (~5¢)")
     agree = commands.add_parser("consistency", help="how much a judge run agrees with itself")
     agree.add_argument("run_id", type=int, nargs="+")
+    again = commands.add_parser(
+        "rejudge", help="judge a translation run's lines again with the current rubric"
+    )
+    again.add_argument("translation_run", help="its directory name, e.g. 20261007-184120Z")
+    again.add_argument("--poem", action="append", help="these poems only")
+    versus = commands.add_parser("calibration", help="a judge run against Jason's ratings")
+    versus.add_argument("run_id", type=int, nargs="+")
     args = parser.parse_args()
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
@@ -97,10 +104,22 @@ def main() -> None:
         for run_id in (summary["judge_run"], summary["attempt_run"]):
             print(translation.format_consistency(run_id, translation.consistency(conn, run_id)))
         conn.close()
+    elif args.command == "rejudge":
+        conn = db.connect()
+        run_id, spent = translation.rejudge(conn, args.translation_run, args.poem)
+        print(f"Judge run {run_id} ({translation.PROMPT_VERSION}): {spent}¢")
+        print(translation.format_consistency(run_id, translation.consistency(conn, run_id)))
+        print(translation.format_calibration(run_id, translation.calibration(conn, run_id)))
+        conn.close()
     else:
         conn = sqlite3.connect(f"file:{DB_PATH.as_posix()}?mode=ro", uri=True)
         for run_id in args.run_id:
-            print(translation.format_consistency(run_id, translation.consistency(conn, run_id)))
+            if args.command == "consistency":
+                found = translation.consistency(conn, run_id)
+                print(translation.format_consistency(run_id, found))
+            else:
+                found = translation.calibration(conn, run_id)
+                print(translation.format_calibration(run_id, found))
         conn.close()
 
 

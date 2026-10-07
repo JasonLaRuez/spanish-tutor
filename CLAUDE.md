@@ -921,9 +921,33 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
         when it comes back?" for *¿Sabes tú adónde va?*, called "close" 5/5 although its
         own comment says the meaning is wrong: the app's comparison is lenient when the
         form is right. A perfectly consistent judge can be consistently wrong.
-      - Spent on 4.4 so far: about $1.77 of the approved $2-3.
-      - **Next:** calibration (Jason rates naturalness of a sample of the 88 queued lines;
-        judge vs Jason), then 4.4e retrieval (~50¢), 4.4f.
+      - **Calibration against Jason (2026-10-07):** he rated the naturalness of 28 lines
+        (Rimas XXXVI, LI, XLIII; in chat, recorded as `human`; line 28 changed 3 → 4: "I
+        shouldn't judge the sound of a translated poem"). Judge v2 (run 3) vs Jason: mean
+        3.93 vs 4.86, exact 6/28, within 1 point 23/28, judge lower on 21, higher on 1,
+        mean abs. difference 1.00, alpha −0.37. It penalizes lines that are sentence
+        fragments; Jason doesn't. **Rubric v3** (Jason's rule: read a line with the line
+        before and after; don't judge sound) on those 3 poems (run 5, 13.7¢) was *worse*:
+        judge mean 3.62, abs. difference 1.25, alpha −0.52, faithfulness self-alpha 0.782.
+        Told to read whole sentences, the judge scored Bécquer's long inverted sentences
+        as convoluted English (an editor's standard; Jason reads as a learner). Reverted
+        to v2 (`PROMPT_VERSION`), run 5 kept as evidence. `calibration()`, `rejudge()`,
+        `sql/queries/eval_calibration.sql`; CLI `rejudge`, `calibration`.
+      - **Re-scoped (Jason):** poems are the hardest case to translate line by line and
+        aren't what the lyrics skill is mainly for (the Rimas are the public-domain demo),
+        so they shouldn't drive the rubric. 4.4d validated the pipeline, the judge's
+        consistency (v2: 0.851 / 0.824) and the attempt verdicts (85/90, plus one real
+        leniency flaw); **calibration is inconclusive on poems.** Report naturalness from
+        Jason's own ratings (4.86/5, n = 28) with the judge's scores marked unvalidated;
+        faithfulness (needs fluent Spanish to rate) unvalidated too. Redo calibration on
+        **songs** once Jason adds his own (`private/lyrics/`), during his testing stretch:
+        the commands are reusable and it costs well under a dollar.
+      - **Roadmap note (Jason):** difficulty beyond vocabulary. The ceiling counts only
+        unknown words, so verse can pass it while being far harder than prose; a stricter
+        ceiling for verse, or holding it back until the word bank is larger, is a later
+        option (roadmap Phase 4 item `p4-diff`).
+      - Spent on 4.4 so far: about $1.91 of the approved $2-3.
+      - **Next:** 4.4e retrieval (~50¢), then 4.4f.
   - **4.5 Readiness rings:** only after researching the PCIC license with Jason.
   - **Listening (built 2026-10-06; Jason's choices).** Text-to-speech in every skill, as
     the last feature before 4.4. A speaking skill was dropped (pronunciation scoring was

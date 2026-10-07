@@ -215,3 +215,53 @@ def test_the_attempts_cover_six_lines_at_three_qualities():
         == ["close", "missed", "right"]
         for line in lines
     )
+
+
+# --- Calibration and re-judging -------------------------------------------------------------
+
+
+def test_calibration_compares_the_judges_median_with_jasons_latest_rating(conn):
+    from spanish_tutor.evaluation import ratings
+    from spanish_tutor.evaluation.translation import calibration
+
+    items = queue_poem(conn, "run1", POEM)
+    ask = scripted(judgment((3, 5), (5, 5)), judgment((3, 5), (5, 5)), judgment((4, 5), (4, 5)))
+    run_id, _ = judge_poems(conn, [(POEM, items)], ask, repeats=3)
+    ratings.rate(conn, items[0], score=2)
+    ratings.rate(conn, items[0], score=5)  # changed: the latest counts
+    ratings.rate(conn, items[1], score=5)
+
+    found = calibration(conn, run_id)
+    assert found["items"] == 2
+    assert (found["human_mean"], found["judge_mean"]) == (5, 4)  # medians 3 and 5
+    assert (found["exact"], found["within_one"], found["judge_lower"]) == (1, 1, 1)
+    assert found["mean_absolute_difference"] == 1
+    assert found["differences"] == [("For one glance, a world;", 5, [3, 3, 4])]
+
+
+def test_calibration_leaves_out_lines_jason_hasnt_rated(conn):
+    from spanish_tutor.evaluation.translation import calibration
+
+    items = queue_poem(conn, "run1", POEM)
+    run_id, _ = judge_poems(conn, [(POEM, items)], scripted(judgment((3, 5), (5, 5))), repeats=1)
+    assert calibration(conn, run_id)["items"] == 0
+
+
+def test_rejudging_rebuilds_the_poems_from_the_queue_without_translating(conn):
+    from spanish_tutor.evaluation.translation import poems_from_queue, rejudge
+
+    items = queue_poem(conn, "run1", POEM)
+    other = Poem(56, "Rima XVII", ["Hoy creo en Dios!"], ["Today I believe in God!"], ["x"], [None])
+    queue_poem(conn, "run1", other)
+    rebuilt = poems_from_queue(conn, "run1")
+    assert [(p.title, ids) for p, ids in rebuilt] == [
+        ("Rima XXIII", items),
+        ("Rima XVII", [items[-1] + 1]),
+    ]
+    assert rebuilt[0][0] == POEM
+
+    run_id, spent = rejudge(
+        conn, "run1", ["Rima XXIII"], scripted(judgment((5, 5), (5, 5))), repeats=1
+    )
+    judged = {r[0] for r in conn.execute("SELECT item_id FROM ratings WHERE run_id = ?", (run_id,))}
+    assert judged == set(items) and spent > 0  # only the poem named

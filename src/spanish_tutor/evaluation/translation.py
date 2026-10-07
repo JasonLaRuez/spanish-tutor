@@ -46,7 +46,12 @@ from spanish_tutor.progress import rows
 RUNS_DIR = EVAL_DIR / "translation"
 JUDGE_MODEL = "claude-sonnet-5-5"
 REPEATS = 5
-PROMPT_VERSION = "translation-judge v2"  # v2 (2026-10-07, Jason): implied words are faithful
+# v2 (Jason, 2026-10-07): "supplying a word the Spanish implies is faithful" ended a 4/5
+# wobble. v3 (read each line with its neighbours; don't judge sound) was tried on the 3
+# calibration poems (judge run 5) and dropped: the judge grew stricter against Jason (mean
+# 3.62 vs his 4.86; abs. difference 1.25 vs 1.00) and less consistent (faithfulness alpha
+# 0.782). Poems aren't a fair calibration set (see CLAUDE.md, slice 4.4d).
+PROMPT_VERSION = "translation-judge v2"
 
 RUBRIC = """\
 You are judging English translations of a Spanish poem, made for a language-learning app.
@@ -358,6 +363,105 @@ def format_consistency(run_id: int, found: dict[str, dict]) -> str:
             counts = {v: verdicts.count(v) for v in QUALITIES if verdicts.count(v)}
             lines.append(f"    intended {quality:6} -> {counts}")
     return "\n".join(lines)
+
+
+# --- Calibration: the judge against Jason -------------------------------------------------
+
+
+def calibration(conn: sqlite3.Connection, run_id: int, criterion: str = "naturalness") -> dict:
+    """A judge run against Jason's latest ratings on the same items. Each line's judge
+    score is the median of its repeats. A stable judge can still be off: consistency says
+    the judge agrees with itself, calibration says whether it agrees with the learner."""
+    found = rows(conn, "eval_calibration", run_id=run_id, criterion=criterion)
+    pairs = [(r["human"], median(json.loads(r["judge"])), r) for r in found]
+    diffs = [h - j for h, j, _ in pairs]
+    n = len(pairs)
+    return {
+        "items": n,
+        "human_mean": sum(h for h, _, _ in pairs) / n if n else None,
+        "judge_mean": sum(j for _, j, _ in pairs) / n if n else None,
+        "exact": sum(1 for d in diffs if d == 0),
+        "within_one": sum(1 for d in diffs if abs(d) <= 1),
+        "judge_lower": sum(1 for d in diffs if d > 0),
+        "judge_higher": sum(1 for d in diffs if d < 0),
+        "mean_absolute_difference": sum(abs(d) for d in diffs) / n if n else None,
+        "alpha": alpha([[h, j] for h, j, _ in pairs], "ordinal"),
+        "differences": [
+            (json.loads(r["content"]).get("natural_en"), h, json.loads(r["judge"]))
+            for h, j, r in pairs
+            if h != j
+        ],
+    }
+
+
+def median(values: list[float]) -> float:
+    ordered = sorted(values)
+    middle = len(ordered) // 2
+    return ordered[middle] if len(ordered) % 2 else (ordered[middle - 1] + ordered[middle]) / 2
+
+
+def format_calibration(run_id: int, found: dict) -> str:
+    if not found["items"]:
+        return f"Judge run {run_id}: no items Jason has rated"
+    a = "undefined" if found["alpha"] is None else f"{found['alpha']:.2f}"
+    summary = (
+        f"Judge run {run_id} against Jason ({found['items']} lines): Jason's mean "
+        f"{found['human_mean']:.2f}, the judge's {found['judge_mean']:.2f}; exact "
+        f"{found['exact']}, within 1 point {found['within_one']}; judge lower on "
+        f"{found['judge_lower']}, higher on {found['judge_higher']}; mean absolute "
+        f"difference {found['mean_absolute_difference']:.2f}; alpha {a}"
+    )
+    lines = [summary]
+    for text, human, judge in found["differences"]:
+        lines.append(f"    Jason {human:g}, judge {[int(s) for s in judge]}: {text}")
+    return "\n".join(lines)
+
+
+def poems_from_queue(
+    conn: sqlite3.Connection, translation_run: str
+) -> list[tuple[Poem, list[int]]]:
+    """A translation run's poems, rebuilt from their queued lines (to judge them again
+    without translating again)."""
+    found: dict[int, list[tuple[int, dict]]] = {}
+    for item_id, ref, content in conn.execute(
+        "SELECT item_id, source_ref, content FROM eval_items "
+        "WHERE item_type = 'translation_line' AND source_ref LIKE ? ORDER BY item_id",
+        (f"translation:{translation_run}:%",),
+    ):
+        content_id = int(ref.split(":")[2])
+        found.setdefault(content_id, []).append((item_id, json.loads(content)))
+    poems = []
+    for content_id, lines in found.items():
+        lines.sort(key=lambda pair: pair[1]["line_no"])
+        poem = Poem(
+            content_id,
+            lines[0][1]["poem"],
+            [x["spanish"] for _, x in lines],
+            [x["natural_en"] for _, x in lines],
+            [x["literal_en"] for _, x in lines],
+            [x["note_en"] for _, x in lines],
+        )
+        poems.append((poem, [item_id for item_id, _ in lines]))
+    return poems
+
+
+def rejudge(
+    conn: sqlite3.Connection,
+    translation_run: str,
+    titles: list[str] | None = None,
+    ask: Callable[..., Generation] | None = None,
+    repeats: int = REPEATS,
+) -> tuple[int, float]:
+    """Judge a translation run's lines again with the current rubric (all poems, or those
+    named); returns the new judge run and its cost in cents."""
+    poems = [
+        p for p in poems_from_queue(conn, translation_run) if titles is None or p[0].title in titles
+    ]
+    recorder = Recorder(
+        _Asker(ask or ClaudeGenerator(model=JUDGE_MODEL, effort="medium", max_tokens=8000).ask)
+    )
+    run_id, _ = judge_poems(conn, poems, recorder.ask, repeats)
+    return run_id, round(sum(cents(g, JUDGE_MODEL) for _, g in recorder.calls), 2)
 
 
 # --- Running ------------------------------------------------------------------------------
