@@ -182,6 +182,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/eval/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Eval Summary */
+        get: operations["eval_summary_api_eval_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/eval/items/{item_type}": {
         parameters: {
             query?: never;
@@ -642,6 +659,20 @@ export interface components {
             };
             /** False Flags */
             false_flags: string[];
+        };
+        /**
+         * EvalSummary
+         * @description The evaluation's live numbers (evaluation/metrics.py over the real log, and Jason's
+         *     ratings), for the Progress page. Each is k of n with its 95% interval.
+         */
+        EvalSummary: {
+            /** Replies */
+            replies: number;
+            within_limit: components["schemas"]["RateOut"];
+            first_draft_within_limit: components["schemas"]["RateOut"];
+            complete: components["schemas"]["RateOut"];
+            studied_before_finishing: components["schemas"]["RateOut"];
+            new_word_precision: components["schemas"]["RateOut"];
         };
         /** ExampleOut */
         ExampleOut: {
@@ -1501,6 +1532,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EvalOverview"];
+                };
+            };
+        };
+    };
+    eval_summary_api_eval_summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalSummary"];
                 };
             };
         };

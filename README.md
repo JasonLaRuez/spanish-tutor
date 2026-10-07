@@ -199,6 +199,19 @@ and every answer is checked before anything is stored. `index` shows the estimat
 and asks before each call (an 18-story book cost $0.62); `--no-resolve` skips the model.
 Definitions written by the model are labeled as such when the word is taught.
 
+## Evaluation
+
+How well the tutor keeps its promises (staying inside the vocabulary, grading fairly,
+translating naturally, staying faithful to a text) is measured by SQL over the learning log,
+a benchmark with planted learner mistakes, and model judges that are checked for consistency
+and against the learner before their numbers are used. The case study, with results:
+[docs/evaluation.md](docs/evaluation.md). Every number in it is re-created, without model
+calls, by `notebooks/03_evaluation.ipynb`.
+
+```sh
+uv run python -m spanish_tutor.evaluation report     # the log metrics, read-only
+```
+
 ## Tests
 
 `uv run pytest` runs the fast suite. `uv run pytest -m slow` also loads the real embedding

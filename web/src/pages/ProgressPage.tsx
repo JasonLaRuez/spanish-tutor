@@ -1,16 +1,19 @@
 import { useEffect, useState } from 'react'
-import { api, type Progress } from '../api/client'
+import { api, type EvalSummary, type Progress } from '../api/client'
 import { BandChart } from '../components/charts/BandChart'
 import { GrowthChart } from '../components/charts/GrowthChart'
+import { EvalPanel } from '../components/EvalPanel'
 import { StatTiles } from '../components/StatTiles'
 import { posName } from '../lib/text'
 
 export function ProgressPage() {
   const [progress, setProgress] = useState<Progress | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [evaluation, setEvaluation] = useState<EvalSummary | null>(null)
 
   useEffect(() => {
     api.progress().then(setProgress).catch((err) => setError(String(err)))
+    api.evalSummary().then(setEvaluation).catch(() => {}) // optional: the page works without it
   }, [])
 
   return (
@@ -27,6 +30,7 @@ export function ProgressPage() {
           <StatTiles progress={progress} />
           <BandChart bands={progress.bands} />
           <GrowthChart growth={progress.growth} />
+          {evaluation && <EvalPanel summary={evaluation} />}
           <section className="rounded-xl border border-line bg-surface p-5">
             <h2 className="font-semibold text-ink">Try using these</h2>
             <p className="text-sm text-ink-2">

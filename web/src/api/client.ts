@@ -37,6 +37,7 @@ export type RatingQueue = Schemas['RatingQueue']
 export type RatingItem = Schemas['RatingItem']
 export type EvalOverview = Schemas['EvalOverview']
 export type RateOut = Schemas['RateOut']
+export type EvalSummary = Schemas['EvalSummary']
 /** How an item was chosen: the default suggestion (or a surprise), or the learner's own pick. */
 export type ChosenVia = Schemas['StartReading']['chosen_via']
 
@@ -78,6 +79,7 @@ export const api = {
   voices: () => request<Voice[]>('/api/speech/voices'),
   // The evaluation's hand ratings: the overview, one type's items, and a rating.
   evalOverview: () => request<EvalOverview>('/api/eval'),
+  evalSummary: () => request<EvalSummary>('/api/eval/summary'),
   ratingQueue: (itemType: string) => request<RatingQueue>(`/api/eval/items/${itemType}`),
   rate: (itemId: number, rating: { label?: string; score?: number }) =>
     post<{ ok: boolean }>('/api/eval/ratings', { item_id: itemId, ...rating }),

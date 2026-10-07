@@ -39,7 +39,7 @@ from spanish_tutor.conversation import (
     new_tutor,
     reply_to,
 )
-from spanish_tutor.evaluation import ratings
+from spanish_tutor.evaluation import metrics, ratings
 from spanish_tutor.evaluation.metrics import Rate
 from spanish_tutor.keyboard import expand_markers
 from spanish_tutor.lyrics import LyricsSession, TranslationError
@@ -279,6 +279,18 @@ class NewRating(BaseModel):
     item_id: int
     label: str | None = None
     score: float | None = None
+
+
+class EvalSummary(BaseModel):
+    """The evaluation's live numbers (evaluation/metrics.py over the real log, and Jason's
+    ratings), for the Progress page. Each is k of n with its 95% interval."""
+
+    replies: int  # tutor conversation replies in the log
+    within_limit: RateOut  # replies within the one-new-word limit (as shown)
+    first_draft_within_limit: RateOut  # ... before any retry
+    complete: RateOut  # replies with new words that taught them all
+    studied_before_finishing: RateOut  # a finished text's new words studied first
+    new_word_precision: RateOut  # taught words that were really new (Jason's ratings; real log)
 
 
 class EvalOverview(BaseModel):
@@ -692,6 +704,25 @@ def create_app(
                 new_word_labels=found["labels"],
                 false_flags=found["false_flags"],
             )
+
+    @app.get("/api/eval/summary")
+    def eval_summary() -> EvalSummary:
+        with reader() as conn:
+            found = metrics.report(conn)
+            precision = ratings.new_word_precision(conn)["real"]  # your sessions, not the benchmark
+        adherence = found["adherence"].get("all")
+        complete = found["completeness"].get("all")
+        nothing = Rate(0, 0)
+        return EvalSummary(
+            replies=adherence["replies"] if adherence else 0,
+            within_limit=RateOut.of(adherence["within_limit_final"] if adherence else nothing),
+            first_draft_within_limit=RateOut.of(
+                adherence["within_limit_draft"] if adherence else nothing
+            ),
+            complete=RateOut.of(complete["complete"] if complete else nothing),
+            studied_before_finishing=RateOut.of(found["reading"]["studied_before_finishing"]),
+            new_word_precision=RateOut.of(precision),
+        )
 
     @app.get("/api/eval/items/{item_type}")
     def rating_queue(item_type: str) -> RatingQueue:

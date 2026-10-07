@@ -746,3 +746,22 @@ def test_a_rating_the_criterion_doesnt_allow_is_a_422(serve, db_path):
     client, _ = serve()
     response = client.post("/api/eval/ratings", json={"item_id": item_id, "label": "maybe"})
     assert response.status_code == 422 and "new, known, not_a_word" in response.json()["detail"]
+
+
+def test_the_evaluation_summary_reports_the_log_with_its_n(serve, db_path):
+    client, _ = serve("Hola, ¿comes en casa hoy?")
+    empty = client.get("/api/eval/summary").json()
+    assert empty["replies"] == 0 and empty["within_limit"]["value"] is None
+
+    start(client)  # the opening: one tutor reply, no new words
+    found = client.get("/api/eval/summary").json()
+    assert found["replies"] == 1
+    assert found["within_limit"] == {
+        "k": 1,
+        "n": 1,
+        "value": 1.0,
+        "low": found["within_limit"]["low"],
+        "high": 1.0,
+    }
+    assert found["complete"]["n"] == 0  # no reply with new words yet
+    assert found["new_word_precision"]["n"] == 0

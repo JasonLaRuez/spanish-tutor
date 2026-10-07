@@ -976,9 +976,20 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
         or more, which matches exactly those 2 of 264 in the whole book). Chapter 2's text
         corrected and re-indexed in the real DB (backup first; still 422 tokens) and in
         the benchmark snapshot (text only); notebook 01 §6.1 item 4.
-      - Spent on 4.4 so far: about $2.27 of the approved $2-3.
-      - **Next:** re-measure the talk with whole texts (~25¢, Jason to approve), then
-        4.4f (notebook 03, Progress panel, case study).
+      - **Re-measured with whole texts (judge run 7, 30.4¢):** the context holds the
+        answer 10/10 (was 5/10); claims supported by what the tutor was given 32/33 =
+        97% (95% CI 85-99%; was 15/31 by passages); both traps still pass, with richer
+        answers. The one unsupported claim is world knowledge (an acorn comes from a
+        tree), not an invention.
+      - Spent on 4.4: about $2.57 of the approved $2-3 (benchmark 80¢, translation 83¢ +
+        pilots 10¢ + v3 14¢, retrieval 36¢ + 30¢, the phone check's opening 4¢).
+    - **4.4f (built 2026-10-07):** `GET /api/eval/summary` and the "How the tutor is
+      doing" panel on the Progress page (adherence, completeness, new-word precision from
+      the *real log only*, studied before finishing; each with n and its 95% interval);
+      `notebooks/03_evaluation.ipynb` (re-creates every 4.4 result from stored runs and
+      ratings, no model calls; judge run ids 1-7 are hard-coded); the case study
+      `docs/evaluation.md` (Jason chose: in the repo for interviewers, plus the build log),
+      linked from the README.
   - **4.5 Readiness rings:** only after researching the PCIC license with Jason.
   - **Listening (built 2026-10-06; Jason's choices).** Text-to-speech in every skill, as
     the last feature before 4.4. A speaking skill was dropped (pronunciation scoring was
