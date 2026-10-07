@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { api, type EvalSummary, type Progress } from '../api/client'
 import { BandChart } from '../components/charts/BandChart'
 import { GrowthChart } from '../components/charts/GrowthChart'
+import { ReadinessRings } from '../components/charts/ReadinessRings'
 import { EvalPanel } from '../components/EvalPanel'
 import { StatTiles } from '../components/StatTiles'
 import { posName } from '../lib/text'
@@ -28,6 +29,7 @@ export function ProgressPage() {
       {progress && (
         <>
           <StatTiles progress={progress} />
+          <ReadinessRings levels={progress.readiness} />
           <BandChart bands={progress.bands} />
           <GrowthChart growth={progress.growth} />
           {evaluation && <EvalPanel summary={evaluation} />}

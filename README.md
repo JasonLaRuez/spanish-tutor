@@ -34,6 +34,7 @@ uv run python -m spanish_tutor.ingest.expressions review    # submits the batch
 uv run python -m spanish_tutor.ingest.expressions collect   # waits for it, keeps the approved
 uv run python -m spanish_tutor.ingest.tatoeba         # re-runs because the list changed
 uv run python -m spanish_tutor.ingest.build_lexicon   # the general lexicon (backs up the DB first)
+uv run python -m spanish_tutor.ingest.elelex          # CEFR levels A1-C1 for the readiness rings
 uv run python -m spanish_tutor.seed candidates        # ~1,500 most frequent words to review
 # Open data/processed/seed_candidates.csv and fill the `known` column:
 #   r = I recognize it, p = I can also use it myself, blank = don't know it
@@ -61,7 +62,8 @@ uv run spanish-tutor serve        # http://127.0.0.1:8000 (API docs at /docs)
 The browser UI: start a conversation (with a topic and how many words to learn first), chat
 in a chat box with clickable words, an accent keyboard and a "¿Cómo se dice…?" button,
 browse past conversations, and see your progress (words you recognize and can produce,
-coverage by word frequency, growth per conversation, and words to try using). **What next?**
+coverage by word frequency, vocabulary readiness per CEFR level, growth per conversation,
+and words to try using). **What next?**
 suggests the song or story with the fewest new words and the next chapter of your book, with
 a surprise pick and the full list to choose from yourself; a simple reader shows an item's
 new words, then its text, and marks it finished. It serves the
@@ -227,7 +229,7 @@ UI's component tests run with `npm test` in `web/`.
 | `src/spanish_tutor/` | Python package: word bank access, ingestion, skills, recommender |
 | `src/spanish_tutor/api/` | The web API (FastAPI) |
 | `web/` | The web UI (React + TypeScript, Vite) |
-| `data/raw/` | Downloaded corpora (Tatoeba, SUBTLEX-ESP, Wiktionary). Gitignored. |
+| `data/raw/` | Downloaded corpora (Tatoeba, SUBTLEX-ESP, Wiktionary, ELELex). Gitignored. |
 | `data/processed/` | Local SQLite database, analyzed corpora, seed files. Gitignored. |
 | `private/` | Song lyrics and copyrighted books. **Gitignored; never committed.** |
 | `tests/` | pytest suite |
@@ -240,6 +242,11 @@ under their own terms:
 - **SUBTLEX-ESP**: Cuetos, F., Glez-Nosti, M., Barbón, A., & Brysbaert, M. (2011).
   SUBTLEX-ESP: Spanish word frequencies based on film subtitles. *Psicológica, 32*,
   133–143. [osf.io/xp6sz](https://osf.io/xp6sz/). CC BY-NC-SA 4.0.
+- **ELELex** (CEFRLex project, CENTAL, UCLouvain):
+  [cental.uclouvain.be/cefrlex/elelex](https://cental.uclouvain.be/cefrlex/elelex/), the
+  frequency of 14k Spanish words in graded textbooks and readers at each CEFR level, A1 to
+  C1. CC BY-NC-SA 4.0. Used only to tag words with the level that introduces them, for the
+  vocabulary-readiness rings (vocabulary only, never a CEFR level).
 - **Tatoeba**: example sentences and translations from [tatoeba.org](https://tatoeba.org),
   CC BY 2.0 FR. Each example is stored with its sentence id and author for attribution.
 - **Project Gutenberg**: public-domain books from [gutenberg.org](https://www.gutenberg.org),

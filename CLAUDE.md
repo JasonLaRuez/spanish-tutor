@@ -100,7 +100,8 @@ concrete goals. Levels come from the *Plan Curricular del Instituto Cervantes* (
 lists expected grammar, functions and topic vocabulary per level A1–C2 (freely readable
 online, but copyrighted: check the license before committing anything extracted from it;
 treat it like `private/` until then).
-- `lexemes.cefr_level` tags each word with its PCIC level where known.
+- `lexemes.cefr_level` tags each word with its level where known: from **ELELex**, not the
+  PCIC (its license reserves all rights; see slice 4.5).
 - Progress is reported as vocabulary coverage per level, split by mode: e.g. "B1:
   recognize 68%, can produce 41%." Jason wants this visualized (e.g. a circular progress
   ring per level). There is no UI in the roadmap yet, so this adds new scope.
@@ -270,8 +271,9 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
   accent respellings, candidate measurement), 4.2 (the reading skill) and 4.3 (the lyrics
   skill) are built. The real database (migration 8) holds Quiroga (too hard), *An
   Elementary Spanish Reader* (suggested) and Bécquer's 76 *Rimas* (10 within the
-  ceiling). **Listening (Piper text-to-speech) is built** (2026-10-06). Next: slice 4.4
-  (evaluation), the last feature before Jason's long stretch of testing and real use.
+  ceiling). **Listening (Piper text-to-speech) is built** (2026-10-06). Slices 4.4
+  (evaluation) and 4.5 (readiness rings, migration 9 in the real DB) are built
+  (2026-10-07), so Phase 4 is complete. Next: Jason's long stretch of testing and real use.
   - **Built so far:** word bank schema + migrations 001–008; seed (1,086 recognized / 803
     produced after the seed-gap and expression marks; grows with sessions); general lexicon; Tatoeba in
     Chroma (261k sentences); the conversation skill with write-back, topic pre-teaching
@@ -990,7 +992,41 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
       ratings, no model calls; judge run ids 1-7 are hard-coded); the case study
       `docs/evaluation.md` (Jason chose: in the repo for interviewers, plus the build log),
       linked from the README.
-  - **4.5 Readiness rings:** only after researching the PCIC license with Jason.
+  - **4.5 Readiness rings (built 2026-10-07; Jason's choices: ELELex, 3 documents,
+    cumulative rings).**
+    - **Source:** the PCIC is "Reservados todos los derechos" (permission from
+      cvc@cervantes.es would be needed), so levels come from **ELELex** (CEFRLex, UCLouvain;
+      CC BY-NC-SA 4.0 like SUBTLEX-ESP): 14,290 words with their frequency and number of
+      documents in graded textbooks and readers per level, A1-C1 (no C2). Receptive,
+      textbook vocabulary. `ingest/elelex.py` downloads it to `data/raw/ELELex.tsv`
+      (SHA-256 pinned) and fills the existing `lexemes.cefr_level`; no migration.
+    - **Level = the first level at which ≥ 3 documents use the word** (`--min-docs`).
+      Measured: with 1, A1 had 3,094 words (one stray textbook is enough); with 3, 1,408.
+    - **Matching FreeLing's lemmas to ours** (general rules only): tags → our POS, names
+      dropped; multi-word entries → our expressions (`a_el_aire_libre` → *al aire libre*,
+      EXPR); a lemma listed as both NCM and NCF is a gender pair, and its NCF entry is the
+      feminine word (-o → -a, -or → -ora: *esposa*, *señora*; *mano* NCF alone stays);
+      function words still untagged after the exact match take their lemma's earliest
+      level under any POS (*sí*, *mismo*). Coverage of our top 500 / 1,500 / 3,000 words:
+      89.4% / 82.6% / 72.6% (exact match alone: 87.0 / 81.1 / 71.5). Left unleveled:
+      numbers, most *-mente* adverbs (ELELex has 6), *ella*, *ustedes*.
+    - **SQL (Jason approved):** `sql/fill_cefr_levels.sql` (clear, exact match, function-
+      word fallback; re-runnable; never inserts lexemes) and
+      `sql/queries/readiness_by_level.sql` (per level, then running totals with
+      `SUM() OVER (ORDER BY level ROWS UNBOUNDED PRECEDING)`). `build_lexicon` re-applies
+      the levels at the end (its merge never sets `cefr_level`).
+    - **Real DB (2026-10-07, backup first):** 4,671 lexemes leveled (A1 1,408, A2 1,468, B1
+      1,014, B2 477, C1 304). Readiness, recognize / produce: up to A1 45% / 38%, A2 29% /
+      23%, B1 23% / 18%, B2 21% / 16%, C1 20% / 15%. Unknown A1 words are mostly textbook
+      topic words past the seed's frequency range (*museo*, *horario*, *pescado*).
+    - **Known limit:** ELELex's document counts are thin for a few very frequent function
+      words, so 4 of the 88 function words above 500 per million land above A1 (*cómo*,
+      *la* A2; *como*, *nos* B1). No general rule fixes them; accepted.
+    - **UI:** `GET /api/progress` has `readiness`; the Progress page's "Vocabulary
+      readiness" card (`components/charts/ReadinessRings.tsx`): one ring per level, outer
+      arc recognize (blue), inner can produce (orange), a table view, the caption
+      "Vocabulary only, not a CEFR level…", and a hint when no levels are filled.
+      `web/e2e/phone.mjs` checks the five rings at phone width.
   - **Listening (built 2026-10-06; Jason's choices).** Text-to-speech in every skill, as
     the last feature before 4.4. A speaking skill was dropped (pronunciation scoring was
     its point; the Claude API takes no audio).

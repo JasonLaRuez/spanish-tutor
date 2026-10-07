@@ -213,6 +213,19 @@ class Band(BaseModel):
     produced: int
 
 
+class Readiness(BaseModel):
+    """Vocabulary readiness at one CEFR level (ELELex): the words textbooks introduce at
+    that level, and running totals up to it. Vocabulary only, never a CEFR level."""
+
+    level: Literal["A1", "A2", "B1", "B2", "C1", "C2"]
+    words: int
+    recognized: int
+    produced: int
+    words_up_to: int
+    recognized_up_to: int
+    produced_up_to: int
+
+
 class Growth(BaseModel):
     session_id: int | None  # None: the seed
     topic: str | None
@@ -233,6 +246,7 @@ class Progress(BaseModel):
     recognition: int
     production: int
     bands: list[Band]
+    readiness: list[Readiness]  # empty until levels are filled (ingest.elelex)
     growth: list[Growth]
     try_using: list[GapWord]
 
@@ -688,6 +702,7 @@ def create_app(
                 recognition=counts["recognition"],
                 production=counts["production"],
                 bands=progress.coverage_by_band(conn),
+                readiness=progress.readiness(conn),
                 growth=progress.growth_by_session(conn),
                 try_using=progress.try_using(conn, try_using),
             )

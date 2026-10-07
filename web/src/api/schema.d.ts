@@ -832,6 +832,8 @@ export interface components {
             production: number;
             /** Bands */
             bands: components["schemas"]["Band"][];
+            /** Readiness */
+            readiness: components["schemas"]["Readiness"][];
             /** Growth */
             growth: components["schemas"]["Growth"][];
             /** Try Using */
@@ -877,6 +879,30 @@ export interface components {
             criterion: components["schemas"]["CriterionOut"];
             /** Items */
             items: components["schemas"]["RatingItem"][];
+        };
+        /**
+         * Readiness
+         * @description Vocabulary readiness at one CEFR level (ELELex): the words textbooks introduce at
+         *     that level, and running totals up to it. Vocabulary only, never a CEFR level.
+         */
+        Readiness: {
+            /**
+             * Level
+             * @enum {string}
+             */
+            level: "A1" | "A2" | "B1" | "B2" | "C1" | "C2";
+            /** Words */
+            words: number;
+            /** Recognized */
+            recognized: number;
+            /** Produced */
+            produced: number;
+            /** Words Up To */
+            words_up_to: number;
+            /** Recognized Up To */
+            recognized_up_to: number;
+            /** Produced Up To */
+            produced_up_to: number;
         };
         /** ReadingLookUp */
         ReadingLookUp: {

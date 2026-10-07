@@ -252,6 +252,22 @@ def test_progress_counts_the_word_bank_and_its_growth(serve):
     assert {w["lemma"] for w in after["try_using"]} == set(KNOWN) - {"yo", "estar", "cansado"}
 
 
+def test_progress_reports_readiness_once_words_have_levels(serve, db_path):
+    client, _ = serve("Hola.")
+    assert client.get("/api/progress").json()["readiness"] == []
+
+    conn = db.connect(db_path)
+    with conn:
+        conn.execute("UPDATE lexemes SET cefr_level = 'A1' WHERE lemma IN ('yo', 'estar')")
+        conn.execute("UPDATE lexemes SET cefr_level = 'B1' WHERE lemma = 'cansado'")
+    conn.close()
+    readiness = client.get("/api/progress").json()["readiness"]
+    assert [(r["level"], r["words"], r["words_up_to"]) for r in readiness] == [
+        ("A1", 2, 2),
+        ("B1", 1, 3),
+    ]
+
+
 # --- The web UI ---------------------------------------------------------------------------------
 
 

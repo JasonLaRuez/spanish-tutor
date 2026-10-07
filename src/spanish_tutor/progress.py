@@ -33,6 +33,11 @@ def coverage_by_band(conn: sqlite3.Connection) -> list[dict]:
     return rows(conn, "progress_by_band")
 
 
+def readiness(conn: sqlite3.Connection) -> list[dict]:
+    """Vocabulary readiness per CEFR level (ELELex), with running totals up to each level."""
+    return rows(conn, "readiness_by_level")
+
+
 def growth_by_session(conn: sqlite3.Connection) -> list[dict]:
     return rows(conn, "progress_by_session")
 

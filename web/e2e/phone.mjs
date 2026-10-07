@@ -1,6 +1,6 @@
 // Phone-size walk-through on a database copy: every page at iPhone width (390x844) with
 // nothing wider than the screen, the menu drawer opening and closing, and the desktop
-// layout unchanged at 1280 px. Starts a reading session on the copy; no model calls.
+// layout unchanged at 1280 px. The readiness rings need a copy with ELELex levels. Starts a reading session on the copy; no model calls.
 import { chromium } from 'playwright-core'
 
 const BASE = process.env.E2E_BASE ?? 'http://127.0.0.1:8765'
@@ -55,6 +55,10 @@ await phone.locator('#sidebar').getByRole('link', { name: 'Progress' }).click()
 await phone.waitForURL(/\/progress$/)
 await phone.waitForTimeout(400)
 check(!(await phone.locator('#sidebar').isVisible()), 'choosing a page closes the drawer')
+const rings = phone.getByRole('img', { name: /^Up to (A1|A2|B1|B2|C1):/ })
+check((await rings.count()) === 5, 'progress: five readiness rings (A1-C1), if the copy has levels')
+await phone.getByRole('heading', { name: 'Vocabulary readiness' }).scrollIntoViewIfNeeded()
+await phone.screenshot({ path: `${OUT}/phone-readiness.png` })
 
 const desktop = await browser.newPage({ viewport: { width: 1280, height: 900 } })
 await desktop.goto(BASE + '/')

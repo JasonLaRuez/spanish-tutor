@@ -22,7 +22,7 @@ from typing import NamedTuple
 
 from spanish_tutor import db
 from spanish_tutor.config import DB_PATH, SQL_DIR
-from spanish_tutor.ingest import subtlex
+from spanish_tutor.ingest import elelex, subtlex
 from spanish_tutor.ingest.download import RAW_DIR, WIKTIONARY_FILE
 from spanish_tutor.ingest.expressions import definitions as expression_definitions
 from spanish_tutor.ingest.tatoeba import (
@@ -292,6 +292,12 @@ def main() -> None:
             f"{counts.cleared:,} with frequency cleared (no longer built, kept for history); "
             f"{total:,} in total"
         )
+        # The merge never touches cefr_level, so words it added have none: re-tag.
+        if elelex.PATH.exists():
+            levels = elelex.apply(conn)
+            print(f"CEFR levels (ELELex): {levels.exact + levels.function_words:,} lexemes tagged")
+        else:
+            print("CEFR levels skipped: run `uv run python -m spanish_tutor.ingest.elelex`")
     finally:
         conn.close()
 
