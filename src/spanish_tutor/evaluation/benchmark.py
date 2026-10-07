@@ -55,9 +55,12 @@ EVAL_DIR = DATA_DIR / "processed" / "eval"
 BASE_DB = EVAL_DIR / "benchmark-base.db"
 RUNS_DIR = EVAL_DIR / "benchmark"
 
-# Claude Opus 5.5, per million tokens (the claude-api skill, 2026-09-25): input $4, output
-# $20; cache writes 1.25x (5-minute) or 2x (1-hour), cache reads 0.05x.
-PRICE_IN, PRICE_OUT = 4.0, 20.0
+# Dollars per million tokens (the claude-api skill, 2026-09-25): input, output, cache read.
+# Cache writes cost 1.25x input (5-minute) or 2x (1-hour).
+PRICES = {
+    "claude-opus-5-5": (4.0, 20.0, 0.20),
+    "claude-sonnet-5-5": (2.0, 10.0, 0.20),  # the translation judge (slice 4.4d)
+}
 
 
 # --- The script -------------------------------------------------------------------------
@@ -130,22 +133,29 @@ class Recorder:
         self.calls.append(("select", generation))
         return generation.reply
 
+    def ask(self, schema: type, prompt: str) -> Generation:
+        """Any other structured request (the lyrics skill's attempt comparison)."""
+        generation = self.inner.ask(schema, prompt)
+        self.calls.append(("ask", generation))
+        return generation
+
     def summarize(self, prompt: str) -> Generation:
         generation = self.inner.summarize(prompt)
         self.calls.append(("summary", generation))
         return generation
 
 
-def cents(generation: Generation) -> float:
-    """One call's cost in cents, from its token counts."""
+def cents(generation: Generation, model: str = MODEL) -> float:
+    """One call's cost in cents, from its token counts and the model's prices."""
     g = generation
+    price_in, price_out, price_read = PRICES[model]
     plain = g.input_tokens - g.cache_write_5m_tokens - g.cache_write_1h_tokens
     dollars = (
-        plain * PRICE_IN
-        + g.cache_write_5m_tokens * PRICE_IN * 1.25
-        + g.cache_write_1h_tokens * PRICE_IN * 2
-        + g.cache_read_tokens * PRICE_IN * 0.05
-        + g.output_tokens * PRICE_OUT
+        plain * price_in
+        + g.cache_write_5m_tokens * price_in * 1.25
+        + g.cache_write_1h_tokens * price_in * 2
+        + g.cache_read_tokens * price_read
+        + g.output_tokens * price_out
     ) / 1e6
     return dollars * 100
 

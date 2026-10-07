@@ -879,6 +879,51 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
       interval; `python -m spanish_tutor.evaluation report [--db] [--session]` (read-only).
       Real log, 2026-10-06: adherence 25/25 (95% CI 87-100%), completeness 5/5 (57-100%),
       reading and recommendation n = 0.
+    - **4.4c (built):** `evaluation/benchmark.json` (8 topics × 5 messages: 24 planted
+      mistakes, 14 wrong form / 10 wrong word, 16 correct; Jason reviewed it),
+      `evaluation/benchmark.py` (a frozen snapshot `data/processed/eval/benchmark-base.db`,
+      each run on a copy; a `Recorder` keeps the misuse flags, which the database doesn't
+      store, and every call's cost; metrics take `:from_session` because the snapshot
+      also holds the real history, a bug the pilot found). The Rate page
+      (`evaluation/ratings.py`, `/api/eval*`, `pages/Rate.tsx`) and its queue.
+      - **Results (2026-10-06, 80.1¢ for 8 topics):** 24/24 planted mistakes flagged, all
+        as the right kind; 16/16 correct messages unflagged; 48/48 replies within the
+        limit, no retries; completeness 8/8. The textbook mistakes all pass, so the set
+        is too easy to find limits: a harder v2 (subjunctive, por/para, two mistakes in a
+        message) is a later option; for now it's a regression test.
+      - **New-word detector precision (Jason rated 13 taught words in chat, recorded as
+        `human`): 8/13 = 62% (95% CI 36-82%)**; real log 2/5, benchmark 6/8. No tagging
+        errors. My guesses were wrong: *qué* INTJ ("¡Qué bien!"), *como* ADP and *en casa*
+        were really new to him. The 5 known ones are a word-bank coverage gap, not a
+        detector error: 4 rank 1,821-2,656 (past the seed review's 1,500; never offered),
+        and *cada* (rank 231) was offered but left blank. The gap closes itself (each
+        taught word joins the bank); a seed review of ranks 1,501-3,000 would close it
+        faster, if extra lessons on known words become annoying (Jason's call).
+    - **4.4d (built 2026-10-07):** `evaluation/translation.py` (on a database copy:
+      a lyrics session logs the poem as started, which would skew the real log's
+      recommendation metrics), `evaluation/agreement.py` (Krippendorff's alpha; matches
+      the paper's example: 0.743 nominal / 0.815 ordinal / 0.849 interval),
+      `sql/queries/eval_judge_consistency.sql`. Judge: Sonnet 5.5, medium effort, one
+      call per poem, 5 repeats, scores naturalness and faithfulness 1-5 (`RUBRIC`);
+      invalid judgments retried once, then skipped. Attempts: 18 (6 lines × right / close /
+      missed, Jason reviewed them) through the app's own comparison, 5 repeats.
+      - **Rubric v2 (Jason):** "supplying a word the Spanish implies is faithful, not an
+        addition" (English needs words Spanish leaves unsaid). In the v1 pilot the judge
+        wobbled 4/5 on "For one glance, **I'd give** a world" (5,4,4,5,5); under v2: 5×5.
+      - **Full run (83.3¢; judge run 3, attempt run 4 in the real DB):** 88 lines × 5.
+        Naturalness alpha 0.851 (all 5 agree 58/88, within 1 point 88/88, mean 4.22);
+        faithfulness alpha 0.824 (64/88, 86/88, mean 4.44): both above 0.80, the level
+        Krippendorff calls reliable. The 2 faithfulness lines that spread >1 point and
+        the lowest naturalness lines ("of your sighs is;") are sentences split across
+        lines: line-by-line translation (for side-by-side display) makes fragments. Some
+        faithfulness reasons cite awkwardness (criterion bleed). Attempt verdicts: alpha
+        1.0, 85/90 match the intended verdict; the 5 misses are one attempt, "Do you know
+        when it comes back?" for *¿Sabes tú adónde va?*, called "close" 5/5 although its
+        own comment says the meaning is wrong: the app's comparison is lenient when the
+        form is right. A perfectly consistent judge can be consistently wrong.
+      - Spent on 4.4 so far: about $1.77 of the approved $2-3.
+      - **Next:** calibration (Jason rates naturalness of a sample of the 88 queued lines;
+        judge vs Jason), then 4.4e retrieval (~50¢), 4.4f.
   - **4.5 Readiness rings:** only after researching the PCIC license with Jason.
   - **Listening (built 2026-10-06; Jason's choices).** Text-to-speech in every skill, as
     the last feature before 4.4. A speaking skill was dropped (pronunciation scoring was

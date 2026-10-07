@@ -4,6 +4,8 @@ python -m spanish_tutor.evaluation report [--db PATH] [--session N]
 python -m spanish_tutor.evaluation freeze [--force]
 python -m spanish_tutor.evaluation benchmark [--pilot | --topic T ...]
 python -m spanish_tutor.evaluation score RUN_DIR
+python -m spanish_tutor.evaluation translations [--pilot]
+python -m spanish_tutor.evaluation consistency RUN_ID [RUN_ID ...]
 """
 
 import argparse
@@ -13,7 +15,7 @@ from pathlib import Path
 
 from spanish_tutor import db
 from spanish_tutor.config import DB_PATH
-from spanish_tutor.evaluation import benchmark
+from spanish_tutor.evaluation import benchmark, translation
 from spanish_tutor.evaluation.metrics import format_report, report
 
 
@@ -43,6 +45,12 @@ def main() -> None:
     which.add_argument("--topic", action="append", help="these topics only")
     scored = commands.add_parser("score", help="score a benchmark run")
     scored.add_argument("run_dir", type=Path)
+    tr = commands.add_parser(
+        "translations", help="translate, judge repeatedly, and judge attempts (costs money)"
+    )
+    tr.add_argument("--pilot", action="store_true", help="Rima XXIII and Rima XVII only (~5¢)")
+    agree = commands.add_parser("consistency", help="how much a judge run agrees with itself")
+    agree.add_argument("run_id", type=int, nargs="+")
     args = parser.parse_args()
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
@@ -77,8 +85,23 @@ def main() -> None:
         source.close()
         target.close()
         print(f"Queued {added} taught words for rating. Run directory: {run_dir}")
-    else:
+    elif args.command == "score":
         show_run(args.run_dir)
+    elif args.command == "translations":
+        if not benchmark.BASE_DB.exists():
+            sys.exit("No snapshot yet: run `python -m spanish_tutor.evaluation freeze` first.")
+        summary = translation.run(pilot=args.pilot)
+        print(f"Translated {len(summary['poems'])} poems ({summary['lines']} lines)")
+        print(f"Cost (¢): {summary['cents']}")
+        conn = db.connect()
+        for run_id in (summary["judge_run"], summary["attempt_run"]):
+            print(translation.format_consistency(run_id, translation.consistency(conn, run_id)))
+        conn.close()
+    else:
+        conn = sqlite3.connect(f"file:{DB_PATH.as_posix()}?mode=ro", uri=True)
+        for run_id in args.run_id:
+            print(translation.format_consistency(run_id, translation.consistency(conn, run_id)))
+        conn.close()
 
 
 if __name__ == "__main__":
