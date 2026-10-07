@@ -5,6 +5,7 @@ import pytest
 from fakes import Scripted, add_content_lexicon, analyze_content, story
 from langchain_core.embeddings import DeterministicFakeEmbedding
 
+from spanish_tutor import reading as reading_module
 from spanish_tutor.reading import ReadingSession, TextPassages
 from spanish_tutor.words import LexiconIndex
 
@@ -146,26 +147,45 @@ def test_a_form_resolved_earlier_counts_as_that_word(conn, lexicon):
     assert lemmas(session.new_words) == ["ser"]
 
 
-def test_the_discussion_continues_the_session_with_passages_from_the_text(conn, lexicon):
-    generate = Scripted("¿Te gustó el cuento?", "¡Sí! El gato come.")
+def discussed(conn, generate):
     session = reading(conn, generate=generate)
     session.study([w.lexeme.lexeme_id for w in session.new_words])
     session.finish()
-
     tutor = session.discuss(DeterministicFakeEmbedding(size=32))
     tutor.open()
     tutor.respond("El gato come.")
+    return session, tutor
+
+
+def test_the_discussion_of_a_short_text_has_the_whole_text_in_its_prompt(conn, lexicon):
+    generate = Scripted("¿Te gustó el cuento?", "¡Sí! El gato come.")
+    session, tutor = discussed(conn, generate)
 
     assert tutor.session_id == session.session_id
     numbers = [n for n, *_ in turns(conn, session.session_id)]
     assert numbers == list(range(1, len(numbers) + 1))  # one numbering for the whole session
     opening = generate.requests[0][-2].content[0]["text"]
     assert "just finished reading «Cuento»" in opening
+    system = "".join(block["text"] for block in generate.requests[1][0].content)
+    assert "## The text: «Cuento»" in system
+    assert "El gato come. Sin embargo, María duerme.\n\nEl gato sale del jardín. Llueve." in system
+    assert tutor.passages is None  # nothing retrieved
+    assert "Passages from the text" not in generate.requests[1][-1].content
+    sources = {source for _, _, source in events(conn, session.session_id)}
+    assert sources == {"reading"}
+
+
+def test_the_discussion_of_a_long_text_retrieves_passages_instead(conn, lexicon, monkeypatch):
+    monkeypatch.setattr(reading_module, "WHOLE_TEXT_WORDS", 3)  # TEXT is longer than that
+    generate = Scripted("¿Te gustó el cuento?", "¡Sí! El gato come.")
+    _, tutor = discussed(conn, generate)
+    assert tutor.passages is not None
+
+    system = "".join(block["text"] for block in generate.requests[1][0].content)
+    assert "## The text:" not in system
     note = generate.requests[1][-1].content
     assert "Passages from the text the learner read" in note
     assert "El gato come." in note
-    sources = {source for _, _, source in events(conn, session.session_id)}
-    assert sources == {"reading"}
 
 
 def test_passages_group_sentences_and_return_the_closest(conn):

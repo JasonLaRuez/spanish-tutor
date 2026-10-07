@@ -38,6 +38,13 @@ from spanish_tutor.words import Event, Lexeme, LexiconIndex, log_events
 SOURCE = "reading"
 STUDY_BATCH = 20
 PASSAGE_SENTENCES = 3  # sentences (or song lines) per retrievable passage
+# A text this short (about 3,000 tokens) is given to the discussion whole instead of by
+# retrieved passages (Jason, 2026-10-07). Measured in slice 4.4e: the 3 passages held the
+# answer to only 5 of 10 questions about 400-word chapters. 2,000 words covers every
+# chapter of An Elementary Spanish Reader (at most 1,753), every poem (706) and about
+# half of Quiroga's stories (median 2,237); it adds at most ~2.4¢ of cache writing to a
+# discussion, then cheap cache reads.
+WHOLE_TEXT_WORDS = 2000
 READING_INSTRUCTIONS = INSTRUCTIONS + (Path(__file__).parent / "prompts" / "reading.md").read_text(
     encoding="utf-8"
 )
@@ -216,6 +223,9 @@ class ReadingSession:
         model loaded) the tutor still talks about the text, from its title alone.
         """
         title = self.item["title"]
+        # A short text goes into the prompt whole (cached with the rest of it), and nothing
+        # is retrieved; a long one is searched for the passages closest to each message.
+        whole = len(self.item["text_es"].split()) <= WHOLE_TEXT_WORDS
         return Tutor(
             self.conn,
             self.generate,
@@ -232,9 +242,16 @@ class ReadingSession:
                 f"[The learner has just finished reading «{title}». Greet them and ask a "
                 "simple first question about it.]"
             ),
-            instructions=READING_INSTRUCTIONS,
-            passages=TextPassages(self.units, embeddings) if embeddings else None,
+            instructions=READING_INSTRUCTIONS + (self.whole_text() if whole else ""),
+            passages=TextPassages(self.units, embeddings) if embeddings and not whole else None,
         )
+
+    def whole_text(self) -> str:
+        """The text for the discussion's prompt: paragraphs (stanzas) apart, a song's lines
+        on lines of their own."""
+        joiner = "\n" if self.item["kind"] in content.VERSE else " "
+        body = "\n\n".join(joiner.join(paragraph) for paragraph in self.paragraphs)
+        return f"\n\n## The text: «{self.item['title']}»\n\n{body}\n"
 
     # --- Helpers ---
 

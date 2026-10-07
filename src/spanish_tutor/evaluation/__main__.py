@@ -15,7 +15,7 @@ from pathlib import Path
 
 from spanish_tutor import db
 from spanish_tutor.config import DB_PATH
-from spanish_tutor.evaluation import benchmark, translation
+from spanish_tutor.evaluation import benchmark, retrieval, translation
 from spanish_tutor.evaluation.metrics import format_report, report
 
 
@@ -58,6 +58,17 @@ def main() -> None:
     again.add_argument("--poem", action="append", help="these poems only")
     versus = commands.add_parser("calibration", help="a judge run against Jason's ratings")
     versus.add_argument("run_id", type=int, nargs="+")
+    found = commands.add_parser(
+        "retrieval", help="context relevance and faithfulness of retrieval (costs money)"
+    )
+    found.add_argument(
+        "benchmark_runs", type=Path, nargs="*", help="default: every benchmark run directory"
+    )
+    found.add_argument(
+        "--discussions-only", action="store_true", help="only the talk about a text (~25 cents)"
+    )
+    shown = commands.add_parser("retrieval-summary", help="summarize a retrieval judge run")
+    shown.add_argument("run_id", type=int)
     args = parser.parse_args()
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
@@ -103,6 +114,17 @@ def main() -> None:
         conn = db.connect()
         for run_id in (summary["judge_run"], summary["attempt_run"]):
             print(translation.format_consistency(run_id, translation.consistency(conn, run_id)))
+        conn.close()
+    elif args.command == "retrieval":
+        runs = args.benchmark_runs or sorted(p for p in benchmark.RUNS_DIR.iterdir() if p.is_dir())
+        summary = retrieval.run(runs, examples=not args.discussions_only)
+        print(f"Cost (¢): {summary['cents']}")
+        conn = db.connect()
+        print(retrieval.format_summary(retrieval.summarize(conn, summary["run_id"])))
+        conn.close()
+    elif args.command == "retrieval-summary":
+        conn = sqlite3.connect(f"file:{DB_PATH.as_posix()}?mode=ro", uri=True)
+        print(retrieval.format_summary(retrieval.summarize(conn, args.run_id)))
         conn.close()
     elif args.command == "rejudge":
         conn = db.connect()

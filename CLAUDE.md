@@ -946,8 +946,39 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
         unknown words, so verse can pass it while being far harder than prose; a stricter
         ceiling for verse, or holding it back until the word bank is larger, is a later
         option (roadmap Phase 4 item `p4-diff`).
-      - Spent on 4.4 so far: about $1.91 of the approved $2-3.
-      - **Next:** 4.4e retrieval (~50¢), then 4.4f.
+    - **4.4e (built 2026-10-07):** `evaluation/retrieval.py`, RAGAS's two retrieval
+      metrics implemented directly (judge: Sonnet 5.5, medium, one judgment per item).
+      Run: 36¢ (tutor 22¢, judge 14¢), judge run 6 in the real DB.
+      - **Conversation examples (context relevance):** the tutor's example retrieval
+        re-run for the 40 benchmark messages against the snapshot's vocabulary (free;
+        approximation: without words taught during the conversation). 159 sentences:
+        relevant 67% (95% CI 60-74%), relevant or partly 99%.
+      - **Talk about a text (faithfulness):** two scripted discussions (chapters 1-2 of
+        the Elementary Reader, 5 questions each, 2 traps Jason reviewed). Both traps
+        passed ("La historia no dice su nombre"). Claims supported by that turn's 3
+        passages: 15/31 (48%), but 12 of the rest were in the text, from passages of
+        earlier turns that stay in the history (the judge sees only the current
+        turn's): against the whole text 27/31 = 87%. The 4 "not in the text" are
+        inferences (*rico* → money), no invented names or events: an "inferred" label
+        would separate them in a v2. The weak spot was retrieval: the 3 passages held
+        the answer to only 5/10 questions.
+      - **Whole text for short readings (Jason, 2026-10-07):** `reading.WHOLE_TEXT_WORDS`
+        = 2,000 words. A text that short goes into the discussion's system prompt whole
+        (`ReadingSession.whole_text`, inside the 1-hour cached prefix) and nothing is
+        retrieved; longer texts keep `TextPassages`. Covers every Elementary Reader
+        chapter (max 1,753 words), every poem (706) and about half of Quiroga (median
+        2,237); costs at most ~2.4¢ of cache writing per discussion. `prompts/reading.md`
+        now says the tutor has either the whole text or passages, and to say so when the
+        text doesn't answer. The evaluation records what the tutor was given
+        (`given`); `retrieval --discussions-only` re-measures the talk (~25¢).
+      - Also fixed while preparing it: margin numbers after only two spaces survived in
+        the Elementary Reader's chapter 2 (the manifest's pattern wanted three; now two
+        or more, which matches exactly those 2 of 264 in the whole book). Chapter 2's text
+        corrected and re-indexed in the real DB (backup first; still 422 tokens) and in
+        the benchmark snapshot (text only); notebook 01 §6.1 item 4.
+      - Spent on 4.4 so far: about $2.27 of the approved $2-3.
+      - **Next:** re-measure the talk with whole texts (~25¢, Jason to approve), then
+        4.4f (notebook 03, Progress panel, case study).
   - **4.5 Readiness rings:** only after researching the PCIC license with Jason.
   - **Listening (built 2026-10-06; Jason's choices).** Text-to-speech in every skill, as
     the last feature before 4.4. A speaking skill was dropped (pronunciation scoring was

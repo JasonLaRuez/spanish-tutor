@@ -458,7 +458,7 @@ def rejudge(
         p for p in poems_from_queue(conn, translation_run) if titles is None or p[0].title in titles
     ]
     recorder = Recorder(
-        _Asker(ask or ClaudeGenerator(model=JUDGE_MODEL, effort="medium", max_tokens=8000).ask)
+        Asker(ask or ClaudeGenerator(model=JUDGE_MODEL, effort="medium", max_tokens=8000).ask)
     )
     run_id, _ = judge_poems(conn, poems, recorder.ask, repeats)
     return run_id, round(sum(cents(g, JUDGE_MODEL) for _, g in recorder.calls), 2)
@@ -487,7 +487,7 @@ def run(
     copy_database(base, copy)
     resources = load(copy)
     app = Recorder(resources.generate)  # the attempt comparison (low effort)
-    translate = Recorder(_Asker(translator or ClaudeGenerator(effort="medium").ask))
+    translate = Recorder(Asker(translator or ClaudeGenerator(effort="medium").ask))
     resources = replace(resources, generate=app)
     target = target or db.connect()
     db.init_schema(target)
@@ -525,7 +525,7 @@ def run(
         log(f"  translated {poem.title} ({len(poem.lines)} lines)")
 
     judge_recorder = Recorder(
-        _Asker(judge or ClaudeGenerator(model=JUDGE_MODEL, effort="medium", max_tokens=8000).ask)
+        Asker(judge or ClaudeGenerator(model=JUDGE_MODEL, effort="medium", max_tokens=8000).ask)
     )
     judge_run, _ = judge_poems(target, poems, judge_recorder.ask, repeats, log=log)
     attempts = [a for a in ATTEMPTS if a.content_id in sessions]
@@ -553,7 +553,7 @@ def run(
     return summary
 
 
-class _Asker:
+class Asker:
     """Wraps a bare `ask` function so a Recorder can record it."""
 
     def __init__(self, ask: Callable[..., Generation]):
