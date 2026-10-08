@@ -328,11 +328,26 @@ def test_events_can_reference_the_turn_that_caused_them(conn):
 
 def test_lexeme_reviews_record_verdicts_with_their_reviewer(conn):
     casa = add_lexeme(conn, "casa")
+    run = conn.execute(
+        "INSERT INTO eval_runs (kind, model) VALUES ('judge', 'claude-sonnet-5-5')"
+    ).lastrowid
     conn.execute(
-        "INSERT INTO lexeme_reviews (lexeme_id, field, verdict, suggestion, reviewer) "
-        "VALUES (?, 'definition_en', 'incorrect', 'house, home', 'claude-opus-5-5')",
+        "INSERT INTO lexeme_reviews (lexeme_id, field, verdict, suggestion, reason, reviewer, "
+        "run_id) VALUES (?, 'definition_en', 'incorrect', 'house, home', 'r', 'claude-sonnet-5-5', ?)",
+        (casa, run),
+    )
+    conn.execute(
+        "INSERT INTO lexeme_reviews (lexeme_id, field, verdict, reviewer) "
+        "VALUES (?, 'definition_en', 'correct', 'human')",
         (casa,),
     )
+    for reviewer, run_id in (("claude-sonnet-5-5", None), ("human", run)):
+        with pytest.raises(sqlite3.IntegrityError):  # a model needs its run; a person has none
+            conn.execute(
+                "INSERT INTO lexeme_reviews (lexeme_id, field, verdict, reviewer, run_id) "
+                "VALUES (?, 'pos', 'correct', ?, ?)",
+                (casa, reviewer, run_id),
+            )
     with pytest.raises(sqlite3.IntegrityError):
         conn.execute(
             "INSERT INTO lexeme_reviews (lexeme_id, field, verdict, reviewer) "
@@ -349,7 +364,7 @@ def test_pending_migrations_lists_only_what_an_old_database_needs(conn):
     old = connect(":memory:")
     old.executescript((FIXTURES / "schema_v1.sql").read_text(encoding="utf-8"))
     old.execute("PRAGMA user_version = 1")
-    assert pending_migrations(old) == [2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+    assert pending_migrations(old) == [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 
 
 def test_version_2_database_upgrades_to_version_3_keeping_notes(conn):
@@ -851,3 +866,29 @@ def test_version_10_database_gains_the_english_tables(conn):
         old.execute("INSERT INTO english_words VALUES (?, 3, 'hola', 'spanish')", (song,))
     with pytest.raises(sqlite3.IntegrityError):  # words belong to a check
         old.execute("INSERT INTO english_words VALUES (999, 1, 'come', 'english')")
+
+
+def test_version_11_database_gains_the_lexicon_review_keeping_eval_items_and_ratings(conn):
+    old = database_at(11)
+    item = old.execute(
+        "INSERT INTO eval_items (item_type, source_ref, content) VALUES ('new_word_flag', 't:1', '{}')"
+    ).lastrowid
+    old.execute(
+        "INSERT INTO ratings (item_id, criterion, rater, label) VALUES (?, 'truly_new', 'human', 'new')",
+        (item,),
+    )
+    old.commit()
+
+    init_schema(old)
+
+    assert table_shapes(old) == table_shapes(conn)
+    assert old.execute("PRAGMA user_version").fetchone()[0] == 12
+    assert old.execute("SELECT COUNT(*) FROM ratings").fetchone()[0] == 1
+    assert old.execute("PRAGMA foreign_key_check").fetchall() == []
+    old.execute(
+        "INSERT INTO eval_items (item_type, source_ref, content) VALUES ('lexeme_flag', 'r:1', '{}')"
+    )
+    with pytest.raises(sqlite3.IntegrityError):
+        old.execute(
+            "INSERT INTO eval_items (item_type, source_ref, content) VALUES ('other', 'r:2', '{}')"
+        )

@@ -106,3 +106,43 @@ describe('The rating page', () => {
     expect(send).toHaveBeenCalledWith(1, { score: 4 })
   })
 })
+
+describe('Rating the lexicon review', () => {
+  it('shows a flagged field with its fix, reasons and the three choices', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(api, 'evalOverview').mockResolvedValue(overview())
+    const flag = word({
+      item_id: 9,
+      item_type: 'lexeme_flag',
+      source_ref: 'lexeme_reviews:3:120:definition_en',
+      content: {
+        lexeme_id: 120, lemma: 'vida', pos: 'NOUN', field: 'definition_en', current: 'prostitution (slang)',
+        verdict: 'incorrect', suggestion: 'life', reason: 'A rare slang sense, not the common one.',
+        definition_en: 'prostitution (slang)', example_es: 'La vida es bella.', example_en: 'Life is beautiful.',
+        second_opinion: 'Sonnet: incorrect — “life”', group: 'both',
+      },
+    })
+    const lexemeQueue: RatingQueue = {
+      criterion: {
+        item_type: 'lexeme_flag', name: 'flag_right',
+        question: 'Is the flagged problem real, and is the suggested fix right?',
+        labels: ['fix', 'real_not_fix', 'not_a_problem'], scale: null,
+      },
+      items: [flag],
+    }
+    vi.spyOn(api, 'ratingQueue').mockImplementation((type) =>
+      Promise.resolve(type === 'lexeme_flag' ? lexemeQueue : queue([])),
+    )
+    render(<RatePage />)
+    await user.click(await screen.findByRole('tab', { name: /^Word fixes/ }))
+    const card = await screen.findByRole('region', { name: 'To rate' })
+    const flagged = await within(card).findByLabelText('Flagged')
+    expect(flagged).toHaveTextContent('Definition flagged as incorrect: “prostitution (slang)” → “life”')
+    expect(flagged).toHaveTextContent('Other reviewer — Sonnet: incorrect — “life”')
+    expect(flagged).toHaveTextContent('Both reviewers say incorrect')
+    expect(within(card).getByText('La vida es bella.')).toBeInTheDocument()
+    for (const name of ['Fix it', 'Real problem, not this fix', 'Not a problem']) {
+      expect(within(card).getByRole('button', { name })).toBeInTheDocument()
+    }
+  })
+})

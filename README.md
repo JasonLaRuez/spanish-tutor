@@ -206,6 +206,18 @@ uv run python -m spanish_tutor.content add-songs private/lyrics
 uv run python -m spanish_tutor.content index --batch
 ```
 
+**Books you own** go in `private/books/` too. A PDF with selectable text (not a scan) is
+split into chapters at its "CAPÍTULO n" headings, then added as a private book (never
+narrated in full). Check the Spanish first if you're unsure of the edition: an informal fan
+translation can carry many errors a learner would absorb.
+
+```sh
+uv run python -m spanish_tutor.ingest.private_book "private/books/Mi libro.pdf"
+uv run python -m spanish_tutor.content add-book "private/books/Mi libro" \
+    --title "Mi libro" --author "Autor" --source private --private
+uv run python -m spanish_tutor.content index --batch
+```
+
 Bécquer's *Rimas* (public domain) are the demo:
 
 ```sh
@@ -253,6 +265,20 @@ calls, by `notebooks/03_evaluation.ipynb`.
 
 ```sh
 uv run python -m spanish_tutor.evaluation report     # the log metrics, read-only
+```
+
+**The word database is reviewed by models too.** Claude Opus and Sonnet each review the
+dictionary entries the learner meets first (definition, part of speech, example and its
+translation), through the Batch API; their flags are grouped by how much they agree,
+a sample of each group is rated by the learner on the Rate page, and only fixes the
+learner accepts are written, marked as reviewed:
+
+```sh
+uv run python -m spanish_tutor.evaluation lexicon-review submit --model opus --name tier-a-opus
+uv run python -m spanish_tutor.evaluation lexicon-review collect --name tier-a-opus
+uv run python -m spanish_tutor.evaluation lexicon-review queue --run 8 --second 9
+uv run python -m spanish_tutor.evaluation lexicon-review precision
+uv run python -m spanish_tutor.evaluation lexicon-review apply
 ```
 
 ## Tests

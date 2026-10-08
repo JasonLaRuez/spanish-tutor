@@ -36,6 +36,19 @@ CRITERIA = {
         "How natural is this English, as an English sentence?",
         scale=(1, 5),
     ),
+    # The lexicon review (lexicon_review.py): a field the reviewer flagged. Jason's answer is
+    # both the reviewer's precision and his decision: only "fix" is applied.
+    "lexeme_flag": Criterion(
+        "flag_right",
+        "Is the flagged problem real, and is the suggested fix right?",
+        labels=("fix", "real_not_fix", "not_a_problem"),
+    ),
+    # A word the reviewer passed, sampled: is anything wrong with it? (Its miss rate.)
+    "lexeme_entry": Criterion(
+        "entry_ok",
+        "Is this dictionary entry right for a learner?",
+        labels=("ok", "wrong"),
+    ),
 }
 
 

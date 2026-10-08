@@ -28,6 +28,7 @@ dependencies = [
     "fastapi>=0.142.2",
     "uvicorn[standard]>=0.54.0",
     "piper-tts>=1.8,<2",
+    "pypdf>=6.19.0",
 ]
 
 [tool.pytest.ini_options]

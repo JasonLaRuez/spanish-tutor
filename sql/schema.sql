@@ -60,6 +60,7 @@ CREATE TABLE IF NOT EXISTS lexemes (
 -- examples and translations. Append-only like word_events: a new review never
 -- overwrites an old one, so reviewers can be compared and re-run, and the sourced
 -- data in lexemes stays intact. Applying an accepted fix to lexemes is a separate step.
+-- A model's verdicts belong to a run (eval_runs), so runs can be compared (migration 12).
 CREATE TABLE IF NOT EXISTS lexeme_reviews (
     review_id   INTEGER PRIMARY KEY,
     lexeme_id   INTEGER NOT NULL REFERENCES lexemes (lexeme_id),
@@ -67,11 +68,15 @@ CREATE TABLE IF NOT EXISTS lexeme_reviews (
                     ('lemma', 'pos', 'definition_en', 'example_es', 'example_en')),
     verdict     TEXT NOT NULL CHECK (verdict IN ('correct', 'incorrect', 'unsure')),
     suggestion  TEXT,                 -- the reviewer's proposed fix, if any
-    reviewer    TEXT NOT NULL,        -- model id and version, or 'human'
-    reviewed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    reason      TEXT,                 -- why, for an incorrect or unsure verdict
+    reviewer    TEXT NOT NULL,        -- model id, or 'human'
+    run_id      INTEGER REFERENCES eval_runs (run_id),
+    reviewed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CHECK ((reviewer = 'human') = (run_id IS NULL))   -- models belong to a run; people don't
 );
 
 CREATE INDEX IF NOT EXISTS ix_lexeme_reviews_lexeme ON lexeme_reviews (lexeme_id, field);
+CREATE INDEX IF NOT EXISTS ix_lexeme_reviews_run ON lexeme_reviews (run_id);
 
 
 -- One run of a skill (a conversation, a song, a reading session).
@@ -472,7 +477,8 @@ CREATE TABLE IF NOT EXISTS eval_runs (
 CREATE TABLE IF NOT EXISTS eval_items (
     item_id    INTEGER PRIMARY KEY,
     item_type  TEXT NOT NULL CHECK (item_type IN
-                   ('translation_line', 'attempt', 'retrieval', 'reply', 'new_word_flag')),
+                   ('translation_line', 'attempt', 'retrieval', 'reply', 'new_word_flag',
+                    'lexeme_flag', 'lexeme_entry')),  -- lexeme_*: the lexicon review (12)
     source_ref TEXT NOT NULL,
     content    TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,

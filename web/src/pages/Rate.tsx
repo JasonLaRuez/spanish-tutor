@@ -7,6 +7,8 @@ import { posName } from '../lib/text'
 const KINDS: { type: string; name: string }[] = [
   { type: 'new_word_flag', name: 'New words' },
   { type: 'translation_line', name: 'Translations' },
+  { type: 'lexeme_flag', name: 'Word fixes' },
+  { type: 'lexeme_entry', name: 'Word checks' },
 ]
 
 /** How each label reads as a button. */
@@ -14,6 +16,28 @@ const LABELS: Record<string, string> = {
   new: 'New to me',
   known: 'I knew it',
   not_a_word: 'Not a real word',
+  fix: 'Fix it',
+  real_not_fix: 'Real problem, not this fix',
+  not_a_problem: 'Not a problem',
+  ok: 'All correct',
+  wrong: 'Something’s wrong',
+}
+
+/** How sure the two reviewers were about a flag (lexicon_review.flag_groups). */
+const GROUP_NAMES: Record<string, string> = {
+  both: 'Both reviewers say incorrect',
+  primary_only: 'Only Opus says incorrect',
+  secondary_only: 'Only Sonnet says incorrect',
+  unsure: 'A reviewer is unsure',
+}
+
+/** The dictionary fields, as the rater reads them. */
+const FIELD_NAMES: Record<string, string> = {
+  lemma: 'Word',
+  pos: 'Part of speech',
+  definition_en: 'Definition',
+  example_es: 'Example',
+  example_en: 'Example’s translation',
 }
 
 const percent = (value: number | null | undefined) => (value == null ? '–' : `${Math.round(value * 100)}%`)
@@ -195,6 +219,9 @@ function summary(item: RatingItem): string {
 function ItemView({ item }: { item: RatingItem }) {
   const content = item.content as Record<string, string | null>
   const where = item.source_ref.startsWith('benchmark:') ? 'Benchmark' : 'Your conversation'
+  if (item.item_type === 'lexeme_flag' || item.item_type === 'lexeme_entry') {
+    return <LexemeView item={item} />
+  }
   if (item.item_type === 'new_word_flag') {
     return (
       <div className="mt-3 space-y-2">
@@ -221,5 +248,39 @@ function ItemView({ item }: { item: RatingItem }) {
         </div>
       ))}
     </dl>
+  )
+}
+
+/** A dictionary entry from the lexicon review; for a flag, the flagged field, its suggested
+ *  fix and the reviewers' reasons. */
+function LexemeView({ item }: { item: RatingItem }) {
+  const c = item.content as Record<string, string | null>
+  const flag = item.item_type === 'lexeme_flag'
+  return (
+    <div className="mt-3 space-y-2">
+      <div className="flex items-baseline gap-2">
+        <span className="es text-2xl font-semibold text-ink">{c.lemma}</span>
+        {c.lemma && <SpeakButton text={c.lemma} label={`Listen: ${c.lemma}`} />}
+        {c.pos && <span className="text-sm text-muted">{posName(c.pos)}</span>}
+      </div>
+      <p className="text-sm text-ink-2">{c.definition_en ?? '(no definition)'}</p>
+      {c.example_es && (
+        <p className="border-l-2 border-line pl-3">
+          <span className="es text-ink">{c.example_es}</span>
+          <span className="block text-sm text-ink-2">{c.example_en}</span>
+        </p>
+      )}
+      {flag && (
+        <div className="rounded-lg border border-note-line bg-note px-3 py-2 text-sm text-note-ink" aria-label="Flagged">
+          <p>
+            <span className="font-medium">{FIELD_NAMES[c.field ?? ''] ?? c.field}</span> flagged as {c.verdict}:{' '}
+            “{c.current}” → <span className="font-medium">“{c.suggestion ?? '(no suggestion)'}”</span>
+          </p>
+          <p className="mt-1">{c.reason}</p>
+          {c.second_opinion && <p className="mt-1 text-xs">Other reviewer — {c.second_opinion}</p>}
+          {c.group && <p className="mt-1 text-xs opacity-80">{GROUP_NAMES[c.group] ?? c.group}</p>}
+        </div>
+      )}
+    </div>
   )
 }

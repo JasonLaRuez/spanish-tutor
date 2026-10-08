@@ -1136,6 +1136,54 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
       from it (a 40-line song is estimated at ~3¢, generously). End to end on a DB copy
       with a made-up song: the index counted *comer* and *me* once each (the Spanish
       lines), no *danzar*, *so* or *do*; the check cost 1¢.
+  - **LLM review of the word database (2026-10-08; Jason: Tier A first, then Opus over
+    Sonnet for fidelity, "a higher fidelity database is crucial to improved learning").**
+    - `evaluation/lexicon_review.py`; CLI `python -m spanish_tutor.evaluation lexicon-review
+      pilot|submit|collect|pilot-report|second-opinion|queue|precision|apply|report`.
+      A reviewer sees 25 entries per Batch API request (lemma, POS, definition, example and
+      its translation; model-written definitions marked) and reports only problems (field,
+      incorrect/unsure, suggested fix, reason); unflagged fields are stored "correct".
+      Answers about ids or fields not asked are ignored.
+    - **Tier A** (`sql/queries/review_tier_a.sql`): the vocabulary of items within the
+      ceiling, the word bank, and model-written definitions: 5,554 words of 17,485 that
+      appear in content or the bank (32,281 lexemes in all).
+    - **Migration 12 (approved):** `lexeme_reviews` rebuilt with `reason` and `run_id`
+      (CHECK: a model verdict has a run, a human one doesn't; the old table is created
+      first if missing, since it entered schema.sql without a migration); `eval_items`
+      rebuilt to allow `lexeme_flag` and `lexeme_entry` (foreign keys off, checked).
+    - **Pilot on a DB copy (199 words, 19 planted errors):** Sonnet caught 19/19 in both
+      runs; flags 63 and 66 of 969 fields; agreement on any flag alpha 0.73, on
+      "incorrect" alone 0.86 ("unsure" is where runs differ). Opus: 19/19, 45 incorrect
+      (Sonnet 31-36), its extra catches mostly real (*dedo* "thimble", *cenar* "lavish
+      meal", a wrong POS); Opus-Sonnet agreement on incorrect ~0.70. $0.00023/word
+      (Sonnet batch), $0.00048 (Opus). Live test `tests/test_lexicon_review_live.py`.
+    - **Tier A, real DB (eval runs 8 = Opus, 9 = Sonnet; $3.93):** 26,648 fields each;
+      Opus flagged 1,879, Sonnet 1,610 (alpha 0.47 between them). Groups
+      (`flag_groups`): both incorrect 410 fields (397 words), Opus only 533, Sonnet only
+      327, unsure 1,342. Examples both called wrong: *hombrecillo* "hop", *chica* "gal,
+      chick; a spice…", *estrellita* "a Chilean vine", *roca* "synonym of incoherencia".
+    - **Next (Jason):** rate the queued sample on the Rate page (25 per group + 40 words
+      both passed: "Word fixes", "Word checks"); `precision` gives each group's precision
+      and the miss rate; then decide the apply rule (e.g. bulk-apply "both" if precise).
+      `apply` writes only definition and example-translation fixes rated "fix"
+      (definition_source `+reviewed`, example_en_source `reviewed:<model>`), backup
+      first, skipping anything changed since it was queued; lemma, POS and Spanish
+      example fixes are listed, never applied (identity; Tatoeba attribution).
+  - **Private books from PDFs (`ingest/private_book.py`, 2026-10-08):** a text PDF in
+    `private/books/` split into chapter files beside it (pypdf, BSD; added as a
+    dependency): chapters at "CAPÍTULO n" lines (title = the capitals lines after it;
+    credit lines "Traducido/Transcrito por …" dropped; front matter left out),
+    paragraphs from blank lines, a page break ends a paragraph only after a short line
+    ending a sentence, line-break hyphens joined (not dialogue dashes). Scanned PDFs are
+    refused (would need OCR). Then `content add-book … --private`.
+    - **First book (Percy Jackson 1, Jason's PDF) turned out to be a fan translation**
+      (per-chapter volunteer credits). Measured before indexing (Opus judge, medium
+      effort, 44 passages vs 15 of published Spanish from the library; **$1.28, five times
+      the 25¢ estimate**: medium effort wrote long error lists; measure a few first next
+      time): score 2.1 vs 4.4, **8.9 errors per 100 words vs 0.8** (calques 229, accents
+      that change the verb such as *empujo*/*empujó*, grammar). The four chapters credited
+      "Transcrito" (16, 19, 21, 22) scored 3-4 (0.5-3.8 errors/100w), likely typed from the
+      official edition. Not added; recommended the official Salamandra edition instead.
   - **Listening (built 2026-10-06; Jason's choices).** Text-to-speech in every skill, as
     the last feature before 4.4. A speaking skill was dropped (pronunciation scoring was
     its point; the Claude API takes no audio).
