@@ -34,11 +34,13 @@ Ask = Callable[[type[BaseModel], str], "Generation"]  # ClaudeGenerator.ask
 KINDS = ("english", "loanword")
 Marks = dict[int, dict[str, str]]  # line number (1-based) -> lowercase word -> kind
 
-# Opus 5.5 list prices ($ per million tokens) and sizes for the estimate shown before calls,
-# measured on the live test (tests/test_english_live.py: 5 lines, 885 in / 157 out, 0.67¢).
-# Generous for a typical song, where most lines have no English.
+# Opus 5.5 list prices ($ per million tokens) and sizes for the estimate shown before calls.
+# Measured: three real songs (211 lines) took 5,952 in / 293 out tokens (3¢), so ~17 input
+# tokens a line and little output, since most lines have no English; the dense made-up
+# lines of tests/test_english_live.py (5 lines, 885 in / 157 out) set the output base.
 PRICE_IN, PRICE_OUT = 4.0, 20.0
-EST_PROMPT_TOKENS, EST_TOKENS_PER_LINE_IN, EST_TOKENS_PER_LINE_OUT = 800, 15, 30
+EST_PROMPT_TOKENS, EST_TOKENS_PER_LINE_IN = 800, 17
+EST_OUTPUT_TOKENS, EST_TOKENS_PER_LINE_OUT = 60, 3
 
 # English contractions split by the tagger: "don't" -> do + n't. Each part of a marked word
 # is skipped too.
@@ -108,7 +110,8 @@ def mark(title: str, lines: list[str], ask: Ask) -> tuple[Marks, Generation]:
 
 def estimate_cost(lines: int) -> float:
     tokens_in = EST_PROMPT_TOKENS + lines * EST_TOKENS_PER_LINE_IN
-    return (tokens_in * PRICE_IN + lines * EST_TOKENS_PER_LINE_OUT * PRICE_OUT) / 1e6
+    tokens_out = EST_OUTPUT_TOKENS + lines * EST_TOKENS_PER_LINE_OUT
+    return (tokens_in * PRICE_IN + tokens_out * PRICE_OUT) / 1e6
 
 
 # --- Stored marks ---------------------------------------------------------------------------

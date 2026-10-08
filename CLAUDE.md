@@ -1117,6 +1117,16 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
       named that way is reported, not guessed. Files are read as `utf-8-sig` (a Notepad
       byte-order mark isn't text). Windows file names can't hold `?`, so a title like
       *¿Qué Tengo Que Hacer?* loses its closing mark.
+    - **Jason's 51 songs, added and indexed (2026-10-08, real DB, backup first; items
+      989-1039):** English check $0.74 (926 English words, 233 loanwords; 39 of 51 songs
+      mix in English), resolver $0.30 for 186 distinct unknown forms (80 variants, 21
+      words, 75 not Spanish, 10 rejected): ~$1.04 in all. The first estimate ($2.49) came
+      from the dense made-up test lines; three real songs measured first (211 lines, 3¢)
+      recalibrated it (`english.EST_*`), and it then ran ~10% under the real cost (English-
+      heavy songs give more output). Loanwords include Puerto Rican Spanglish used as
+      Spanish (*janguear*, *chequea*, *hookero*); *baby* is a loanword in 23 songs and
+      English in 6, by context. **33 of 51 songs are within reach** (median 17.4% unknown;
+      the easiest *Vivir mi vida*, 6.8%): far easier than the public-domain literature.
     - **No narration of copyrighted songs (Jason, fair use):** `ReadingState.is_private`;
       the reader hides the narration bar and the per-stanza ▶ for private items and says
       so; clicked words, lesson cards and the tutor's replies still speak.
