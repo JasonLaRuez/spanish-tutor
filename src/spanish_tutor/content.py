@@ -12,7 +12,9 @@ Each analysis is resolved to a lexeme, first match wins:
 2. a word Wiktionary knows, or an approved expression, added to `lexemes`;
 3. an earlier decision for the same form, stored in word_resolutions;
 4. otherwise the form is pending, and all of an item's pending forms go to the resolver
-   (resolve.py) together; without one, they count as unresolved.
+   (resolve.py) together; without one, they count as unresolved. With `index --batch`,
+   the distinct pending forms of all the items being indexed go to it together first
+   (plan_batch, resolve_batch), and each item then finds the decisions at step 3.
 
 Unresolved words (not Spanish, or not resolvable) are excluded from the vocabulary and
 counted in content_items.unresolved_tokens, so the exclusion stays visible.
@@ -35,7 +37,15 @@ from pathlib import Path
 from spanish_tutor import db
 from spanish_tutor.config import DATA_DIR
 from spanish_tutor.lexicon import Analysis, TokenAnalysis
-from spanish_tutor.resolve import MAX_FORMS_PER_CALL, Asked, Outcome, Pending, Resolver, apply
+from spanish_tutor.resolve import (
+    MAX_FORMS_PER_CALL,
+    Asked,
+    Outcome,
+    Pending,
+    Resolver,
+    WordResolution,
+    apply,
+)
 from spanish_tutor.words import LexiconIndex
 
 AnalyzeMany = Callable[[list[str]], Iterable[list[TokenAnalysis]]]
@@ -64,16 +74,18 @@ def add_item(
     source: str,
     is_private: bool,
     author: str | None = None,
+    collection: str | None = None,
 ) -> int:
-    """Add a song, poem or story (not yet indexed); returns its content_id."""
+    """Add a song, poem or story (not yet indexed); returns its content_id. A collection
+    (Rimas, an album) groups items in the library."""
     if kind not in ("song", "poem", "story"):
         raise ValueError(f"add_item adds songs, poems and stories, not {kind!r}: use add_book")
     return conn.execute(
         """
-        INSERT INTO content_items (kind, title, author, source, is_private, text_es)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO content_items (kind, title, author, source, is_private, collection, text_es)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
-        (kind, title, author, source, int(is_private), text),
+        (kind, title, author, source, int(is_private), collection, text),
     ).lastrowid
 
 
@@ -322,6 +334,79 @@ def estimate_cost(forms: int) -> float:
     return (tokens_in * PRICE_IN + forms * EST_TOKENS_PER_FORM_OUT * PRICE_OUT) / 1e6
 
 
+@dataclass(frozen=True)
+class BatchPlan:
+    """The distinct pending forms of many items, per kind of text, before any call."""
+
+    by_kind: dict[str, list[Pending]]  # each form once, its occurrences summed
+    first_item: dict[tuple[str, Key], int]  # (kind, form) -> where first met (its content_id)
+
+    @property
+    def forms(self) -> int:
+        return sum(len(pending) for pending in self.by_kind.values())
+
+
+def plan_batch(
+    conn: sqlite3.Connection, index: LexiconIndex, items: Sequence[tuple[int, str, Analyzed]]
+) -> BatchPlan:
+    """Gather the pending forms of many (content_id, kind, analyzed) items, each form once.
+
+    One call per item pays the resolver's fixed prompt for every item, which dominates for
+    short ones (a collection of 150 poems); resolving a collection's distinct forms together
+    costs per form instead, and a form met in ten poems is asked about once.
+    """
+    by_kind: dict[str, dict[Key, Pending]] = {}
+    first_item: dict[tuple[str, Key], int] = {}
+    for content_id, kind, analyzed in items:
+        forms = by_kind.setdefault(kind, {})
+        for p in plan_index(conn, index, analyzed).pending:
+            if p.key in forms:
+                old = forms[p.key]
+                forms[p.key] = Pending(*p.key, old.context, old.occurrences + p.occurrences)
+            else:
+                forms[p.key] = p
+                first_item[kind, p.key] = content_id
+    return BatchPlan(
+        {
+            kind: sorted(forms.values(), key=lambda p: (-p.occurrences, p.form))
+            for kind, forms in by_kind.items()
+            if forms
+        },
+        first_item,
+    )
+
+
+def resolve_batch(
+    conn: sqlite3.Connection,
+    index: LexiconIndex,
+    plan: BatchPlan,
+    resolver: Resolver,
+    reviewer: str,
+) -> tuple[list[tuple[int, Outcome]], list[Asked]]:
+    """Ask the resolver about a batch's forms, one request per MAX_FORMS_PER_CALL forms of a
+    kind, and record its checked verdicts in word_resolutions, where indexing each item
+    then finds them (step 3 above). Each kind's verdicts are written in one transaction."""
+    outcomes: list[tuple[int, Outcome]] = []
+    calls: list[Asked] = []
+    for kind, pending in plan.by_kind.items():
+        asked = resolver(kind, pending)
+        calls.append(asked)
+        answers: dict[int, WordResolution] = {}
+        for r in asked.resolutions:
+            answers.setdefault(r.id, r)
+        with conn:
+            for number, p in enumerate(pending, 1):
+                content_id = plan.first_item[kind, p.key]
+                r = answers.get(number)
+                found = (
+                    apply(conn, index, content_id, [p], [r.model_copy(update={"id": 1})], reviewer)
+                    if r
+                    else [Outcome(p, "unasked", None, None, None, "no answer")]
+                )
+                outcomes += [(content_id, o) for o in found]
+    return outcomes, calls
+
+
 # --- What the learner read --------------------------------------------------------------
 
 
@@ -391,7 +476,9 @@ def write_review(path: Path, rows: list[tuple[int, Outcome]]) -> None:
             )
 
 
-def cmd_index(conn: sqlite3.Connection, ids: list[int], resolve: bool, yes: bool) -> None:
+def cmd_index(
+    conn: sqlite3.Connection, ids: list[int], resolve: bool, yes: bool, batch: bool = False
+) -> None:
     from spanish_tutor import lexicon
     from spanish_tutor.ingest.expressions import definitions
     from spanish_tutor.resolve import ClaudeResolver
@@ -405,6 +492,41 @@ def cmd_index(conn: sqlite3.Connection, ids: list[int], resolve: bool, yes: bool
 
     resolver = ClaudeResolver() if resolve else None
     review: list[tuple[int, Outcome]] = []
+    if batch:
+        # Analyze everything, resolve the distinct forms together (one estimate, one
+        # question), then index each item from the decisions just stored.
+        analyzed_items = []
+        for n, content_id in enumerate(ids, 1):
+            kind, text = item_kind(conn, content_id)
+            analyzed_items.append((content_id, kind, analyze_text(text, kind, analyze_many)))
+            if n % 25 == 0 or n == len(ids):
+                print(f"analyzed {n} of {len(ids)} items")
+        if resolver is not None:
+            plan = plan_batch(conn, index, analyzed_items)
+            cost = sum(estimate_cost(len(p)) for p in plan.by_kind.values())
+            print(f"{plan.forms:,} distinct forms to resolve, ~${cost:.2f}")
+            if plan.forms and (yes or input("call the model? [y/N] ").strip().lower() == "y"):
+                outcomes, calls = resolve_batch(conn, index, plan, resolver, resolver.reviewer)
+                review += outcomes
+                tokens_in = sum(c.input_tokens for c in calls)
+                tokens_out = sum(c.output_tokens for c in calls)
+                dollars = (tokens_in * PRICE_IN + tokens_out * PRICE_OUT) / 1e6
+                verdicts = Counter(o.verdict for _, o in outcomes)
+                print(
+                    f"resolved: {dict(verdicts)}; {tokens_in:,} in / {tokens_out:,} out, ${dollars:.2f}"
+                )
+        for content_id, _, analyzed in analyzed_items:
+            result = index_item(
+                conn, index, content_id, analyze_many, fingerprint, analyzed=analyzed
+            )
+            print(
+                f"item {content_id}: {result.words:,} words, {result.tokens:,} tokens, "
+                f"{result.unresolved_tokens:,} unresolved"
+            )
+        if review:
+            write_review(RESOLUTIONS_CSV, review)
+            print(f"review file: {RESOLUTIONS_CSV}")
+        return
     for content_id in ids:
         kind, text = item_kind(conn, content_id)
         analyzed = analyze_text(text, kind, analyze_many)
@@ -469,6 +591,13 @@ def cmd_list(conn: sqlite3.Connection) -> None:
         print(f"{r['content_id']:>5}  {r['kind']:<7} {r['title']}{where}: {state}")
 
 
+def chapter_info(folder: Path) -> dict[str, dict[str, str]]:
+    """chapters.json beside split chapter files (ingest.gutenberg): file name -> its exact
+    title and, for a collection of several writers, author. Empty if there is none."""
+    path = folder / "chapters.json"
+    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+
+
 def chapter_title(path: Path) -> str:
     """A chapter file's title: its name without the number that orders it ("03 El solitario")."""
     return re.sub(r"^\d+[\s._-]*", "", path.stem) or path.stem
@@ -498,15 +627,21 @@ def main() -> None:
             default=kind == "song",
             help="copyrighted: local use only (songs always are)",
         )
-    p = commands.add_parser(
-        "add-poems", help="add a collection: each .txt file is a poem (ingest.gutenberg splits one)"
-    )
-    p.add_argument(
-        "folder", type=Path, help="one .txt file per poem; the name (minus its number) is the title"
-    )
-    p.add_argument("--author")
-    p.add_argument("--source", required=True, help="e.g. gutenberg:53552")
-    p.add_argument("--private", action="store_true")
+        p.add_argument("--collection", help="what it belongs to: an album, a story collection")
+    for kind in ("poems", "stories"):
+        p = commands.add_parser(
+            f"add-{kind}",
+            help=f"add a collection: each .txt file is one of its {kind} (ingest.gutenberg splits one)",
+        )
+        p.add_argument(
+            "folder",
+            type=Path,
+            help="one .txt file per item; the name (minus its number) is the title",
+        )
+        p.add_argument("--collection", required=True, help="the collection's title, e.g. Rimas")
+        p.add_argument("--author")
+        p.add_argument("--source", required=True, help="e.g. gutenberg:53552")
+        p.add_argument("--private", action="store_true")
     p = commands.add_parser("add-book", help="add a book: one .txt file per chapter, in order")
     p.add_argument("folder", type=Path, help="chapter files, sorted by name = reading order")
     p.add_argument("--title", required=True)
@@ -521,6 +656,12 @@ def main() -> None:
         help="don't call the model: unknown forms count as unresolved",
     )
     p.add_argument("--yes", action="store_true", help="don't ask before each model call")
+    p.add_argument(
+        "--batch",
+        action="store_true",
+        help="resolve the items' distinct unknown forms together (one estimate, far fewer "
+        "calls for many short items), then index each",
+    )
     commands.add_parser("list", help="list content items")
     args = parser.parse_args()
 
@@ -541,24 +682,33 @@ def main() -> None:
                 source=args.source,
                 is_private=is_private,
                 author=args.author,
+                collection=args.collection,
             )
         print(f"added {kind} {content_id}: {args.title} (run `index` next)")
-    elif args.command == "add-poems":
+    elif args.command in ("add-poems", "add-stories"):
+        plural = args.command.removeprefix("add-")
+        kind = {"poems": "poem", "stories": "story"}[plural]
         files = sorted(args.folder.glob("*.txt"))
         if not files:
-            sys.exit(f"no .txt poem files in {args.folder}")
+            sys.exit(f"no .txt files in {args.folder}")
+        info = chapter_info(args.folder)
         with conn:
             ids = [
-                add_item(conn, "poem", chapter_title(f), read_text(f), source=args.source,
-                         is_private=args.private, author=args.author)
+                add_item(conn, kind, info.get(f.name, {}).get("title") or chapter_title(f),
+                         read_text(f), source=args.source, is_private=args.private,
+                         author=info.get(f.name, {}).get("author", args.author),
+                         collection=args.collection)
                 for f in files
             ]  # fmt: skip
-        print(f"added {len(ids)} poems, items {ids[0]}-{ids[-1]} (run `index` next)")
+        print(f"added {len(ids)} {plural}, items {ids[0]}-{ids[-1]} (run `index` next)")
     elif args.command == "add-book":
         files = sorted(args.folder.glob("*.txt"))
         if not files:
             sys.exit(f"no .txt chapter files in {args.folder}")
-        chapters = [(chapter_title(f), read_text(f)) for f in files]
+        info = chapter_info(args.folder)
+        chapters = [
+            (info.get(f.name, {}).get("title") or chapter_title(f), read_text(f)) for f in files
+        ]
         with conn:
             book_id, ids = add_book(
                 conn,
@@ -574,7 +724,7 @@ def main() -> None:
         if not ids:
             print("nothing to index")
             return
-        cmd_index(conn, ids, resolve=not args.no_resolve, yes=args.yes)
+        cmd_index(conn, ids, resolve=not args.no_resolve, yes=args.yes, batch=args.batch)
     else:
         cmd_list(conn)
 

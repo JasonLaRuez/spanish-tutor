@@ -9,6 +9,7 @@ import { RatePage } from './pages/Rate'
 import { Books } from './pages/Books'
 import { ReadingPage } from './pages/ReadingPage'
 import { Songs } from './pages/Songs'
+import { Stories } from './pages/Stories'
 import { WhatNext } from './pages/WhatNext'
 import { ConversationsProvider } from './state/conversations'
 import { SpeechProvider } from './state/speech'
@@ -30,6 +31,7 @@ export default function App() {
               <Route path="next" element={<WhatNext />} />
               <Route path="reading/:sessionId" element={<ReadingPage />} />
               <Route path="books" element={<Books />} />
+              <Route path="stories" element={<Stories />} />
               <Route path="songs" element={<Songs />} />
             </Route>
           </Routes>

@@ -1,0 +1,90 @@
+{
+  "ebook": 24250,
+  "title": "Lecturas fáciles",
+  "author": "L. A. Wilkins and M. A. Luria (eds.)",
+  "kind": "stories",
+  "note": "Lecturas fáciles con ejercicios (Wilkins and Luria, 1916): the stories, poems and readings of both sections (European tales; the Pan-American section about the Americas), each an item of its own. Headings are titles in capitals, some in =bold= markup. Each item is cut at its =EJERCICIOS= (the exercises and English notes after it); bracketed notes, note markers and illustration captions, margin line numbers, author lines (--SAMANIEGO.), reading instructions (Apréndase de memoria...) and markup are dropped. The verb appendix and vocabulary are left out.",
+  "end": "APÉNDICE DE VERBOS",
+  "remove": [
+    "\\[[^\\]]*\\]",
+    "[ \\t]{2,}\\d{1,3}[ \\t]*$",
+    "^[ \\t]*(?:NOTES:|/F|F/|--[A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ .'-]*\\.)[ \\t]*$",
+    "^[ \\t]*[_=]?(?:Apréndase|Apréndanse|Léase|Conviene aprender|No conviene)[^\\n]*(?:\\n[^\\n]+)*$"
+  ],
+  "replace": [
+    [
+      "^=EJERCICIOS=[\\s\\S]*\\Z",
+      ""
+    ],
+    [
+      "^[ \\t]*(?:SECCIÓN PANAMERICANA|HEROÍSMO AMERICANO EN LA ABOLICIÓN DE LA ESCLAVITUD|=TRADICIÓN PERUANA=|CALDERÓN DE LA BARCA\\.)[ \\t]*$",
+      ""
+    ],
+    [
+      "--",
+      " — "
+    ],
+    [
+      "=",
+      ""
+    ],
+    [
+      "_",
+      ""
+    ]
+  ],
+  "chapters": [
+    ["EL VIEJO Y EL ASNO", "El viejo y el asno"],
+    ["LA PIEDRA EN EL CAMINO", "La piedra en el camino"],
+    ["=LA MONA=", "La mona"],
+    ["EL JUEZ Y EL ESCARABAJO", "El juez y el escarabajo"],
+    ["UN CUENTO DE UN PERRO", "Un cuento de un perro"],
+    ["EL PRÍNCIPE Y LA ARAÑA", "El príncipe y la araña"],
+    ["=LA PERLA Y EL DIAMANTE=", "La perla y el diamante"],
+    ["EL MUCHACHO Y EL LOBO", "El muchacho y el lobo"],
+    ["=EL LEÓN Y EL CONEJO=", "El león y el conejo"],
+    ["EL CAMELLO PERDIDO", "El camello perdido"],
+    ["=EL ÁRABE HAMBRIENTO=", "El árabe hambriento"],
+    ["EL OSO", "El oso"],
+    ["=ABUELO Y NIETO=", "Abuelo y nieto"],
+    ["=LA CHIMENEA=", "La chimenea"],
+    ["UN JUEZ MORO", "Un juez moro"],
+    ["=PENSAMIENTOS=", "Pensamientos"],
+    ["=EL PERSA VERÍDICO=", "El persa verídico"],
+    ["=EL FLAUTISTA DE HAMELIN=", "El flautista de Hamelin"],
+    ["=LA RIÑA=", "La riña"],
+    ["=EL MUCHACHO HÉROE=", "El muchacho héroe"],
+    ["=NO SON TOROS TODO LO QUE SE DIBUJA=", "No son toros todo lo que se dibuja"],
+    ["=EL LEÑADOR HONRADO=", "El leñador honrado"],
+    ["=DE \"LA VIDA ES SUEÑO\"=", "De «La vida es sueño»"],
+    ["=EL ÚLTIMO JUGUETE=", "El último juguete"],
+    ["=VERSOS=", "Versos"],
+    ["=EL BUEN REY=", "El buen rey"],
+    ["=ARABESCO=", "Arabesco"],
+    ["=NIÑOS PRECOCES=", "Niños precoces"],
+    ["=LA LECCIÓN=", "La lección"],
+    ["=AMÉRICA=", "América"],
+    ["=COLÓN=", "Colón"],
+    ["=EL COMBATE DE DIEGO PÉREZ=", "El combate de Diego Pérez"],
+    ["=EL \"MAYFLOWER\"=", "El «Mayflower»"],
+    ["=EMILIO CASTELAR=", "Emilio Castelar"],
+    ["=EL CURA Y EL SACRISTÁN=", "El cura y el sacristán"],
+    ["=EL ESPAÑOL DE VARIAS PARTES=", "El español de varias partes"],
+    ["=EL CANAL DE PANAMÁ=", "El canal de Panamá"],
+    ["=PUERTO RICO=", "Puerto Rico"],
+    ["=LA REPÚBLICA ARGENTINA=", "La República Argentina"],
+    ["=EL ESPANTAJO=", "El espantajo"],
+    ["=EL BRASIL=", "El Brasil"],
+    ["=EL CAFÉ=", "El café"],
+    ["=CHILE=", "Chile"],
+    ["=EL ARREPENTIMIENTO DE UN PENITENTE=", "El arrepentimiento de un penitente"],
+    ["=UNA VISITA A COSTA RICA=", "Una visita a Costa Rica"],
+    ["=CUENCA, LA CIUDAD MERIDIONAL DEL ECUADOR=", "Cuenca, la ciudad meridional del Ecuador"],
+    ["=EL JUEZ LADRÓN Y EL LADRÓN JUEZ=", "El juez ladrón y el ladrón juez"],
+    ["=MÉJICO=", "Méjico"],
+    ["=EL PERÚ=", "El Perú"],
+    ["=EL ALACRÁN DE FRAY GÓMEZ=", "El alacrán de Fray Gómez"],
+    ["=VENEZUELA=", "Venezuela"],
+    ["=REFRANES=", "Refranes"]
+  ]
+}

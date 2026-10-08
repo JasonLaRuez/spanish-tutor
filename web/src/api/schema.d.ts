@@ -550,6 +550,8 @@ export interface components {
             book_title: string | null;
             /** Chapter No */
             chapter_no: number | null;
+            /** Collection */
+            collection: string | null;
             /** Indexed */
             indexed: boolean;
             /** New Words */

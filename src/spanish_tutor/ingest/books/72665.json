@@ -1,0 +1,37 @@
+{
+  "ebook": 72665,
+  "title": "Romancero gitano",
+  "author": "Federico García Lorca",
+  "kind": "poems",
+  "note": "Primer romancero gitano (1928): 18 romances, each numbered on a line of its own, then a half-title page with its dedication, then the title again and the poem. The number lines are the headings; each poem's half-title block (up to the gap of 4+ blank lines) is dropped, and so are lines in capitals (its repeated title, section labels such as PRIMERA LAGUNA) and roman-numeral part numbers. Ends at the index.",
+  "end": "ÍNDICE",
+  "remove": [
+    "^[ \\t]*TRES ROMANCES HISTÓRICOS[ \\t]*$",
+    "^[ \\t]*•[ \\t]*$"
+  ],
+  "replace": [
+    ["\\A[\\s\\S]*?\\n(?:[ \\t]*\\n){4,}", ""],
+    ["^[ \\t]*(?:[A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ .,]*|[IVX]+)[ \\t]*$", ""],
+    ["_", ""]
+  ],
+  "chapters": [
+    ["1", "Romance de la luna, luna"],
+    ["2", "Preciosa y el aire"],
+    ["3", "Reyerta"],
+    ["4", "Romance sonámbulo"],
+    ["5", "La monja gitana"],
+    ["6", "La casada infiel"],
+    ["7", "Romance de la pena negra"],
+    ["8", "San Miguel (Granada)"],
+    ["9", "San Rafael (Córdoba)"],
+    ["10", "San Gabriel (Sevilla)"],
+    ["11", "Prendimiento de Antoñito el Camborio en el camino de Sevilla"],
+    ["12", "Muerte de Antoñito el Camborio"],
+    ["13", "Muerto de amor"],
+    ["14", "Romance del emplazado"],
+    ["15", "Romance de la guardia civil española"],
+    ["16", "Martirio de Santa Olalla"],
+    ["17", "Burla de don Pedro a caballo"],
+    ["18", "Thamár y Amnón"]
+  ]
+}

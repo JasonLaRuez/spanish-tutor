@@ -320,6 +320,9 @@ CREATE TABLE IF NOT EXISTS content_items (
     is_private  INTEGER CHECK (is_private IN (0, 1)),
     book_id     INTEGER REFERENCES books (book_id),
     chapter_no  INTEGER CHECK (chapter_no >= 1),
+    -- The collection a story, poem or song belongs to (Rimas, Platero y yo, an album),
+    -- for grouping in the library; chapters belong to a book instead.
+    collection  TEXT CHECK (collection IS NULL OR kind <> 'chapter'),
     -- Filled by the indexer; NULL until indexed (the re-index job's work list).
     -- tokens: running words counted as vocabulary (per analysis: 'del' is two).
     -- unresolved_tokens: words that aren't Spanish vocabulary or couldn't be resolved;

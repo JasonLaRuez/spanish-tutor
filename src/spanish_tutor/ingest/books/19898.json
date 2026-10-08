@@ -1,0 +1,51 @@
+{
+  "ebook": 19898,
+  "title": "La Edad de Oro",
+  "author": "José Martí",
+  "kind": "stories",
+  "note": "La Edad de Oro (Martí, 1889), the four issues of his magazine for the children of America: 27 pieces (stories, poems, articles, and each issue's closing letter, La última página), each an item of its own. Headings are the titles as written in the contents, matched in order after it. Dropped: poem markers (/P, P/), part numbers (--I--), italics.",
+  "start": "La última página",
+  "remove": [
+    "^[ \\t]*(?:/P|P/|--[IVX]+--)[ \\t]*$"
+  ],
+  "replace": [
+    [
+      "--",
+      " — "
+    ],
+    [
+      "_",
+      ""
+    ]
+  ],
+  "chapters": [
+    ["A los niños que lean «La Edad de Oro».", "A los niños que lean «La Edad de Oro»"],
+    ["Tres héroes", "Tres héroes"],
+    ["Dos milagros", "Dos milagros"],
+    ["Meñique", "Meñique"],
+    ["Cada uno a su oficio", "Cada uno a su oficio"],
+    ["La Ilíada, de Homero", "La Ilíada, de Homero"],
+    ["Un juego nuevo y otros viejos", "Un juego nuevo y otros viejos"],
+    ["Bebé y el señor don Pomposo", "Bebé y el señor don Pomposo"],
+    ["La última página", "La última página (I)"],
+    ["La historia del hombre, contada por sus casas", "La historia del hombre, contada por sus casas"],
+    ["Los dos príncipes.", "Los dos príncipes"],
+    ["Nené traviesa.", "Nené traviesa"],
+    ["La perla de la mora", "La perla de la mora"],
+    ["Las ruinas indias.", "Las ruinas indias"],
+    ["Músicos, poetas y pintores.", "Músicos, poetas y pintores"],
+    ["La última página", "La última página (II)"],
+    ["La exposición de París.", "La exposición de París"],
+    ["El camarón encantado", "El camarón encantado"],
+    ["El Padre las Casas.", "El Padre las Casas"],
+    ["Los zapaticos de rosa", "Los zapaticos de rosa"],
+    ["La última página", "La última página (III)"],
+    ["Un paseo por la tierra de los anamitas", "Un paseo por la tierra de los anamitas"],
+    ["Historia de la cuchara y el tenedor", "Historia de la cuchara y el tenedor"],
+    ["La muñeca negra", "La muñeca negra"],
+    ["Cuentos de elefantes", "Cuentos de elefantes"],
+    ["Los dos ruiseñores", "Los dos ruiseñores"],
+    ["La galería de las máquinas", "La galería de las máquinas"],
+    ["La última página", "La última página (IV)"]
+  ]
+}

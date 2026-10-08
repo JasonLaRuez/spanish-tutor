@@ -156,6 +156,106 @@ def test_the_resolver_sees_the_item_kind_and_each_pending_form_once(conn, lexico
     assert seen == [("song", [("fué", "fuar", "VERB", 2), ("yeah", "yeah", "NOUN", 1)])]
 
 
+# --- Batch resolution (index --batch) ------------------------------------------------------
+
+
+def analyzed(conn, content_id):
+    from fakes import analyze_many
+
+    kind, text = content.item_kind(conn, content_id)
+    return content_id, kind, content.analyze_text(text, kind, analyze_many)
+
+
+def test_a_batch_asks_about_each_form_once_per_kind_with_occurrences_summed(conn, lexicon):
+    from spanish_tutor.words import LexiconIndex
+
+    first = story(conn, "Fué. Yeah.")
+    second = story(conn, "Fué fué.")
+    poem = add_item(conn, "poem", "Rima", "Fué", source="g", is_private=False)
+    plan = content.plan_batch(
+        conn, LexiconIndex(conn), [analyzed(conn, i) for i in (first, second, poem)]
+    )
+    assert {k: [(p.form, p.occurrences) for p in v] for k, v in plan.by_kind.items()} == {
+        "story": [("fué", 3), ("yeah", 1)],
+        "poem": [("fué", 1)],
+    }
+    assert plan.forms == 3
+    key = ("fué", "fuar", "VERB")
+    assert (plan.first_item["story", key], plan.first_item["poem", key]) == (first, poem)
+
+
+def test_batch_decisions_are_stored_and_found_when_each_item_is_indexed(conn, lexicon):
+    from fakes import analyze_many
+
+    from spanish_tutor.resolve import WordResolution
+    from spanish_tutor.words import LexiconIndex
+
+    first, second = story(conn, "El gato fué."), story(conn, "Fué. Yeah.")
+    asked = []
+
+    def resolver(kind, pending):
+        asked.append([p.form for p in pending])
+        return Asked(
+            [
+                WordResolution(
+                    id=1,
+                    verdict="variant",
+                    lemma="ser",
+                    pos="VERB",
+                    definition_en=None,
+                    example_en=None,
+                    reason="1952 spelling",
+                ),
+                WordResolution(
+                    id=2,
+                    verdict="not_spanish",
+                    lemma=None,
+                    pos=None,
+                    definition_en=None,
+                    example_en=None,
+                    reason="English",
+                ),
+            ],
+            100,
+            50,
+        )
+
+    index_ = LexiconIndex(conn)
+    items = [analyzed(conn, i) for i in (first, second)]
+    plan = content.plan_batch(conn, index_, items)
+    outcomes, calls = content.resolve_batch(conn, index_, plan, resolver, "model:test")
+    assert asked == [["fué", "yeah"]]  # one request for both items
+    assert [(cid, o.verdict) for cid, o in outcomes] == [
+        (first, "variant"),
+        (second, "not_spanish"),
+    ]
+    assert len(calls) == 1
+    for content_id, _, a in items:
+        result = content.index_item(conn, index_, content_id, analyze_many, "setup-1", analyzed=a)
+        assert result.asked is None
+    assert vocab(conn, second) == {"ser": 1}
+    assert (
+        conn.execute(
+            "SELECT unresolved_tokens FROM content_items WHERE content_id = ?", (second,)
+        ).fetchone()[0]
+        == 1
+    )
+
+
+def test_a_batch_form_left_unanswered_stays_pending_for_a_later_run(conn, lexicon):
+    from spanish_tutor.words import LexiconIndex
+
+    item = story(conn, "Fué.")
+    index_ = LexiconIndex(conn)
+    plan = content.plan_batch(conn, index_, [analyzed(conn, item)])
+    outcomes, _ = content.resolve_batch(
+        conn, index_, plan, lambda kind, pending: Asked([]), "model:test"
+    )
+    assert [o.verdict for _, o in outcomes] == ["unasked"]
+    assert conn.execute("SELECT COUNT(*) FROM word_resolutions").fetchone()[0] == 0
+    assert content.plan_batch(conn, index_, [analyzed(conn, item)]).forms == 1
+
+
 # --- Re-indexing ------------------------------------------------------------------------
 
 
@@ -197,6 +297,24 @@ def test_a_book_is_added_with_its_chapters_in_order(conn):
         (book,),
     ).fetchall()
     assert [tuple(r) for r in rows] == [(ids[0], 1, "I", None), (ids[1], 2, "II", None)]
+
+
+def test_a_collection_groups_items_in_the_catalog_in_the_order_they_were_added(conn):
+    from spanish_tutor import progress
+
+    loose = add_item(conn, "story", "Aaa", "Uno.", source="x", is_private=False)
+    second = add_item(
+        conn, "poem", "Rima II", "Dos.", source="g", is_private=False, collection="Rimas"
+    )
+    first = add_item(
+        conn, "poem", "Rima X", "Diez.", source="g", is_private=False, collection="Rimas"
+    )
+    rows = progress.rows(conn, "content_catalog")
+    assert [(r["content_id"], r["collection"]) for r in rows] == [
+        (second, "Rimas"),
+        (first, "Rimas"),  # added order, not alphabetical: a collection's own order
+        (loose, None),
+    ]
 
 
 def test_add_item_does_not_add_chapters(conn):

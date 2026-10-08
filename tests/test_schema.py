@@ -349,7 +349,7 @@ def test_pending_migrations_lists_only_what_an_old_database_needs(conn):
     old = connect(":memory:")
     old.executescript((FIXTURES / "schema_v1.sql").read_text(encoding="utf-8"))
     old.execute("PRAGMA user_version = 1")
-    assert pending_migrations(old) == [2, 3, 4, 5, 6, 7, 8, 9]
+    assert pending_migrations(old) == [2, 3, 4, 5, 6, 7, 8, 9, 10]
 
 
 def test_version_2_database_upgrades_to_version_3_keeping_notes(conn):
@@ -658,9 +658,8 @@ def test_version_7_database_rebuilds_content_items_keeping_everything_that_point
 
     assert table_shapes(old) == table_shapes(conn)
     assert old.execute("PRAGMA user_version").fetchone()[0] == migrations()[-1][0]
-    assert [
-        dict(r) for r in old.execute("SELECT * FROM content_items ORDER BY content_id")
-    ] == before
+    after = [dict(r) for r in old.execute("SELECT * FROM content_items ORDER BY content_id")]
+    assert [{k: v for k, v in r.items() if k != "collection"} for r in after] == before
     assert old.execute("PRAGMA foreign_key_check").fetchall() == []
     assert old.execute("SELECT COUNT(*) FROM content_vocab").fetchone()[0] == 1
     with pytest.raises(sqlite3.IntegrityError):  # still enforced on the rebuilt table
@@ -799,5 +798,39 @@ def test_version_8_database_gains_the_evaluation_tables(conn):
     init_schema(old)
 
     assert table_shapes(old) == table_shapes(conn)
-    assert old.execute("PRAGMA user_version").fetchone()[0] == 9
+    assert old.execute("PRAGMA user_version").fetchone()[0] == migrations()[-1][0]
     assert old.execute("SELECT COUNT(*) FROM word_events").fetchone()[0] == 1
+
+
+def test_version_9_database_gains_collections_with_text_es_still_last(conn):
+    old = database_at(9)
+    book = add_book(old)
+    chapter = add_chapter(old, book, 1)
+    rima = old.execute(
+        "INSERT INTO content_items (kind, title, author, source, is_private, text_es) "
+        "VALUES ('poem', 'Rima I', 'Bécquer', 'gutenberg:53552', 0, 'Yo sé un himno.')"
+    ).lastrowid
+    song = add_song(old)
+    casa = add_lexeme(old, "casa")
+    old.execute("INSERT INTO content_vocab VALUES (?, ?, 1)", (rima, casa))
+    old.commit()
+
+    init_schema(old)
+
+    assert table_shapes(old) == table_shapes(conn)
+    assert old.execute("PRAGMA user_version").fetchone()[0] == 10
+    collections = dict(old.execute("SELECT content_id, collection FROM content_items"))
+    assert collections == {chapter: None, rima: "Rimas", song: None}
+    assert old.execute("PRAGMA foreign_key_check").fetchall() == []
+    assert old.execute("SELECT COUNT(*) FROM content_vocab").fetchone()[0] == 1
+    columns = [r[1] for r in old.execute("PRAGMA table_info(content_items)")]
+    assert columns[-1] == "text_es"
+
+
+def test_a_chapter_never_has_a_collection(conn):
+    book = add_book(conn)
+    chapter = add_chapter(conn, book, 1)
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute("UPDATE content_items SET collection = 'X' WHERE content_id = ?", (chapter,))
+    song = add_song(conn)
+    conn.execute("UPDATE content_items SET collection = 'Un disco' WHERE content_id = ?", (song,))

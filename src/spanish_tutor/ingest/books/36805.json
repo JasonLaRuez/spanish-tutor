@@ -1,0 +1,38 @@
+{
+  "ebook": 36805,
+  "title": "Spanish Tales for Beginners",
+  "author": "E. C. Hills (ed.)",
+  "kind": "stories",
+  "note": "Spanish Tales for Beginners (Hills, 1909/1919): 18 prose tales by different writers, each starting at its title in capitals; authors from the contents page. The poems section (fables and two Rimas already in the library), the English notes and the vocabulary are left out: the text ends at POESÍAS. Part numbers, illustrations, indented English summaries of omitted passages, source notes such as (From Simón Verde.) and italics are dropped; dialogue dashes become em dashes.",
+  "end": "POESÍAS",
+  "remove": [
+    "\\[Illustration[^\\]]*\\]",
+    "^[ \\t]+\\([^)]*\\)[ \\t]*$",
+    "^\\(From [^)]*\\)[ \\t]*$"
+  ],
+  "replace": [
+    ["^[ \\t]*(?:[IVX]+|\\(FRAGMENTOS\\))[ \\t]*$", ""],
+    ["--", " — "],
+    ["_", ""]
+  ],
+  "chapters": [
+    ["LOS CONSEJOS DE UN PADRE", "Los consejos de un padre", "José Echegaray"],
+    ["CASILDA", "Casilda", "Antonio de Trueba"],
+    ["LA FLORECITA AZUL", "La florecita azul", "María del Pilar Sinués"],
+    ["LA NIÑA DEL VIGÍA", "La niña del vigía", "Manuela de la Peña Cuéllar"],
+    ["TONY", "Tony", "Enrique Pérez Escrich"],
+    ["PESCADOR DE CAÑA", "Pescador de caña", "Ernesto García Ladevese"],
+    ["LA CONFESIÓN DE UN CRIMEN", "La confesión de un crimen", "Armando Palacio Valdés"],
+    ["ECONOMÍA PRÁCTICA", "Economía práctica", "Luis Taboada"],
+    ["DE VIAJE", "De viaje", "Luis Taboada"],
+    ["TEMPRANO Y CON SOL", "Temprano y con sol", "Emilia Pardo Bazán"],
+    ["EL PREMIO GORDO", "El premio gordo", "Emilia Pardo Bazán"],
+    ["EL LIBRO TALONARIO", "El libro talonario", "Pedro Antonio de Alarcón"],
+    ["EL PÁJARO EN LA NIEVE", "El pájaro en la nieve", "Armando Palacio Valdés"],
+    ["LA BALLENA DEL MANZANARES", "La ballena del Manzanares", "Antonio de Trueba"],
+    ["LA CASA DONDE MURIÓ", "La casa donde murió", "Julia de Asensi"],
+    ["LAS NOCHES LARGAS DE CÓRDOBA", "Las noches largas de Córdoba", "Narciso Campillo"],
+    ["CUADROS DE COSTUMBRES", "Cuadros de costumbres", "Fernán Caballero"],
+    ["LA AJORCA DE ORO", "La ajorca de oro", "Gustavo Adolfo Bécquer"]
+  ]
+}

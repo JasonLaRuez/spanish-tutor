@@ -401,6 +401,7 @@ class CatalogItem(BaseModel):
     book_id: int | None
     book_title: str | None
     chapter_no: int | None
+    collection: str | None  # what a story, poem or song belongs to (Rimas, an album)
     indexed: bool
     new_words: int | None  # None until indexed
     tokens: int | None

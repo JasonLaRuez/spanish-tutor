@@ -190,8 +190,28 @@ song and kept. Bécquer's *Rimas* (public domain) are the demo:
 ```sh
 uv run python -m spanish_tutor.ingest.gutenberg 53552
 uv run python -m spanish_tutor.content add-poems data/raw/gutenberg/53552 \
-    --author "Gustavo Adolfo Bécquer" --source gutenberg:53552
+    --collection "Rimas" --author "Gustavo Adolfo Bécquer" --source gutenberg:53552
 uv run python -m spanish_tutor.content index
+```
+
+**The library.** Each public-domain text the project knows how to split has a manifest in
+`src/spanish_tutor/ingest/books/` (the texts themselves are never committed): poetry by
+Lorca, Machado, Rosalía de Castro, Darío and Urbina; graded readers and story collections
+(Spanish Tales for Beginners, Lecturas fáciles, Páginas sudamericanas, an anthology of
+Puerto Rican writers); children's and folk tales (Martí's *La Edad de Oro*, *Platero y
+yo*, *Ratón Pérez*, Chilean folk tales, Greek myths for children); and two books
+(*Corazón*, Altamirano's *La Navidad en las montañas*). Running `ingest.gutenberg <number>`
+prints the `add-poems`, `add-stories` or `add-book` command for it. A collection's stories
+and poems are each ranked on their own and grouped by collection on the **Stories** and
+**Songs & poems** pages. To index many items, `index --batch` resolves their distinct
+unknown words together (one estimate, one question), which costs far less than a call per
+item:
+
+```sh
+uv run python -m spanish_tutor.ingest.gutenberg 39209      # Platero y yo, one file per chapter
+uv run python -m spanish_tutor.content add-stories data/raw/gutenberg/39209 \
+    --collection "Platero y yo" --author "Juan Ramón Jiménez" --source gutenberg:39209
+uv run python -m spanish_tutor.content index --batch
 ```
 
 Words neither the lexicon nor Wiktionary knows (old spellings, regional words, English

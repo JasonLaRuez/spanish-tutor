@@ -1,0 +1,73 @@
+{
+  "ebook": 63378,
+  "title": "El corazón juglar",
+  "author": "Luis G. Urbina",
+  "kind": "poems",
+  "note": "El corazón juglar (1920), 45 poems; the fourteen parts of Sor Melancolía (poema de viaje) are poems of their own, numbered I-XIV. Each poem starts at its title in capitals (or, where the text's title differs from the index's, at its numeral); titles to show come from the book's index, in the text's order (the index swaps two poems). Dropped from each poem: place and date lines, lines in capitals (titles, signatures, epigraph credits) and part numbers. Ends at the index.",
+  "end": "INDICE",
+  "replace": [
+    [
+      "^[ \\t]*(?:[A-ZÁÉÍÓÚÑ¡¿«][A-ZÁÉÍÓÚÑ .,;:¡!¿?()«»]*[A-ZÁÉÍÓÚÑ!?).»]|[IVX]+)[ \\t]*$",
+      ""
+    ],
+    [
+      "^[ \\t]*_?[^\\n_]{0,30}(?<!\\d)1[89]\\d\\d(?!\\d)[^\\n_]{0,20}_?[ \\t]*$",
+      ""
+    ],
+    [
+      "--",
+      " — "
+    ],
+    [
+      "_",
+      ""
+    ]
+  ],
+  "chapters": [
+    ["LAMINA ANTIGUA", "Lámina antigua"],
+    ["SOR MELANCOLIA", "Sor Melancolía"],
+    ["I", "Frente a Cádiz"],
+    ["ENTRETENIMIENTO ROMÁNTICO", "Entretenimiento romántico"],
+    ["CASTO RUEGO", "Casto ruego"],
+    ["INSINUACION", "Insinuación"],
+    ["PRIMERA DIVAGACIÓN", "Primera divagación"],
+    ["MADRIGAL RELIGIOSO", "Madrigal religioso"],
+    ["LUNA NUEVA", "Luna nueva"],
+    ["AUTOBIOGRAFÍA LÍRICA", "Autobiografía lírica"],
+    ["SALUDO MATINAL", "Saludo matinal"],
+    ["SEGUNDA DIVAGACIÓN", "Segunda divagación"],
+    ["ADIVINACIONES", "Adivinaciones"],
+    ["TERCERA DIVAGACIÓN", "Tercera divagación"],
+    ["GALANTERÍA", "Galantería"],
+    ["LA ÚLTIMA MAÑANA", "La última mañana"],
+    ["A UNA CRIOLLA", "A una criolla"],
+    ["AL PASAR", "Al pasar"],
+    ["DEL AZUL AL GRIS", "Del azul al gris"],
+    ["A UN RINCÓN MADRILEÑO", "A un rincón madrileño"],
+    ["EL BESO DE LA SOMBRA", "El beso de la sombra"],
+    ["EL DOLOR CANSADO", "El dolor cansado"],
+    ["LA VISITA DEL EXTASIS", "La visita del éxtasis"],
+    ["VESPERTINA", "Vespertina"],
+    ["CUADRO DE GÉNERO", "Cuadro de género"],
+    ["UN VIAJE AUDAZ", "Un viaje audaz"],
+    ["EN CASTILLA", "En Castilla"],
+    ["LOS TRES RUEGOS", "Los tres ruegos"],
+    ["NOCHE VAGABUNDA", "Noche vagabunda"],
+    ["EL CEMENTERIO", "El cementerio"],
+    ["ALBORADA", "Alborada"],
+    ["EL SIMIL", "El símil"],
+    ["LA OFRENDA", "La ofrenda"],
+    ["DEL COMBATE INTERIOR", "Del combate interior"],
+    ["SEMBLANZA", "Semblanza"],
+    ["LA CITA", "La cita"],
+    ["PIGRICIA", "Pigricia"],
+    ["LA CASTAÑERA", "La castañera"],
+    ["MAÑANA DE ENERO", "Mañana de Enero"],
+    ["ALMA CIEGA", "Alma ciega"],
+    ["MI AMIGO EL POETA", "Mi amigo el poeta"],
+    ["DONES", "Dones"],
+    ["IGNORANCIA", "Ignorancia"],
+    ["CREPUSCULO DE MAYO", "Crepúsculo de Mayo"],
+    ["EL COFRE VACIO", "El cofre vacío"]
+  ]
+}

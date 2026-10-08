@@ -1,0 +1,34 @@
+{
+  "ebook": 33406,
+  "title": "Spanish Short Stories",
+  "author": "E. C. Hills and L. Reinhardt (eds.)",
+  "kind": "stories",
+  "note": "Spanish Short Stories (Hills and Reinhardt, 1910): 14 stories by different writers, each starting at its title in capitals after the introduction; authors from the contents page. Each story's 'POR DON ...' byline, the footnote markers ({9-1}), part numbers and subtitles in capitals are dropped, and so are the English notes and the vocabulary (the text ends at NOTES).",
+  "start": "SPANISH SHORT STORIES",
+  "end": "NOTES",
+  "remove": [
+    "\\{\\d+-\\d+\\}",
+    "^[ \\t]*POR (?:DON|DOÑA|FERNÁN) .*$"
+  ],
+  "replace": [
+    ["^[ \\t]*(?:[A-ZÁÉÍÓÚÑ¡¿][A-ZÁÉÍÓÚÑ .,;:¡!¿?()-]*[A-ZÁÉÍÓÚÑ!?).]|[IVX]+)[ \\t]*$", ""],
+    ["--", " — "],
+    ["_", ""]
+  ],
+  "chapters": [
+    ["EL CRIMEN DE LA CALLE DE LA PERSEGUIDA", "El crimen de la calle de la Perseguida", "Armando Palacio Valdés"],
+    ["LOS PURITANOS", "Los puritanos", "Armando Palacio Valdés"],
+    ["LA BUENAVENTURA", "La buenaventura", "Pedro Antonio de Alarcón"],
+    ["EL VOTO", "El voto", "Emilia Pardo Bazán"],
+    ["LA BARCA ABANDONADA", "La barca abandonada", "Vicente Blasco Ibáñez"],
+    ["LA MULA Y EL BUEY", "La mula y el buey", "Benito Pérez Galdós"],
+    ["OBRAR BIEN... QUE DIOS ES DIOS", "Obrar bien... que Dios es Dios", "Fernán Caballero"],
+    ["EL TEN-CON-TEN", "El ten-con-ten", "Antonio de Trueba"],
+    ["VINO Y FRAILES", "Vino y frailes", "Narciso Campillo"],
+    ["EL CASTELLANO VIEJO", "El castellano viejo", "Mariano José de Larra"],
+    ["EL BESO", "El beso", "Gustavo Adolfo Bécquer"],
+    ["LA LEVA", "La leva", "José María de Pereda"],
+    ["UN ALMA", "Un alma", "Ricardo Fernández Guardia"],
+    ["JUAN NEIRA", "Juan Neira", "Joaquín Díaz Garcés"]
+  ]
+}

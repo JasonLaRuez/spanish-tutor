@@ -1,7 +1,9 @@
 -- Every content item, for choosing one yourself (an explicit request always wins over the
 -- recommendation): songs, stories, and every chapter of every book, each with the words it
 -- would teach and whether the learner has started or finished it. Not ranked: grouped by
--- book and chapter, then by title. Items not indexed yet have no counts.
+-- book and chapter, then by collection in the order its items were added (a collection's
+-- own order, e.g. Rima I, II, III), then standalone items by title. Items not indexed yet
+-- have no counts.
 WITH known AS (
     SELECT lexeme_id FROM word_bank WHERE mode = 'recognition'
 ),
@@ -27,6 +29,7 @@ SELECT c.content_id,
        c.book_id,
        b.title AS book_title,
        c.chapter_no,
+       c.collection,
        c.indexed_at IS NOT NULL AS indexed,
        CASE WHEN c.indexed_at IS NOT NULL THEN COALESCE(cost.new_words, 0) END AS new_words,
        c.tokens,
@@ -37,4 +40,6 @@ FROM content_items AS c
 LEFT JOIN books AS b ON b.book_id = c.book_id
 LEFT JOIN cost ON cost.content_id = c.content_id
 LEFT JOIN reading AS r ON r.content_id = c.content_id
-ORDER BY c.book_id IS NOT NULL, b.title, c.chapter_no, c.title, c.content_id;
+ORDER BY c.book_id IS NOT NULL, b.title, c.chapter_no,
+         c.collection IS NULL, c.collection, CASE WHEN c.collection IS NULL THEN c.title END,
+         c.content_id;

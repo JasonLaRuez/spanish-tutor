@@ -1,0 +1,31 @@
+{
+  "ebook": 10825,
+  "title": "La Navidad en las montañas",
+  "author": "Ignacio Manuel Altamirano",
+  "kind": "book",
+  "note": "La Navidad en las montañas (Altamirano, 1871; school edition by E. A. Hill and M. J. Lombard, 1917): a Mexican novella in eleven chapters, I-XI, after the dedication. The English footnotes ([Footnote n: ...]) and their markers, illustrations and markup are dropped; the English introduction, notes and vocabulary are left out (the text ends at VOCABULARY).",
+  "start": "LA NAVIDAD EN LAS MONTAÑAS",
+  "end": "VOCABULARY",
+  "remove": [
+    "\\[(?:Footnote|Illustration)[^\\]]*\\]",
+    "\\[\\d+\\]"
+  ],
+  "replace": [
+    ["#", ""],
+    ["--", " — "],
+    ["_", ""]
+  ],
+  "chapters": [
+    ["I", "Capítulo I"],
+    ["II", "Capítulo II"],
+    ["III", "Capítulo III"],
+    ["IV", "Capítulo IV"],
+    ["V", "Capítulo V"],
+    ["VI", "Capítulo VI"],
+    ["VII", "Capítulo VII"],
+    ["VIII", "Capítulo VIII"],
+    ["IX", "Capítulo IX"],
+    ["X", "Capítulo X"],
+    ["XI", "Capítulo XI"]
+  ]
+}

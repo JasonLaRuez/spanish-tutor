@@ -24,7 +24,7 @@ phone.on('pageerror', (e) => errors.push(String(e)))
 
 const pages = [
   ['/', 'home'], ['/new', 'new conversation'], ['/history', 'history'], ['/progress', 'progress'],
-  ['/next', 'what next'], ['/books', 'books'], ['/songs', 'songs & poems'], ['/rate', 'rate'],
+  ['/next', 'what next'], ['/books', 'books'], ['/stories', 'stories'], ['/songs', 'songs & poems'], ['/rate', 'rate'],
   [`/reading/${reading.session_id}`, 'reader'],
   ...(conversation ? [[`/history/${conversation.session_id}`, 'a transcript'], [`/chat/${conversation.session_id}`, 'a chat']] : []),
 ]

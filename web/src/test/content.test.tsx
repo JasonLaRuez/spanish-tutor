@@ -37,11 +37,12 @@ const recommendations: Recommendations = {
 const catalog: CatalogItem[] = [
   {
     content_id: 1, kind: 'song', title: 'Fácil', author: null, book_id: null, book_title: null,
-    chapter_no: null, indexed: true, new_words: 3, tokens: 100, coverage: 0.97, state: null,
+    chapter_no: null, collection: null, indexed: true, new_words: 3, tokens: 100, coverage: 0.97,
+    state: null,
   },
   {
     content_id: 30, kind: 'chapter', title: 'A la deriva', author: 'Horacio Quiroga', book_id: 1,
-    book_title: 'Cuentos', chapter_no: 10, indexed: true, new_words: 253, tokens: 1009,
+    book_title: 'Cuentos', chapter_no: 10, collection: null, indexed: true, new_words: 253, tokens: 1009,
     coverage: 0.69, state: null,
   },
 ]

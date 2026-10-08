@@ -1027,6 +1027,58 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
       arc recognize (blue), inner can produce (orange), a table view, the caption
       "Vocabulary only, not a CEFR level…", and a hint when no levels are filled.
       `web/e2e/phone.mjs` checks the five rings at phone width.
+  - **Expanding the library (2026-10-07, before Jason's stretch of real use; his choices:
+    readers and tale collections, children's and folk tales, poetry, songs; "add everything
+    good", not only what's within the ceiling; resolver budget up to $6).**
+    - **18 Gutenberg texts, one manifest each** (`ingest/books/<ebook>.json`), written
+      with throwaway generator scripts that pair the text's headings with its own index
+      and fail loudly on a mismatch: poems (kind `poems`) by Lorca (*Romancero gitano*
+      18, *Libro de poemas* 67), Machado (*Poesías completas* 152), Rosalía de Castro (*En
+      las orillas del Sar* 52), Darío (*Cantos de vida y esperanza* 59), Urbina (*El
+      corazón juglar* 45, Mexican); stories (kind `stories`, new: each chapter a story of
+      its own) from *Spanish Tales for Beginners* 18, *Spanish Short Stories* 14,
+      *Lecturas fáciles* 52, *Páginas sudamericanas* 32, *Antología portorriqueña* 73
+      (writers' biographies are items too, credited to the editor), Martí's *La Edad de
+      Oro* 28, *Ratón Pérez* 1, *Cuentos populares en Chile* 83, Hawthorne's *Cuando la
+      tierra era niña* 6, *Platero y yo* 63 (1914 edition); books: *Corazón* (99 diary
+      entries), Altamirano's *La Navidad en las montañas* (11). 873 items, ~650k words.
+      Left out: medieval and Golden Age Spanish, drama, the accent-less 15353.
+    - What the manifests strip, per text: exercises and English notes after each reading
+      (cut at =EJERCICIOS=, CUESTIONARIO, NOTAS:), footnotes and markers, margin numbers,
+      bylines, dates and places under poems, illustration captions, HTML italics. Book
+      quirks handled by data, not code: Machado's misprinted CL (a heading may repeat in
+      a collection), Urbina's index swapping two poems (sorted by position), a Chilean
+      tale resumed under its repeated heading (one item), *Corazón*'s *Abril* headed only
+      by its illustration caption.
+    - **Code:** manifest kind `stories` and `content add-stories` (`add-poems` too) with
+      `--collection`; an optional third chapter element, the item's author (story
+      collections of many writers); `write_chapters` writes `chapters.json` (exact title,
+      author) because Windows file names can't hold `?` or `:`, and replaces an earlier
+      split's files; `content index --batch` (`plan_batch`, `resolve_batch`): analyze all
+      items, resolve the distinct unknown forms per kind together, then index each from
+      the stored decisions. Per-item calls would have paid the ~1,350-token prompt ~870
+      times (about $4 before any form).
+    - **Migration 10 (approved as `ALTER TABLE … ADD COLUMN`; done as a table rebuild so
+      `text_es` stays the last column, same column and CHECK):** `content_items.collection`
+      (NULL for chapters, enforced), the Rimas backfilled. The catalog query returns it and
+      orders a collection's items as added.
+    - **UI:** a Stories page and Songs & poems grouped by collection
+      (`components/Library.tsx`): collections ordered by their easiest item, items fewest
+      new words first, "N · M within reach", a "within reach only" filter.
+    - **Indexed on the real DB (2026-10-08, backup first; Quiroga re-indexed too, so the
+      older-accent respellings now apply to it):** 891 items analyzed in ~20 min on CPU;
+      1,856 distinct unknown forms (story 1,326, poem 358, chapter 172), estimate $4.22,
+      **actual $3.56** (216k in / 135k out): 1,102 variants, 453 new words, 179 not
+      Spanish, 122 rejected by the checks (left unresolved). A random 36 verdicts
+      checked by hand were right (old spellings, enclitics, Chilean *toita* → *todo*;
+      Latin, French and names as not Spanish). Known limit: 24 forms (25 tokens) are an
+      em dash touching two words (*feliz!—te*), which the shared tokenizer doesn't split.
+    - **What's within reach (≤ 20% unknown, word bank of 2026-10-08): 123 of 988 items**
+      (was ~20). Most per collection: *Cuentos populares en Chile* 32 of 83 (20.7%
+      unknown overall), *Corazón* 36 of 99 chapters, *La Edad de Oro* 11 of 28, Machado 9
+      of 152. *Corazón* as a book is 21.9% unknown, just over the ceiling, so it's "too
+      hard for now" until the bank grows a little. Poetry stays hardest (29-33% unknown);
+      graded readers 26-31%. Notebook 01 §6.5 recomputes the table.
   - **Listening (built 2026-10-06; Jason's choices).** Text-to-speech in every skill, as
     the last feature before 4.4. A speaking skill was dropped (pronunciation scoring was
     its point; the Claude API takes no audio).

@@ -439,6 +439,31 @@ def test_a_book_with_hash_headings_splits_into_titled_chapters(tmp_path):
     assert [p.name for p in paths] == ["01 La gallina degollada.txt", "02 A la deriva.txt"]
 
 
+def test_chapter_files_get_safe_names_and_their_exact_titles_and_authors_in_chapters_json(tmp_path):
+    import json
+
+    from spanish_tutor.ingest.gutenberg import write_chapters
+
+    folder = tmp_path / "poems"
+    folder.mkdir()
+    (folder / "99 left from an earlier split.txt").write_text("x", encoding="utf-8")
+    chapters = [("XXXIII. ¿Mi amor?... ¿Recuerdas, dime…", "Uno."), ("El Brasil: el café", "Dos.")]
+    paths = write_chapters(chapters, folder, ("Antonio Machado", None))
+    assert [p.name for p in paths] == [
+        "01 XXXIII. ¿Mi amor... ¿Recuerdas, dime….txt",
+        "02 El Brasil el café.txt",
+    ]
+    assert sorted(p.name for p in folder.glob("*.txt")) == [p.name for p in paths]
+    info = json.loads((folder / "chapters.json").read_text(encoding="utf-8"))
+    assert info == {
+        paths[0].name: {
+            "title": "XXXIII. ¿Mi amor?... ¿Recuerdas, dime…",
+            "author": "Antonio Machado",
+        },
+        paths[1].name: {"title": "El Brasil: el café"},
+    }
+
+
 READER = """CONTENTS
 
 I. EL POLLO
@@ -511,6 +536,49 @@ def test_every_committed_manifest_loads_with_unique_headings(tmp_path):
         book = load_manifest(int(path.stem))
         headings = [heading for heading, _ in book.chapters]
         assert book.ebook == int(path.stem) and book.title and headings, path.name
-        assert len(set(headings)) == len(headings), path.name
+        # Chapters of a book have distinct headings; a collection may repeat one (two poems
+        # titled Madrigal, a misprinted number), since headings are matched in order.
+        if book.kind == "book":
+            assert len(set(headings)) == len(headings), path.name
+        assert len({title for _, title in book.chapters}) == len(headings), path.name
     with pytest.raises(FileNotFoundError, match="no manifest for ebook 1"):
         load_manifest(1, tmp_path)
+
+
+def test_a_manifest_kind_must_be_book_poems_or_stories(tmp_path):
+    import json
+
+    from spanish_tutor.ingest.gutenberg import load_manifest
+
+    data = {"ebook": 7, "title": "T", "chapters": [["I", "Uno"]], "kind": "stories"}
+    (tmp_path / "7.json").write_text(json.dumps(data), encoding="utf-8")
+    assert load_manifest(7, tmp_path).kind == "stories"
+    (tmp_path / "7.json").write_text(json.dumps({**data, "kind": "novel"}), encoding="utf-8")
+    with pytest.raises(ValueError, match="kind must be"):
+        load_manifest(7, tmp_path)
+
+
+def test_every_committed_manifest_fits_its_downloaded_text():
+    """Data check: each manifest splits its book into non-empty chapters. Skipped for books
+    not downloaded on this machine (the texts are never committed)."""
+    from spanish_tutor.ingest.gutenberg import (
+        GUTENBERG_DIR,
+        MANIFESTS,
+        body,
+        load_manifest,
+        split_chapters,
+    )
+
+    checked = 0
+    for path in sorted(MANIFESTS.glob("*.json")):
+        source = GUTENBERG_DIR / f"pg{path.stem}.txt"
+        if not source.exists():
+            continue
+        book = load_manifest(int(path.stem))
+        chapters = split_chapters(body(source.read_text(encoding="utf-8")), book)
+        assert len(chapters) == len(book.chapters), path.name
+        empty = [title for title, text in chapters if not text.strip()]
+        assert not empty, f"{path.name}: empty {empty[:3]}"
+        checked += 1
+    if not checked:
+        pytest.skip("no Gutenberg texts downloaded")

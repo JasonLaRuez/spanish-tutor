@@ -1,0 +1,19 @@
+{
+  "ebook": 36558,
+  "title": "Ratón Pérez",
+  "author": "Luis Coloma",
+  "kind": "stories",
+  "note": "Ratón Pérez: cuento infantil (Coloma, 1894; 1911 edition), one story, written for the young King Alfonso XIII. It has no heading of its own, so it starts after the last line of the epigraph (su corazón.) and ends at the publisher's list. Image markers and italics are dropped.",
+  "end": "Biblioteca de RAZÓN Y FE",
+  "remove": [
+    "\\[imagen[^\\]]*\\]",
+    "^[ \\t]*\\*[ \\t]+\\*[ \\t*]*$"
+  ],
+  "replace": [
+    ["--", " — "],
+    ["_", ""]
+  ],
+  "chapters": [
+    ["su corazón.", "Ratón Pérez"]
+  ]
+}

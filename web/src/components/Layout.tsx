@@ -123,6 +123,9 @@ export function Layout() {
           <NavLink to="/books" className={navClass}>
             Books
           </NavLink>
+          <NavLink to="/stories" className={navClass}>
+            Stories
+          </NavLink>
           <NavLink to="/songs" className={navClass}>
             Songs &amp; poems
           </NavLink>

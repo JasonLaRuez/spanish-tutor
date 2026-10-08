@@ -1,0 +1,24 @@
+{
+  "ebook": 55215,
+  "title": "Cuando la tierra era niña",
+  "author": "Nathaniel Hawthorne (trad. G. Martínez Sierra)",
+  "kind": "stories",
+  "note": "Cuando la tierra era niña (Hawthorne's A Wonder-Book, translated by G. Martínez Sierra, 1920): six Greek myths retold for children, each introduced by a scene of its frame story (a student telling them to children at Tanglewood). Each item starts at that frame scene's heading (EL PÓRTICO DE TANGLEWOOD...) and runs through its myth; lines in capitals (each myth's half-title and title, the closing frame headings) are dropped. Ends at FIN.",
+  "end": "FIN",
+  "remove": [
+    "\\[[^\\]]*\\]"
+  ],
+  "replace": [
+    ["^[ \\t]*[A-ZÁÉÍÓÚÑ¡¿][A-ZÁÉÍÓÚÑ .,;:¡!¿?()-]*[ \\t]*$", ""],
+    ["--", " — "],
+    ["_", ""]
+  ],
+  "chapters": [
+    ["EL PÓRTICO DE TANGLEWOOD", "La cabeza de la Gorgona"],
+    ["ARROYO UMBRÍO", "El toque de oro"],
+    ["EN EL CUARTO DE JUEGO DE TANGLEWOOD", "El paraíso de los niños"],
+    ["AL AMOR DE LA LUMBRE", "Las tres manzanas de oro"],
+    ["EN LA VERTIENTE DE LA COLINA", "El cántaro milagroso"],
+    ["CUMBRE PELADA", "La Quimera"]
+  ]
+}

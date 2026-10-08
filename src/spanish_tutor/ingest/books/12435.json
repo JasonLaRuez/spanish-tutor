@@ -1,0 +1,65 @@
+{
+  "ebook": 12435,
+  "title": "Páginas sudamericanas",
+  "author": "Helen Phipps",
+  "kind": "stories",
+  "note": "Páginas sudamericanas (Phipps, 1920): a reader about South America, an introduction and 31 chapters on Ecuador, Peru, Bolivia, Chile, Argentina, Paraguay, Uruguay, Brazil, Venezuela and Colombia; each is a reading of its own. Headings: INTRODUCCIÓN and CAPÍTULO I-XXXI after the contents; titles from the contents. Each reading is cut at its CUESTIONARIO or EJERCICIO DE COMPOSICIÓN (questions and exercises); illustrations, footnotes and their markers, and headings in capitals (country, topic, part names) are dropped. Ends at the vocabulary.",
+  "start": "VOCABULARY",
+  "end": "VOCABULARY",
+  "remove": [
+    "\\[(?:Illustration|Footnote)[^\\]]*\\]",
+    "\\[\\d+\\]"
+  ],
+  "replace": [
+    [
+      "^(?:CUESTIONARIO|EJERCICIO DE COMPOSICIÓN)[\\s\\S]*\\Z",
+      ""
+    ],
+    [
+      "^[ \\t]*[A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ ,.-]*[ \\t]*$",
+      ""
+    ],
+    [
+      "--",
+      " — "
+    ],
+    [
+      "_",
+      ""
+    ]
+  ],
+  "chapters": [
+    ["INTRODUCCIÓN", "Introducción"],
+    ["CAPÍTULO I", "I. El Ecuador: geografía e historia"],
+    ["CAPÍTULO II", "II. El Ecuador: el cacao"],
+    ["CAPÍTULO III", "III. El Ecuador: el marfil vegetal"],
+    ["CAPÍTULO IV", "IV. El Ecuador: los sombreros de Jipijapa"],
+    ["CAPÍTULO V", "V. El Perú: geografía, historia y gobierno"],
+    ["CAPÍTULO VI", "VI. El Perú: productos e industrias"],
+    ["CAPÍTULO VII", "VII. El Perú: ciudades principales"],
+    ["CAPÍTULO VIII", "VIII. Bolivia: geografía, historia y gobierno"],
+    ["CAPÍTULO IX", "IX. Bolivia: medios de acceso, transportación y ciudades"],
+    ["CAPÍTULO X", "X. Bolivia: industrias y productos"],
+    ["CAPÍTULO XI", "XI. Chile: geografía y descripción de ciudades"],
+    ["CAPÍTULO XII", "XII. Chile: historia"],
+    ["CAPÍTULO XIII", "XIII. Chile: industria salitrera"],
+    ["CAPÍTULO XIV", "XIV. La República Argentina: historia, gobierno e industrias"],
+    ["CAPÍTULO XV", "XV. La República Argentina: ciudades principales y educación popular"],
+    ["CAPÍTULO XVI", "XVI. La República Argentina: enseñanza universitaria"],
+    ["CAPÍTULO XVII", "XVII. El Paraguay: geografía, historia y educación"],
+    ["CAPÍTULO XVIII", "XVIII. El Paraguay: productos e industrias"],
+    ["CAPÍTULO XIX", "XIX. El Paraguay: la hierba mate"],
+    ["CAPÍTULO XX", "XX. El Uruguay: geografía, historia y población"],
+    ["CAPÍTULO XXI", "XXI. El Uruguay: productos e industrias"],
+    ["CAPÍTULO XXII", "XXII. El Uruguay: la vida en Pocitos"],
+    ["CAPÍTULO XXIII", "XXIII. El Brasil: clima, caracteres físicos, habitantes y ciudades"],
+    ["CAPÍTULO XXIV", "XXIV. El Brasil: historia y gobierno"],
+    ["CAPÍTULO XXV", "XXV. El Brasil: productos: el café y el caucho"],
+    ["CAPÍTULO XXVI", "XXVI. El Brasil: otros productos e industrias"],
+    ["CAPÍTULO XXVII", "XXVII. Venezuela: geografía e historia"],
+    ["CAPÍTULO XXVIII", "XXVIII. Venezuela: gobierno, población y sistema monetario"],
+    ["CAPÍTULO XXIX", "XXIX. Venezuela: productos e industrias"],
+    ["CAPÍTULO XXX", "XXX. Colombia: geografía, historia y educación popular"],
+    ["CAPÍTULO XXXI", "XXXI. Colombia: productos e industrias"]
+  ]
+}
