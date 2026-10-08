@@ -278,7 +278,17 @@ uv run python -m spanish_tutor.evaluation lexicon-review submit --model opus --n
 uv run python -m spanish_tutor.evaluation lexicon-review collect --name tier-a-opus
 uv run python -m spanish_tutor.evaluation lexicon-review queue --run 8 --second 9
 uv run python -m spanish_tutor.evaluation lexicon-review precision
-uv run python -m spanish_tutor.evaluation lexicon-review apply
+uv run python -m spanish_tutor.evaluation lexicon-review apply --group both --run 8 --second 9
+```
+
+Many flagged definitions lead with a rare, regional, slang or vulgar sense. Opus separates
+those senses from the common one first (`split`, `split-collect`); when a fix is applied,
+they're kept, labeled, in `lexeme_senses`, shown under "Other senses" on lesson cards and
+listed on the **Slang & other senses** page:
+
+```sh
+uv run python -m spanish_tutor.evaluation lexicon-review split --run 8 --second 9
+uv run python -m spanish_tutor.evaluation lexicon-review split-collect
 ```
 
 ## Tests

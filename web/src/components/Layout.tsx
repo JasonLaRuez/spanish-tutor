@@ -129,6 +129,9 @@ export function Layout() {
           <NavLink to="/songs" className={navClass}>
             Songs &amp; poems
           </NavLink>
+          <NavLink to="/senses" className={navClass}>
+            Slang &amp; other senses
+          </NavLink>
           <NavLink to="/rate" className={navClass}>
             Rate
           </NavLink>

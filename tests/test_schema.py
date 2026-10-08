@@ -364,7 +364,7 @@ def test_pending_migrations_lists_only_what_an_old_database_needs(conn):
     old = connect(":memory:")
     old.executescript((FIXTURES / "schema_v1.sql").read_text(encoding="utf-8"))
     old.execute("PRAGMA user_version = 1")
-    assert pending_migrations(old) == [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+    assert pending_migrations(old) == [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
 
 
 def test_version_2_database_upgrades_to_version_3_keeping_notes(conn):
@@ -882,7 +882,7 @@ def test_version_11_database_gains_the_lexicon_review_keeping_eval_items_and_rat
     init_schema(old)
 
     assert table_shapes(old) == table_shapes(conn)
-    assert old.execute("PRAGMA user_version").fetchone()[0] == 12
+    assert old.execute("PRAGMA user_version").fetchone()[0] == migrations()[-1][0]
     assert old.execute("SELECT COUNT(*) FROM ratings").fetchone()[0] == 1
     assert old.execute("PRAGMA foreign_key_check").fetchall() == []
     old.execute(
@@ -891,4 +891,19 @@ def test_version_11_database_gains_the_lexicon_review_keeping_eval_items_and_rat
     with pytest.raises(sqlite3.IntegrityError):
         old.execute(
             "INSERT INTO eval_items (item_type, source_ref, content) VALUES ('other', 'r:2', '{}')"
+        )
+
+
+def test_a_kept_sense_has_one_of_the_registers(conn):
+    casa = add_lexeme(conn, "casa")
+    conn.execute(
+        "INSERT INTO lexeme_senses (lexeme_id, sense_en, register, region, source) "
+        "VALUES (?, 'a brothel', 'slang', 'México', 'wiktionary')",
+        (casa,),
+    )
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute(
+            "INSERT INTO lexeme_senses (lexeme_id, sense_en, register, source) "
+            "VALUES (?, 'x', 'common', 'wiktionary')",
+            (casa,),
         )

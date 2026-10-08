@@ -39,6 +39,7 @@ export type RatingItem = Schemas['RatingItem']
 export type EvalOverview = Schemas['EvalOverview']
 export type RateOut = Schemas['RateOut']
 export type EvalSummary = Schemas['EvalSummary']
+export type SenseEntry = Schemas['SenseEntry']
 /** How an item was chosen: the default suggestion (or a surprise), or the learner's own pick. */
 export type ChosenVia = Schemas['StartReading']['chosen_via']
 
@@ -96,6 +97,7 @@ export const api = {
   recommend: () => request<Recommendations>('/api/recommend'),
   surprise: () => request<Pick>('/api/recommend/surprise'),
   catalog: () => request<CatalogItem[]>('/api/content'),
+  senses: () => request<SenseEntry[]>('/api/senses'),
   content: (contentId: number) => request<ContentDetail>(`/api/content/${contentId}`),
   startReading: (contentId: number, chosenVia: ChosenVia) =>
     post<{ ok: boolean }>(`/api/content/${contentId}/start`, { chosen_via: chosenVia }),

@@ -38,6 +38,11 @@ def readiness(conn: sqlite3.Connection) -> list[dict]:
     return rows(conn, "readiness_by_level")
 
 
+def other_senses(conn: sqlite3.Connection) -> list[dict]:
+    """Every labeled sense (rare, regional, slang, vulgar...) with where its word appears."""
+    return [{**r, "recognized": bool(r["recognized"])} for r in rows(conn, "other_senses")]
+
+
 def growth_by_session(conn: sqlite3.Connection) -> list[dict]:
     return rows(conn, "progress_by_session")
 

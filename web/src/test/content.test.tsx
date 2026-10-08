@@ -151,6 +151,7 @@ const lessonFor = (lexeme_id: number, lemma: string): Lesson => ({
   definition_en: `meaning of ${lemma}`,
   example: null,
   model_written: false,
+  other_senses: [],
   practice: false,
 })
 

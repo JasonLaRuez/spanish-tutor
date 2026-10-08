@@ -1162,13 +1162,59 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
       (`flag_groups`): both incorrect 410 fields (397 words), Opus only 533, Sonnet only
       327, unsure 1,342. Examples both called wrong: *hombrecillo* "hop", *chica* "gal,
       chick; a spice…", *estrellita* "a Chilean vine", *roca* "synonym of incoherencia".
-    - **Next (Jason):** rate the queued sample on the Rate page (25 per group + 40 words
-      both passed: "Word fixes", "Word checks"); `precision` gives each group's precision
-      and the miss rate; then decide the apply rule (e.g. bulk-apply "both" if precise).
+    - **Jason's ratings (2026-10-08; 25 flags per group + 40 words both passed):**
+      | Group | real problem | suggested fix right |
+      |---|---|---|
+      | both incorrect | 25/25 (95% CI 87-100%) | 25/25 (87-100%) |
+      | Opus only | 24/25 (80-99%) | 19/25 = 76% (57-89%) |
+      | Sonnet only | 14/25 = 56% | 11/25 = 44% |
+      | unsure | 15/25 = 60% | 15/25 = 60% |
+      | passed by both | 5/40 = 12% wrong (5-26%): the miss rate | |
+    - **Applied (Jason's rule: "both" in bulk + his 50 rated fixes; real DB, backup
+      first, 2026-10-08):** `lexicon-review apply --group both --run 8 --second 9`
+      (`group_fixes`, `merge_fixes`: a rated fix wins over the bulk one). 281 fixes (50 +
+      249, 18 overlapping): 186 definitions, 95 example translations; 93 senses kept
+      (slang 26, rare 23, regional 15, vulgar 12, archaic 10, technical 7). Dry run on a
+      copy first; foreign keys clean, word bank unchanged. Opus-only, Sonnet-only and
+      unsure wait (Opus-only: real problems, but a quarter of its fixes aren't right; a
+      larger rated sample, or only its register-split definitions, are later options).
+      An applied translation credits the model that suggested it
+      (`example_en_source = reviewed:<model>`, looked up in `lexeme_reviews` for a rated
+      fix, which doesn't record it).
       `apply` writes only definition and example-translation fixes rated "fix"
       (definition_source `+reviewed`, example_en_source `reviewed:<model>`), backup
       first, skipping anything changed since it was queued; lemma, POS and Spanish
       example fixes are listed, never applied (identity; Tatoeba attribution).
+    - **Other senses (2026-10-08; Jason, while rating: "almost all of them pertain to rare,
+      vulgar or slang sense"; approved Opus for the split).** Measured: 46% of the 1,103
+      words with a flagged definition led with (or only gave) such a sense (rare 308,
+      regional 184, slang 162, archaic 57, vulgar 39); 191 of them are in the word bank.
+      Rather than lose those senses when a definition is fixed, they're kept, labeled.
+      - **Migration 13 (`lexeme_senses`):** lexeme_id, sense_en, register (rare / regional
+        / slang / vulgar / archaic / technical), region, source, reviewer, created_at.
+        `fill_lexicon.sql` keeps a lexeme that has a kept sense.
+      - **The split (`lexicon-review split --run 8 --second 9`, then `split-collect`):**
+        Opus 5.5 (batch, low effort, 25 words a request) sorts each flagged definition as
+        `register` (main sense + labeled other senses), `wrong` (nothing kept) or `fine`,
+        into `data/processed/eval/lexicon_review/senses-opus.json`; nothing touches the
+        database. `check_split` keeps a sense only if at least half its words come from
+        the current definition (no invented senses). Run: **$0.97**, all 1,103 words
+        parsed: register 468 (577 senses: rare 153, slang 124, regional 122, technical
+        89, archaic 50, vulgar 39), wrong 410, fine 225. A sample read right (*queso*:
+        cheese + slang "foot"; *cepillar*: vulgar "to fuck"; *amarillo*: technical "or").
+      - **Written only with an accepted fix:** `apply(conn, fixes, splits)` replaces the
+        definition with the fix Jason accepted (not the split's main sense) and, for a
+        `register` split, inserts its senses (source = the old definition_source,
+        reviewer = the split model). A `wrong` definition keeps nothing.
+      - **Shown:** lesson cards list "Other senses" with a label each (vulgar in red with
+        ⚠, region after a regional one; `teaching.senses`, vulgar first); the **Slang &
+        other senses** page (`/senses`, `GET /api/senses`, `sql/queries/other_senses.sql`)
+        lists them by word, filterable by label, by where the *word* appears (songs /
+        library: the index counts words, not senses), known words, and a search. On a DB
+        copy with all 577 senses: 457 words, 116 in songs; the query takes ~160 ms.
+      - The API field is `register_` with the alias `register`: a pydantic field named
+        `register` inherits `ABCMeta.register` as its default (it warned, and the schema
+        made the field optional).
   - **Private books from PDFs (`ingest/private_book.py`, 2026-10-08):** a text PDF in
     `private/books/` split into chapter files beside it (pypdf, BSD; added as a
     dependency): chapters at "CAPÍTULO n" lines (title = the capitals lines after it;

@@ -8,6 +8,7 @@ import { ProgressPage } from './pages/ProgressPage'
 import { RatePage } from './pages/Rate'
 import { Books } from './pages/Books'
 import { ReadingPage } from './pages/ReadingPage'
+import { SensesPage } from './pages/Senses'
 import { Songs } from './pages/Songs'
 import { Stories } from './pages/Stories'
 import { WhatNext } from './pages/WhatNext'
@@ -33,6 +34,7 @@ export default function App() {
               <Route path="books" element={<Books />} />
               <Route path="stories" element={<Stories />} />
               <Route path="songs" element={<Songs />} />
+              <Route path="senses" element={<SensesPage />} />
             </Route>
           </Routes>
         </BrowserRouter>

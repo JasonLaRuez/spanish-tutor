@@ -78,6 +78,30 @@ class ExampleOut(BaseModel):
     glosses: list[tuple[str, str]]
 
 
+class SenseOut(BaseModel):
+    sense_en: str
+    # Named with an alias: a field called "register" would inherit ABCMeta.register as its
+    # default (pydantic warns, and the schema made it optional).
+    register_: Literal["rare", "regional", "slang", "vulgar", "archaic", "technical"] = Field(
+        alias="register"
+    )
+    region: str | None
+
+
+class SenseEntry(SenseOut):
+    """A row of the "Slang & other senses" list: the sense, its word, and where the word
+    (not necessarily this sense) appears."""
+
+    sense_id: int
+    lexeme_id: int
+    lemma: str
+    pos: str
+    definition_en: str | None
+    songs: int
+    texts: int
+    recognized: bool
+
+
 class LessonOut(BaseModel):
     lexeme_id: int
     lemma: str
@@ -86,6 +110,7 @@ class LessonOut(BaseModel):
     example: ExampleOut | None
     model_written: bool  # the definition came from a model (resolve.py), not a dictionary
     practice: bool  # a known word shown before a topic conversation to practice, not taught
+    other_senses: list[SenseOut] = []  # rare/regional/slang/vulgar... kept apart (lexeme_senses)
 
     @classmethod
     def of(cls, item: Lesson) -> "LessonOut":
@@ -955,6 +980,11 @@ def create_app(
         if pick is None:
             raise HTTPException(404, "There's nothing to read yet: add a song, story or book.")
         return Pick(**pick)
+
+    @app.get("/api/senses")
+    def list_senses() -> list[SenseEntry]:
+        with reader() as conn:
+            return [SenseEntry(**row) for row in progress.other_senses(conn)]
 
     @app.get("/api/content")
     def list_content() -> list[CatalogItem]:

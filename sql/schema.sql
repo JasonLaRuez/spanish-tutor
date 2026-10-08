@@ -78,6 +78,23 @@ CREATE TABLE IF NOT EXISTS lexeme_reviews (
 CREATE INDEX IF NOT EXISTS ix_lexeme_reviews_lexeme ON lexeme_reviews (lexeme_id, field);
 CREATE INDEX IF NOT EXISTS ix_lexeme_reviews_run ON lexeme_reviews (run_id);
 
+-- Senses kept apart from a word's main definition (migration 13): rare, regional, slang,
+-- vulgar, archaic or technical meanings a learner should know of but not learn first.
+-- They move here, labeled, when a reviewed definition is fixed to its common sense.
+CREATE TABLE IF NOT EXISTS lexeme_senses (
+    sense_id   INTEGER PRIMARY KEY,
+    lexeme_id  INTEGER NOT NULL REFERENCES lexemes (lexeme_id),
+    sense_en   TEXT NOT NULL,
+    register   TEXT NOT NULL CHECK (register IN
+                   ('rare', 'regional', 'slang', 'vulgar', 'archaic', 'technical')),
+    region     TEXT,          -- for a regional sense: Chile, México, Spain...
+    source     TEXT NOT NULL, -- where the sense came from (e.g. 'wiktionary')
+    reviewer   TEXT,          -- the model that split it out
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS ix_lexeme_senses_lexeme ON lexeme_senses (lexeme_id);
+
 
 -- One run of a skill (a conversation, a song, a reading session).
 CREATE TABLE IF NOT EXISTS sessions (

@@ -447,6 +447,35 @@ def test_an_item_comes_with_its_text_and_new_words(serve, db_path):
     assert client.get("/api/content/99").status_code == 404
 
 
+def test_other_senses_are_listed_with_where_their_word_appears_and_shown_on_lessons(
+    serve, db_path
+):
+    client, _ = serve("Hola.")
+    assert client.get("/api/senses").json() == []
+    conn = db.connect(db_path)
+    with conn:
+        gato = conn.execute("SELECT lexeme_id FROM lexemes WHERE lemma = 'gato'").fetchone()[0]
+        conn.executemany(
+            "INSERT INTO lexeme_senses (lexeme_id, sense_en, register, region, source) "
+            "VALUES (?, ?, ?, ?, 'wiktionary')",
+            [(gato, "a car jack", "technical", None), (gato, "a servant", "slang", "Mexico")],
+        )
+    conn.close()
+    add_indexed(db_path, "Canción", ["gato"])
+    add_indexed(db_path, "Cuento", ["gato"], kind="story")
+
+    found = client.get("/api/senses").json()
+    assert [(e["lemma"], e["sense_en"], e["register"], e["region"]) for e in found] == [
+        ("gato", "a car jack", "technical", None),
+        ("gato", "a servant", "slang", "Mexico"),
+    ]
+    assert {(e["songs"], e["texts"]) for e in found} == {(1, 1)}
+
+    session = start(client)["session_id"]
+    lesson = client.post(f"/api/sessions/{session}/lookup", json={"word": "gato"}).json()
+    assert [s["register"] for s in lesson["other_senses"]] == ["slang", "technical"]
+
+
 def test_the_catalog_and_a_surprise(serve, db_path, no_ceiling):
     client, _ = serve()
     assert client.get("/api/recommend/surprise").status_code == 404  # nothing to read yet

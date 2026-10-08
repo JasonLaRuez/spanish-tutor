@@ -38,7 +38,8 @@ ON CONFLICT (lemma, pos) DO UPDATE SET
 -- Rows this build no longer produces: entries from an earlier build that a pipeline fix
 -- has since corrected away (e.g. a misspelling such as "tambien" now respelled
 -- "también"). Delete them only when nothing references them, so every lexeme_id that has
--- learner history, a review, a place in indexed content or a word resolution survives
+-- learner history, a review, a place in indexed content, a word resolution or a kept sense
+-- survives
 -- (the last two include words added from Wiktionary or by a model while indexing, which
 -- no build produces). word_bank needs no check: it only has rows for words with events. If a new table ever references lexemes and isn't listed here, the
 -- foreign key makes this DELETE fail and the whole build rolls back, rather than
@@ -49,7 +50,8 @@ WHERE NOT EXISTS (SELECT 1 FROM lexicon_staging AS s
   AND NOT EXISTS (SELECT 1 FROM word_events AS e WHERE e.lexeme_id = lexemes.lexeme_id)
   AND NOT EXISTS (SELECT 1 FROM lexeme_reviews AS r WHERE r.lexeme_id = lexemes.lexeme_id)
   AND NOT EXISTS (SELECT 1 FROM content_vocab AS v WHERE v.lexeme_id = lexemes.lexeme_id)
-  AND NOT EXISTS (SELECT 1 FROM word_resolutions AS w WHERE w.lexeme_id = lexemes.lexeme_id);
+  AND NOT EXISTS (SELECT 1 FROM word_resolutions AS w WHERE w.lexeme_id = lexemes.lexeme_id)
+  AND NOT EXISTS (SELECT 1 FROM lexeme_senses AS s WHERE s.lexeme_id = lexemes.lexeme_id);
 
 -- The ones that remain have history, so they stay, but their frequency came from an
 -- older build and no longer describes the corpus: clear it rather than leave it stale.

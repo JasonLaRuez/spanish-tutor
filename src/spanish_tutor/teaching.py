@@ -34,6 +34,16 @@ class Example:
 
 
 @dataclass(frozen=True)
+class Sense:
+    """A sense kept apart from the main definition (lexeme_senses): rare, regional,
+    slang, vulgar, archaic or technical, shown under it with its label."""
+
+    sense_en: str
+    register: str
+    region: str | None = None
+
+
+@dataclass(frozen=True)
 class Lesson:
     lexeme_id: int
     lemma: str
@@ -46,6 +56,17 @@ class Lesson:
     # A word the learner already recognizes, shown before a topic conversation to practice
     # using (conversation.Tutor.pre_teach), not taught.
     practice: bool = False
+    other_senses: tuple[Sense, ...] = ()
+
+
+def senses(conn: sqlite3.Connection, lexeme_id: int) -> tuple[Sense, ...]:
+    """A word's kept senses, vulgar ones first (worth knowing to avoid), then by register."""
+    order = {"vulgar": 0, "slang": 1, "regional": 2, "rare": 3, "technical": 4, "archaic": 5}
+    rows = conn.execute(
+        "SELECT sense_en, register, region FROM lexeme_senses WHERE lexeme_id = ? ORDER BY sense_id",
+        (lexeme_id,),
+    ).fetchall()
+    return tuple(sorted((Sense(*r) for r in rows), key=lambda x: order.get(x.register, 9)))
 
 
 def lesson(
@@ -91,7 +112,13 @@ def lesson(
         example = Example(met_in, None, None, None)
     model_written = (row["definition_source"] or "").startswith("model:")
     return Lesson(
-        lexeme.lexeme_id, lexeme.lemma, lexeme.pos, row["definition_en"], example, model_written
+        lexeme.lexeme_id,
+        lexeme.lemma,
+        lexeme.pos,
+        row["definition_en"],
+        example,
+        model_written,
+        other_senses=senses(conn, lexeme.lexeme_id),
     )
 
 

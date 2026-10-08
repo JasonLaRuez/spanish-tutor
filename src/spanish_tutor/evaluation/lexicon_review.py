@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import random
+import re
 import sqlite3
 import time
 from collections.abc import Sequence
@@ -585,10 +586,70 @@ def accepted_fixes(conn: sqlite3.Connection) -> list[dict]:
     return [f for f in fixes if f["field"] in APPLIED and (f.get("suggestion") or "").strip()]
 
 
-def apply(conn: sqlite3.Connection, fixes: Sequence[dict]) -> int:
+def group_fixes(
+    conn: sqlite3.Connection, primary: int, secondary: int, group: str = "both"
+) -> list[dict]:
+    """Every flag of one agreement group as a fix for `apply`, for a group Jason's sample
+    showed precise enough to apply in bulk ("both": 25/25). The suggestion is the primary
+    reviewer's, else the secondary's (as on the Rate page); only fields `apply` may change."""
+    first, second = opinions(conn, primary), opinions(conn, secondary)
+    models = dict(conn.execute("SELECT run_id, model FROM eval_runs"))
+    fixes = []
+    for lexeme_id, field in flag_groups(conn, primary, secondary)[group]:
+        if field not in APPLIED:
+            continue
+        p, q = first.get((lexeme_id, field)), second.get((lexeme_id, field))
+        main, run = (
+            (p, primary) if p and p[0] != "correct" and (p[1] or "").strip() else (q, secondary)
+        )
+        if not main or not (main[1] or "").strip():
+            continue
+        (current,) = conn.execute(
+            f"SELECT {field} FROM lexemes WHERE lexeme_id = ?", (lexeme_id,)
+        ).fetchone()
+        fixes.append(
+            {"lexeme_id": lexeme_id, "field": field, "current": current,
+             "suggestion": main[1], "reviewer": models.get(run, REVIEWER), "group": group}
+        )  # fmt: skip
+    return fixes
+
+
+def merge_fixes(*lists: Sequence[dict]) -> list[dict]:
+    """One fix per (word, field); an earlier list wins (Jason's own ratings go first)."""
+    seen: dict[tuple[int, str], dict] = {}
+    for fixes in lists:
+        for f in fixes:
+            seen.setdefault((f["lexeme_id"], f["field"]), f)
+    return list(seen.values())
+
+
+def _suggested_by(conn: sqlite3.Connection, fix: dict) -> str:
+    """The model whose suggestion this fix is (a rated fix doesn't record it)."""
+    if fix.get("reviewer"):
+        return fix["reviewer"]
+    row = conn.execute(
+        "SELECT reviewer FROM lexeme_reviews WHERE lexeme_id = ? AND field = ? AND suggestion = ? "
+        "ORDER BY run_id DESC LIMIT 1",
+        (fix["lexeme_id"], fix["field"], fix["suggestion"]),
+    ).fetchone()
+    return row[0] if row else REVIEWER
+
+
+def apply(
+    conn: sqlite3.Connection,
+    fixes: Sequence[dict],
+    splits: dict[int, dict] | None = None,
+    split_model: str = SECOND_OPINION,
+) -> int:
     """Write accepted fixes to lexemes (one transaction): a definition gets '+reviewed' on its
     source; an example translation records the reviewer as its translator. Returns how many
-    changed. A fix whose field changed since it was queued is skipped, not overwritten."""
+    changed. A fix whose field changed since it was queued is skipped, not overwritten.
+
+    `splits` (lexeme_id -> a checked split, from collect_split): when a definition replaced
+    was a register problem (it led with rare, regional, slang... senses), its other senses
+    are kept in lexeme_senses, labeled, instead of being lost. A definition that was simply
+    wrong keeps nothing."""
+    splits = splits or {}
     changed = 0
     with conn:
         for f in fixes:
@@ -599,15 +660,29 @@ def apply(conn: sqlite3.Connection, fixes: Sequence[dict]) -> int:
             if current is None or current[0] != f["current"]:
                 continue
             if column == "definition_en":
+                source = conn.execute(
+                    "SELECT definition_source FROM lexemes WHERE lexeme_id = ?", (f["lexeme_id"],)
+                ).fetchone()[0]
                 conn.execute(
                     "UPDATE lexemes SET definition_en = ?, definition_source = "
                     "COALESCE(definition_source, 'unknown') || '+reviewed' WHERE lexeme_id = ?",
                     (f["suggestion"].strip(), f["lexeme_id"]),
                 )
+                split = splits.get(f["lexeme_id"])
+                if split and split["kind"] == "register":
+                    conn.executemany(
+                        "INSERT INTO lexeme_senses (lexeme_id, sense_en, register, region, source, "
+                        "reviewer) VALUES (?, ?, ?, ?, ?, ?)",
+                        [
+                            (f["lexeme_id"], x["sense_en"], x["register"], x["region"],
+                             source or "unknown", split_model)
+                            for x in split["senses"]
+                        ],
+                    )  # fmt: skip
             else:
                 conn.execute(
                     "UPDATE lexemes SET example_en = ?, example_en_source = ? WHERE lexeme_id = ?",
-                    (f["suggestion"].strip(), f"reviewed:{REVIEWER}", f["lexeme_id"]),
+                    (f["suggestion"].strip(), f"reviewed:{_suggested_by(conn, f)}", f["lexeme_id"]),
                 )
             changed += 1
     return changed
@@ -672,6 +747,213 @@ def plant_errors(
                 )
             planted.append((e.lexeme_id, kind))
     return planted
+
+
+# --- Splitting definitions into a common sense and labeled other senses -------------------
+
+REGISTERS = ("rare", "regional", "slang", "vulgar", "archaic", "technical")
+SPLIT_VERSION = "sense-split v1"
+SPLIT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "words": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "integer"},
+                    "kind": {"type": "string", "enum": ["register", "wrong", "fine"]},
+                    "main_en": {"type": "string"},
+                    "senses": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "sense_en": {"type": "string"},
+                                "register": {"type": "string", "enum": list(REGISTERS)},
+                                "region": {"type": "string"},
+                            },
+                            "required": ["sense_en", "register", "region"],
+                            "additionalProperties": False,
+                        },
+                    },
+                },
+                "required": ["id", "kind", "main_en", "senses"],
+                "additionalProperties": False,
+            },
+        }
+    },
+    "required": ["words"],
+    "additionalProperties": False,
+}
+
+SPLIT_INSTRUCTIONS = """\
+These entries are from a Spanish learner's dictionary. Reviewers flagged each definition.
+For each entry, decide:
+
+- kind "register": the definition gives (or leads with) senses that are rare, regional,
+  slang, vulgar, archaic or technical, where a common sense exists. Give main_en: the common
+  sense(s) a learner should learn first, as a short gloss. Give senses: each OTHER sense that
+  is in the current definition, with its register (rare, regional, slang, vulgar, archaic,
+  technical) and, for a regional one, the region (Chile, México, Spain...; else "").
+  Only senses already in the current definition: don't add new ones.
+- kind "wrong": the definition is simply wrong (no real sense of this word). Give main_en:
+  the correct common definition; senses: empty.
+- kind "fine": the definition is acceptable for a learner as it is. main_en: the definition
+  unchanged; senses: empty.
+
+The example sentence shows how the word is usually met; the reviewers' notes say what they
+found.
+"""
+
+
+def split_prompt(items: Sequence[dict]) -> str:
+    lines = [SPLIT_INSTRUCTIONS, "Entries:"]
+    for it in items:
+        lines.append(f"[{it['lexeme_id']}] {it['lemma']} ({it['pos']}): {it['definition_en']}")
+        if it.get("example_es"):
+            lines.append(f"    example: «{it['example_es']}»")
+        for note in it.get("notes", []):
+            lines.append(f"    reviewer: {note}")
+    return "\n".join(lines)
+
+
+def split_candidates(conn: sqlite3.Connection, runs: Sequence[int]) -> list[dict]:
+    """Words whose definition any of these runs flagged, with the reviewers' notes."""
+    marks = ",".join("?" * len(runs))
+    notes: dict[int, list[str]] = {}
+    for lexeme_id, verdict, suggestion, reason in conn.execute(
+        f"SELECT lexeme_id, verdict, suggestion, reason FROM lexeme_reviews WHERE run_id IN ({marks}) "
+        "AND field = 'definition_en' AND verdict <> 'correct' ORDER BY lexeme_id, run_id",
+        list(runs),
+    ):
+        notes.setdefault(lexeme_id, []).append(
+            f"{verdict}: {reason}" + (f" (suggests: {suggestion})" if suggestion else "")
+        )
+    return [
+        {"lexeme_id": e.lexeme_id, "lemma": e.lemma, "pos": e.pos, "definition_en": e.definition_en,
+         "example_es": e.example_es, "notes": notes[e.lexeme_id]}
+        for e in entries(conn, sorted(notes))
+    ]  # fmt: skip
+
+
+def _words(text: str) -> set[str]:
+    return {w for w in re.findall(r"[a-záéíóúñü]+", text.lower()) if len(w) > 2}
+
+
+def check_split(item: dict, answer: dict) -> dict | None:
+    """A model's split, kept only if it holds together: a non-empty main definition, and for
+    "register" each other sense mostly made of the current definition's words (no invented
+    senses). None if it doesn't."""
+    main = (answer.get("main_en") or "").strip()
+    if not main or answer.get("kind") not in ("register", "wrong", "fine"):
+        return None
+    senses = []
+    if answer["kind"] == "register":
+        current = _words(item["definition_en"] or "")
+        for s in answer.get("senses", []):
+            words = _words(s.get("sense_en", ""))
+            if (
+                s.get("register") in REGISTERS
+                and words
+                and len(words & current) / len(words) >= 0.5
+            ):
+                senses.append(
+                    {"sense_en": s["sense_en"].strip(), "register": s["register"],
+                     "region": (s.get("region") or "").strip() or None}
+                )  # fmt: skip
+    return {
+        "lexeme_id": item["lexeme_id"],
+        "kind": answer["kind"],
+        "main_en": main,
+        "senses": senses,
+    }
+
+
+def submit_split(
+    items: Sequence[dict], *, name: str = "senses-opus", model: str = SECOND_OPINION, client=None
+) -> dict:
+    """The splitting pass, one Batch API request per 25 words; the state (and later the
+    checked answers) in STATE_DIR/<name>.json. Nothing is written to the database."""
+    import anthropic
+
+    client = client or anthropic.Anthropic()
+    batches = [list(items[i : i + PER_REQUEST]) for i in range(0, len(items), PER_REQUEST)]
+    batch = client.messages.batches.create(
+        requests=[
+            {
+                "custom_id": f"split-{i}",
+                "params": {
+                    "model": model,
+                    "max_tokens": 12000,
+                    "messages": [{"role": "user", "content": split_prompt(b)}],
+                    "output_config": {
+                        "effort": "low",
+                        "format": {"type": "json_schema", "schema": SPLIT_SCHEMA},
+                    },
+                },
+            }
+            for i, b in enumerate(batches)
+        ]
+    )
+    state = {
+        "model": model,
+        "version": SPLIT_VERSION,
+        "batch_id": batch.id,
+        "items": [list(b) for b in batches],
+    }
+    save_json(STATE_DIR / f"{name}.json", state)
+    return state
+
+
+def collect_split(*, name: str = "senses-opus", wait: bool = True, client=None) -> dict | None:
+    """The checked splits, saved back into the state file (key "splits")."""
+    import anthropic
+
+    client = client or anthropic.Anthropic()
+    path = STATE_DIR / f"{name}.json"
+    state = load_json(path)
+    while True:
+        batch = client.messages.batches.retrieve(state["batch_id"])
+        if batch.processing_status == "ended":
+            break
+        if not wait:
+            return None
+        time.sleep(30)
+    splits, rejected, failed, tokens_in, tokens_out = [], 0, [], 0, 0
+    for result in client.messages.batches.results(state["batch_id"]):
+        index = int(result.custom_id.split("-", 1)[1])
+        items = {it["lexeme_id"]: it for it in state["items"][index]}
+        if result.result.type != "succeeded":
+            failed.append(index)
+            continue
+        message = result.result.message
+        tokens_in += message.usage.input_tokens
+        tokens_out += message.usage.output_tokens
+        try:
+            answers = json.loads(next(b.text for b in message.content if b.type == "text"))["words"]
+        except (StopIteration, ValueError, KeyError):
+            failed.append(index)
+            continue
+        for answer in answers:
+            item = items.get(answer.get("id"))
+            checked = check_split(item, answer) if item else None
+            if checked is None:
+                rejected += 1
+            else:
+                splits.append(checked)
+    price_in, price_out = BATCH_PRICES[state["model"]]
+    state["splits"] = splits
+    state["summary"] = {
+        "splits": len(splits),
+        "rejected": rejected,
+        "failed_requests": failed,
+        "kinds": {k: sum(s["kind"] == k for s in splits) for k in ("register", "wrong", "fine")},
+        "senses": sum(len(s["senses"]) for s in splits),
+        "dollars": (tokens_in * price_in + tokens_out * price_out) / 1e6,
+    }
+    save_json(path, state)
+    return state["summary"]
 
 
 def save_json(path: Path, data) -> None:

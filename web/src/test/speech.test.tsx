@@ -74,6 +74,7 @@ const lesson: Lesson = {
   definition_en: 'to water',
   example: { es: 'Riego las plantas.', en: 'I water the plants.', source: 'tatoeba:42', author: 'ana', glosses: [] },
   model_written: false,
+  other_senses: [],
   practice: false,
 }
 

@@ -434,6 +434,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/senses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Senses */
+        get: operations["list_senses_api_senses_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/content": {
         parameters: {
             query?: never;
@@ -756,6 +773,11 @@ export interface components {
             model_written: boolean;
             /** Practice */
             practice: boolean;
+            /**
+             * Other Senses
+             * @default []
+             */
+            other_senses: components["schemas"]["SenseOut"][];
         };
         /** LookUp */
         LookUp: {
@@ -1027,6 +1049,50 @@ export interface components {
             unknown_share: number;
             /** Coverage */
             coverage: number | null;
+        };
+        /**
+         * SenseEntry
+         * @description A row of the "Slang & other senses" list: the sense, its word, and where the word
+         *     (not necessarily this sense) appears.
+         */
+        SenseEntry: {
+            /** Sense En */
+            sense_en: string;
+            /**
+             * Register
+             * @enum {string}
+             */
+            register: "rare" | "regional" | "slang" | "vulgar" | "archaic" | "technical";
+            /** Region */
+            region: string | null;
+            /** Sense Id */
+            sense_id: number;
+            /** Lexeme Id */
+            lexeme_id: number;
+            /** Lemma */
+            lemma: string;
+            /** Pos */
+            pos: string;
+            /** Definition En */
+            definition_en: string | null;
+            /** Songs */
+            songs: number;
+            /** Texts */
+            texts: number;
+            /** Recognized */
+            recognized: boolean;
+        };
+        /** SenseOut */
+        SenseOut: {
+            /** Sense En */
+            sense_en: string;
+            /**
+             * Register
+             * @enum {string}
+             */
+            register: "rare" | "regional" | "slang" | "vulgar" | "archaic" | "technical";
+            /** Region */
+            region: string | null;
         };
         /** SessionStarted */
         SessionStarted: {
@@ -2000,6 +2066,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Pick"];
+                };
+            };
+        };
+    };
+    list_senses_api_senses_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SenseEntry"][];
                 };
             };
         };

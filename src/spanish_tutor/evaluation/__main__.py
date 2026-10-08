@@ -98,11 +98,32 @@ def lexicon_review_step(args) -> None:
         elif args.step == "precision":
             for group, rates in lr.group_precision(conn).items():
                 print(group, {k: f"{r.k}/{r.n}" for k, r in rates.items()})
+        elif args.step == "split":
+            items = lr.split_candidates(conn, [r for r in (args.run, args.second) if r])
+            print(
+                f"{len(items):,} flagged definitions in {-(-len(items) // lr.PER_REQUEST)} requests"
+            )
+            if not args.yes and input("submit? [y/N] ").strip().lower() != "y":
+                return
+            state = lr.submit_split(items)
+            print(f"batch {state['batch_id']}")
+        elif args.step == "split-collect":
+            print(lr.collect_split()["summary"])
         elif args.step == "apply":
             fixes = lr.accepted_fixes(conn)
+            if args.group:
+                if not (args.run and args.second):
+                    sys.exit("--group needs --run and --second (the two review runs).")
+                bulk = lr.group_fixes(conn, args.run, args.second, args.group)
+                print(f"{len(fixes)} rated fixes, {len(bulk)} from group {args.group!r}")
+                fixes = lr.merge_fixes(fixes, bulk)
             if real and fixes:
                 print(f"backup: {db.backup(DB_PATH)}")
-            print(f"applied {lr.apply(conn, fixes)} of {len(fixes)} accepted fixes")
+            split_path = lr.STATE_DIR / "senses-opus.json"
+            splits = {}
+            if split_path.exists():
+                splits = {x["lexeme_id"]: x for x in lr.load_json(split_path).get("splits", [])}
+            print(f"applied {lr.apply(conn, fixes, splits)} of {len(fixes)} accepted fixes")
         else:
             print(lr.report(conn, args.run))
     finally:
@@ -161,6 +182,8 @@ def main() -> None:
             "second-opinion",
             "queue",
             "precision",
+            "split",
+            "split-collect",
             "apply",
             "report",
         ],
@@ -168,14 +191,21 @@ def main() -> None:
         "collect: store a submitted run; pilot-report: consistency, recall, cost; "
         "second-opinion: Opus on a run's flags; queue: flags and a sample for the Rate page "
         "(with --second: a sample of each agreement group); precision: per group, from "
-        "Jason's ratings; "
-        "apply: write the fixes Jason accepted; report: a run's verdicts",
+        "Jason's ratings; split: Opus separates rare/regional/slang/vulgar senses from the "
+        "definitions --run (and --second) flagged; split-collect: check and save them; "
+        "apply: write the fixes Jason accepted, keeping a fixed definition's other senses; "
+        "report: a run's verdicts",
     )
     lex.add_argument("--db", type=Path, default=DB_PATH, help="default: the real word bank")
     lex.add_argument("--name", default="tier-a", help="the submitted run's name (state file)")
     lex.add_argument("--run", type=int, help="a review run id")
     lex.add_argument("--second", type=int, help="the second-opinion run id (queue)")
     lex.add_argument("--yes", action="store_true", help="submit without asking")
+    lex.add_argument(
+        "--group",
+        choices=["both", "primary_only", "secondary_only", "unsure"],
+        help="apply: also every fix of this agreement group (with --run and --second)",
+    )
     lex.add_argument(
         "--model",
         choices=["sonnet", "opus"],

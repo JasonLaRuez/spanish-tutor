@@ -362,3 +362,115 @@ def test_each_group_is_sampled_with_both_opinions_and_precision_comes_from_ratin
     assert (found["primary_only"]["real"].k, found["primary_only"]["real"].n) == (0, 1)
     assert (found["passed"]["wrong"].k, found["passed"]["wrong"].n) == (0, 1)
     assert [f["suggestion"] for f in lr.accepted_fixes(conn)] == ["opus fix"]
+
+
+def test_a_split_keeps_only_senses_drawn_from_the_current_definition():
+    item = {"lexeme_id": 7, "definition_en": "(Chile, slang) money; (vulgar) penis; a kind of pot"}
+    answer = {
+        "id": 7,
+        "kind": "register",
+        "main_en": "a kind of pot",
+        "senses": [
+            {"sense_en": "money", "register": "slang", "region": "Chile"},
+            {"sense_en": "penis", "register": "vulgar", "region": ""},
+            {"sense_en": "a famous footballer", "register": "slang", "region": ""},  # invented
+            {"sense_en": "money", "register": "poetic", "region": ""},  # not a register
+        ],
+    }
+    assert lr.check_split(item, answer) == {
+        "lexeme_id": 7,
+        "kind": "register",
+        "main_en": "a kind of pot",
+        "senses": [
+            {"sense_en": "money", "register": "slang", "region": "Chile"},
+            {"sense_en": "penis", "register": "vulgar", "region": None},
+        ],
+    }
+    assert lr.check_split(item, {**answer, "main_en": " "}) is None
+    assert lr.check_split(item, {**answer, "kind": "maybe"}) is None
+    wrong = lr.check_split(item, {**answer, "kind": "wrong"})
+    assert wrong["senses"] == []  # a wrong definition keeps nothing
+
+
+def test_split_candidates_are_the_words_whose_definition_was_flagged(conn):
+    ids = [lexeme(conn, f"w{i}", definition=f"def {i}") for i in range(3)]
+    run = lr.new_run(conn, lr.REVIEWER, {})
+    problems = [
+        {"id": ids[0], "field": "definition_en", "verdict": "incorrect", "suggestion": "better",
+         "reason": "rare sense first"},
+        {"id": ids[1], "field": "example_en", "verdict": "incorrect", "suggestion": "x",
+         "reason": "r"},
+    ]  # fmt: skip
+    lr.store(conn, run, lr.REVIEWER, lr.verdict_rows(lr.entries(conn, ids), problems))
+    found = lr.split_candidates(conn, [run])
+    assert [c["lexeme_id"] for c in found] == [ids[0]]
+    assert found[0]["notes"] == ["incorrect: rare sense first (suggests: better)"]
+    assert "[" + str(ids[0]) + "] w0 (NOUN): def 0" in lr.split_prompt(found)
+
+
+def test_applying_a_register_fix_keeps_the_other_senses_and_a_wrong_one_keeps_none(conn):
+    slang = lexeme(conn, "lana", definition="wool; (Mexico, slang) money")
+    wrong = lexeme(conn, "w", definition="a mistranslation")
+    fixes = [
+        {"lexeme_id": slang, "field": "definition_en", "current": "wool; (Mexico, slang) money",
+         "suggestion": "wool"},
+        {"lexeme_id": wrong, "field": "definition_en", "current": "a mistranslation",
+         "suggestion": "the right thing"},
+    ]  # fmt: skip
+    splits = {
+        slang: {"lexeme_id": slang, "kind": "register", "main_en": "wool",
+                "senses": [{"sense_en": "money", "register": "slang", "region": "Mexico"}]},
+        wrong: {"lexeme_id": wrong, "kind": "wrong", "main_en": "the right thing", "senses": []},
+    }  # fmt: skip
+    assert lr.apply(conn, fixes, splits, split_model="claude-opus-5-5") == 2
+    rows = conn.execute(
+        "SELECT lexeme_id, sense_en, register, region, source, reviewer FROM lexeme_senses"
+    ).fetchall()
+    assert [tuple(r) for r in rows] == [
+        (slang, "money", "slang", "Mexico", "wiktionary", "claude-opus-5-5")
+    ]
+    assert (
+        conn.execute("SELECT definition_en FROM lexemes WHERE lexeme_id = ?", (slang,)).fetchone()[
+            0
+        ]
+        == "wool"  # Jason's accepted fix, not the split's main sense
+    )
+
+
+def test_a_group_is_applied_in_bulk_with_the_primarys_fix_and_rated_fixes_win(conn):
+    ids, primary, secondary = two_reviewers(conn)
+    bulk = lr.group_fixes(conn, primary, secondary, "both")
+    assert [(f["lexeme_id"], f["suggestion"], f["reviewer"]) for f in bulk] == [
+        (ids[0], "opus fix", lr.SECOND_OPINION)
+    ]
+    assert [
+        f["suggestion"] for f in lr.group_fixes(conn, primary, secondary, "secondary_only")
+    ] == [
+        "s2"  # only the secondary has a suggestion
+    ]
+    rated = [{**bulk[0], "suggestion": "Jason's pick"}]
+    merged = lr.merge_fixes(rated, bulk)
+    assert [f["suggestion"] for f in merged] == ["Jason's pick"]
+    assert lr.apply(conn, merged) == 1
+    assert (
+        conn.execute("SELECT definition_en FROM lexemes WHERE lexeme_id = ?", (ids[0],)).fetchone()[
+            0
+        ]
+        == "Jason's pick"
+    )
+
+
+def test_an_applied_example_translation_credits_the_model_that_suggested_it(conn):
+    w = lexeme(conn, "w", example="Ej.")
+    run = lr.new_run(conn, lr.SECOND_OPINION, {})
+    lr.store(conn, run, lr.SECOND_OPINION, lr.verdict_rows(lr.entries(conn, [w]), [
+        {"id": w, "field": "example_en", "verdict": "incorrect", "suggestion": "Better.",
+         "reason": "r"},
+    ]))  # fmt: skip
+    fix = {"lexeme_id": w, "field": "example_en", "current": "[Ej.]", "suggestion": "Better."}
+    assert lr.apply(conn, [fix]) == 1  # a rated fix: no reviewer recorded, looked up
+    assert tuple(
+        conn.execute(
+            "SELECT example_en, example_en_source FROM lexemes WHERE lexeme_id = ?", (w,)
+        ).fetchone()
+    ) == ("Better.", f"reviewed:{lr.SECOND_OPINION}")

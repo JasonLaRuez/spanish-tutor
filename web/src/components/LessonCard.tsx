@@ -1,8 +1,10 @@
 import type { Lesson } from '../api/client'
 import { posName } from '../lib/text'
+import { OtherSenses } from './Senses'
 import { SpeakButton } from './SpeakButton'
 
-/** A taught word: its definition and a readable example, with Tatoeba's author credit.
+/** A taught word: its definition (and any labeled rare, regional, slang or vulgar senses)
+ * and a readable example, with Tatoeba's author credit.
  * Words no dictionary has carry a "model-written" label (their definition is Claude's);
  * known words shown before a conversation to practice using carry a "practice" label. */
 export function LessonCard({ lesson }: { lesson: Lesson }) {
@@ -32,6 +34,7 @@ export function LessonCard({ lesson }: { lesson: Lesson }) {
         )}
       </div>
       <p className="mt-0.5 text-sm text-ink-2">{lesson.definition_en ?? '(no definition)'}</p>
+      <OtherSenses senses={lesson.other_senses} />
       {example && (
         <div className="mt-2 border-l-2 border-line pl-2.5">
           <p className="es flex items-start gap-1 text-ink">

@@ -265,6 +265,17 @@ def test_rows_a_word_resolution_points_to_are_kept(conn):
     assert lexeme(conn, "chamba")["lexeme_id"] == resolved
 
 
+def test_rows_with_a_kept_sense_are_kept(conn):
+    kept = add_old_row(conn, "perreo")
+    conn.execute(
+        "INSERT INTO lexeme_senses (lexeme_id, sense_en, register, source) "
+        "VALUES (?, 'a dance', 'slang', 'wiktionary')",
+        (kept,),
+    )
+    assert fill_lexicon(conn, ENTRIES).removed == 0
+    assert lexeme(conn, "perreo")["lexeme_id"] == kept
+
+
 def test_a_filled_example_is_a_human_translation(conn):
     """example_en_source moves with the example: a Tatoeba example filled into a blank
     slot never keeps a stale "model-translated" mark, and a kept example keeps its own."""
