@@ -197,9 +197,12 @@ first) and shown in their own color; loanwords (*la party*, *mi baby*) are ordin
 words, shown in a second color so you can see what you already know. Copyrighted songs are
 never narrated in full; single words can still be heard.
 
+Name each file `Title - Artist.txt` (several artists: `Title - Artist1, Artist2.txt`) and
+add the whole folder; the Songs page lists each song under every one of its artists, and adding
+the folder again (as it grows) skips the songs already in:
+
 ```sh
-uv run python -m spanish_tutor.content add-song private/lyrics/la-cancion.txt \
-    --title "La canción" --author "Artista"
+uv run python -m spanish_tutor.content add-songs private/lyrics
 uv run python -m spanish_tutor.content index --batch
 ```
 

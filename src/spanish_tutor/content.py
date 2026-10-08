@@ -657,7 +657,52 @@ def chapter_title(path: Path) -> str:
 
 
 def read_text(path: Path) -> str:
-    return path.read_text(encoding="utf-8").strip()
+    # utf-8-sig: a byte-order mark (Notepad adds one) isn't part of the text.
+    return path.read_text(encoding="utf-8-sig").strip()
+
+
+def song_name(path: Path) -> tuple[str, list[str]] | None:
+    """Title and artists from a lyrics file named "Title - Artist1, Artist2.txt"; None if
+    the name doesn't follow it. The last " - " separates them, so a title may contain one."""
+    title, sep, artists = path.stem.rpartition(" - ")
+    names = [name.strip() for name in artists.split(", ") if name.strip()]
+    return (title.strip(), names) if sep and title.strip() and names else None
+
+
+@dataclass(frozen=True)
+class SongsAdded:
+    added: list[tuple[int, str]]  # (content_id, file name)
+    already: list[str]  # file names of songs added before (same title and artists)
+    unnamed: list[str]  # file names not in the form "Title - Artist.txt"
+
+
+def add_songs(conn: sqlite3.Connection, folder: Path) -> SongsAdded:
+    """Add every lyrics file in a folder as a private song, named "Title - Artist1,
+    Artist2.txt": the artists (as written, comma-separated) are its author, and the Songs
+    page lists the song under each of them. A song already added (same title and author) is
+    skipped, so the folder can be added again as it grows. One transaction."""
+    added, already, unnamed = [], [], []
+    with conn:
+        for path in sorted(folder.glob("*.txt")):
+            name = song_name(path)
+            if name is None:
+                unnamed.append(path.name)
+                continue
+            title, artists = name
+            author = ", ".join(artists)
+            exists = conn.execute(
+                "SELECT 1 FROM content_items WHERE kind = 'song' AND title = ? AND author = ?",
+                (title, author),
+            ).fetchone()
+            if exists:
+                already.append(path.name)
+                continue
+            content_id = add_item(
+                conn, "song", title, read_text(path), source="private", is_private=True,
+                author=author,
+            )  # fmt: skip
+            added.append((content_id, path.name))
+    return SongsAdded(added, already, unnamed)
 
 
 def main() -> None:
@@ -681,6 +726,12 @@ def main() -> None:
             help="copyrighted: local use only (songs always are)",
         )
         p.add_argument("--collection", help="what it belongs to: an album, a story collection")
+    p = commands.add_parser(
+        "add-songs",
+        help='add a folder of lyrics files named "Title - Artist1, Artist2.txt" as private '
+        "songs (re-runnable: songs already added are skipped)",
+    )
+    p.add_argument("folder", type=Path, help="e.g. private/lyrics")
     for kind in ("poems", "stories"):
         p = commands.add_parser(
             f"add-{kind}",
@@ -738,6 +789,15 @@ def main() -> None:
                 collection=args.collection,
             )
         print(f"added {kind} {content_id}: {args.title} (run `index` next)")
+    elif args.command == "add-songs":
+        result = add_songs(conn, args.folder)
+        for content_id, name in result.added:
+            print(f"added song {content_id}: {name}")
+        if result.already:
+            print(f"{len(result.already)} already added, skipped")
+        for name in result.unnamed:
+            print(f'skipped {name}: name it "Title - Artist.txt"')
+        print(f"{len(result.added)} songs added (run `index --batch` next)")
     elif args.command in ("add-poems", "add-stories"):
         plural = args.command.removeprefix("add-")
         kind = {"poems": "poem", "stories": "story"}[plural]

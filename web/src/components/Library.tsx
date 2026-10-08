@@ -12,8 +12,9 @@ interface Group {
   items: CatalogItem[] // fewest new words first
 }
 
-/** Items of some kinds grouped by collection (Rimas, Platero y yo, an album), the group
- *  with the easiest item first. Opening an item starts a reading session. */
+/** Items of some kinds grouped by collection (Rimas, Platero y yo, an album), or by what
+ *  `groupsOf` names (a song under each of its artists, so it can appear in several groups),
+ *  the group with the easiest item first. Opening an item starts a reading session. */
 export function Library({
   kinds,
   title,
@@ -21,6 +22,7 @@ export function Library({
   empty,
   loose,
   kindLabel,
+  groupsOf,
 }: {
   kinds: CatalogItem['kind'][]
   title: string
@@ -28,6 +30,7 @@ export function Library({
   empty: ReactNode
   loose: string // the group name for items without a collection
   kindLabel?: (item: CatalogItem) => string
+  groupsOf?: (item: CatalogItem) => string[] | null // null: by collection
 }) {
   const navigate = useNavigate()
   const [items, setItems] = useState<CatalogItem[] | null>(null)
@@ -55,15 +58,18 @@ export function Library({
   const groups = useMemo(() => {
     const byName = new Map<string, Group>()
     for (const item of items ?? []) {
-      const name = item.collection ?? loose
-      const group = byName.get(name) ?? { name, author: item.author, items: [] }
-      if (group.author !== item.author) group.author = null // several writers
-      group.items.push(item)
-      byName.set(name, group)
+      for (const name of groupsOf?.(item) ?? [item.collection ?? loose]) {
+        const group = byName.get(name) ?? { name, author: item.author, items: [] }
+        if (group.author !== item.author) group.author = null // several writers
+        group.items.push(item)
+        byName.set(name, group)
+      }
     }
     const list = [...byName.values()]
     for (const group of list) group.items.sort(byEase)
     return list.sort((a, b) => byEase(a.items[0], b.items[0]))
+    // groupsOf is a constant per page
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items, loose])
 
   const open = async (contentId: number) => {

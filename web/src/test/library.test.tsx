@@ -86,6 +86,30 @@ describe('The stories library', () => {
 })
 
 describe('The songs and poems library', () => {
+  it('lists a song under each of its artists', async () => {
+    const songs = [
+      item(10, 'Chantaje', null, 30, 0.75, 'song', 'Shakira, Maluma'),
+      item(11, 'Loca', null, 20, 0.8, 'song', 'Shakira, El Cata'),
+      item(12, 'Hawái', null, 25, 0.78, 'song', 'Maluma'),
+    ]
+    vi.spyOn(api, 'catalog').mockResolvedValue(songs)
+    vi.spyOn(api, 'recommend').mockResolvedValue(recommendations)
+    render(
+      <MemoryRouter>
+        <Songs />
+      </MemoryRouter>,
+    )
+    const group = (name: string) => screen.getByText(name, { selector: 'summary span' }).closest('details')!
+    await screen.findByText('Shakira', { selector: 'summary span' })
+    const shakira = group('Shakira')
+    const maluma = group('Maluma')
+    const titles = (group: HTMLElement) =>
+      within(group).getAllByRole('row').slice(1).map((r) => within(r).getAllByRole('cell')[0].textContent)
+    expect(titles(shakira)).toEqual(['Locasong', 'Chantajesong'])
+    expect(titles(maluma)).toEqual(['Hawáisong', 'Chantajesong']) // a duet in both
+    expect(group('El Cata')).toBeInTheDocument()
+  })
+
   it('shows poems grouped by collection with their kind', async () => {
     show(<Songs />, '/songs')
     const rimas = (await screen.findByText('Rimas')).closest('details')!

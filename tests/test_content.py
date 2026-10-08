@@ -363,3 +363,47 @@ def test_a_poem_is_verse_analyzed_line_by_line_in_stanzas(conn):
         ["cuatro"],
     ]
     assert content.sentences("Uno, dos\n  tres", "poem") == ["Uno, dos", "tres"]
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("Dile - Don Omar.txt", ("Dile", ["Don Omar"])),
+        ("Chantaje - Shakira, Maluma.txt", ("Chantaje", ["Shakira", "Maluma"])),
+        ("Uno - Dos - Artista.txt", ("Uno - Dos", ["Artista"])),  # the last " - " splits
+        ("Si No Te Quiere.txt", None),  # no artist
+        (" - Artista.txt", None),  # no title
+    ],
+)
+def test_a_lyrics_file_name_gives_the_title_and_artists(name, expected):
+    from pathlib import Path
+
+    assert content.song_name(Path(name)) == expected
+
+
+def test_a_folder_of_lyrics_is_added_once_as_private_songs(conn, tmp_path):
+    folder = tmp_path / "lyrics"
+    folder.mkdir()
+    (folder / "Chantaje - Shakira, Maluma.txt").write_text(
+        "\ufeffLínea uno\nLínea dos\n", encoding="utf-8"
+    )
+    (folder / "Dile - Don Omar.txt").write_text("Dile\n", encoding="utf-8")
+    (folder / "Sin artista.txt").write_text("Hola\n", encoding="utf-8")
+
+    first = content.add_songs(conn, folder)
+    assert [name for _, name in first.added] == [
+        "Chantaje - Shakira, Maluma.txt",
+        "Dile - Don Omar.txt",
+    ]
+    assert first.unnamed == ["Sin artista.txt"]
+    rows = conn.execute(
+        "SELECT title, author, collection, is_private, source, text_es FROM content_items ORDER BY content_id"
+    ).fetchall()
+    assert [tuple(r) for r in rows] == [
+        ("Chantaje", "Shakira, Maluma", None, 1, "private", "Línea uno\nLínea dos"),  # no BOM
+        ("Dile", "Don Omar", None, 1, "private", "Dile"),
+    ]
+
+    (folder / "Nueva - Ozuna.txt").write_text("Nueva\n", encoding="utf-8")
+    again = content.add_songs(conn, folder)  # the folder grows: only the new song is added
+    assert ([name for _, name in again.added], len(again.already)) == (["Nueva - Ozuna.txt"], 2)

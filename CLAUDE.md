@@ -1108,6 +1108,15 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
       underline (`--loanword`), clickable, tooltip "English loanword"; both defined for
       light and dark, with a legend above the text when a song has either.
       `ReadingState.marked` (per line: word → kind).
+    - **`content add-songs <folder>` (Jason's naming):** every `Title - Artist1,
+      Artist2.txt` becomes a private song (`content.song_name`: the last " - " splits, so
+      a title may contain one); author = the artists as written, no collection: the
+      Songs page lists a song under each of its artists (Jason: a duet appears under both;
+      `Library`'s `groupsOf`, no schema change). Re-runnable: a song with the same title
+      and author is skipped, so the folder can be added again as it grows; a file not
+      named that way is reported, not guessed. Files are read as `utf-8-sig` (a Notepad
+      byte-order mark isn't text). Windows file names can't hold `?`, so a title like
+      *¿Qué Tengo Que Hacer?* loses its closing mark.
     - **No narration of copyrighted songs (Jason, fair use):** `ReadingState.is_private`;
       the reader hides the narration bar and the per-stanza ▶ for private items and says
       so; clicked words, lesson cards and the tutor's replies still speak.
