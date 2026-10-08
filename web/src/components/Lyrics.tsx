@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { type ComparedLine, type Expression, type ReadingState } from '../api/client'
+import { allEnglish } from '../lib/marks'
 
 const VERDICT: Record<string, { label: string; className: string }> = {
   right: { label: 'Right', className: 'bg-accent-soft text-accent-text' },
@@ -8,7 +9,8 @@ const VERDICT: Record<string, { label: string; className: string }> = {
 }
 
 /** Try first: translate some lines into English yourself, before seeing any translation.
- *  The first stanza is chosen to start with; any line can be added or left out. */
+ *  The first stanza is chosen to start with; any line can be added or left out, except a
+ *  line that is all English (nothing to translate). */
 export function TryLines({
   state,
   busy,
@@ -18,9 +20,10 @@ export function TryLines({
   busy: boolean
   onCompare: (attempts: { line_no: number; text: string }[]) => void
 }) {
+  const english = (n: number) => allEnglish(state.paragraphs.flat()[n - 1] ?? '', state.marked[n - 1])
   const firstStanza = state.paragraphs[0]?.length ?? 0
   const [chosen, setChosen] = useState<Set<number>>(
-    () => new Set(Array.from({ length: firstStanza }, (_, i) => i + 1)),
+    () => new Set(Array.from({ length: firstStanza }, (_, i) => i + 1).filter((n) => !english(n))),
   )
   const [texts, setTexts] = useState<Record<number, string>>({})
   let lineNo = 0
@@ -39,6 +42,13 @@ export function TryLines({
             {stanza.map((line) => {
               const n = ++lineNo
               const on = chosen.has(n)
+              if (english(n)) {
+                return (
+                  <p key={n} lang="en" className="ml-6 italic text-english" title="English: nothing to translate">
+                    {line}
+                  </p>
+                )
+              }
               return (
                 <div key={n} className="space-y-1">
                   <label className="flex items-start gap-2">

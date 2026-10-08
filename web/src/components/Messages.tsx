@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import type { Lesson, Turn } from '../api/client'
+import { markOf, type LineMarks } from '../lib/marks'
 import { splitWords } from '../lib/text'
 import { useSpeech } from '../state/speechContext'
 import { LessonCard, LessonList } from './LessonCard'
@@ -20,6 +21,7 @@ export function SpanishText({
   active = null,
   onLookUp,
   marked,
+  marks,
 }: {
   text?: string
   units?: string[]
@@ -27,6 +29,7 @@ export function SpanishText({
   active?: number | null
   onLookUp?: LookUp
   marked?: Set<string>
+  marks?: LineMarks[] // per unit: a song line's English words and loanwords
 }) {
   const [lookup, setLookup] = useState<
     { word: string; lesson?: Lesson; error?: string; loading?: boolean } | null
@@ -44,9 +47,18 @@ export function SpanishText({
     }
   }
 
-  const words = (unit: string) =>
-    splitWords(unit).map((part, i) =>
-      part.word && onLookUp ? (
+  const words = (unit: string, u = 0) =>
+    splitWords(unit).map((part, i) => {
+      const mark = part.word ? markOf(part.text, marks?.[u]) : undefined
+      if (mark === 'english') {
+        // The song switching into English: not Spanish vocabulary, so nothing to look up.
+        return (
+          <span key={i} lang="en" title="English" className="text-english italic">
+            {part.text}
+          </span>
+        )
+      }
+      return part.word && onLookUp ? (
         <button
           key={i}
           type="button"
@@ -55,15 +67,17 @@ export function SpanishText({
             marked?.has(part.text.toLowerCase())
               ? 'underline decoration-accent decoration-2'
               : 'decoration-dotted decoration-1'
-          }`}
-          title={`Look up “${part.text}”`}
+          } ${mark === 'loanword' ? 'text-loanword underline decoration-dashed decoration-loanword' : ''}`}
+          title={mark === 'loanword' ? `English loanword: look up “${part.text}”` : `Look up “${part.text}”`}
         >
           {part.text}
         </button>
       ) : (
-        <span key={i}>{part.text}</span>
-      ),
-    )
+        <span key={i} className={mark === 'loanword' ? 'text-loanword' : undefined}>
+          {part.text}
+        </span>
+      )
+    })
 
   return (
     <>
@@ -78,7 +92,7 @@ export function SpanishText({
                   ref={u === active ? (node) => node?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' }) : undefined}
                   className={u === active ? 'rounded-sm bg-accent-soft' : undefined}
                 >
-                  {words(unit)}
+                  {words(unit, u)}
                 </span>
               </span>
             ))

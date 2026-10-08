@@ -424,6 +424,7 @@ class ContentDetail(BaseModel):
     title: str
     author: str | None
     source: str | None
+    is_private: bool  # copyrighted (a song, a private book): kept local, never narrated
     book_id: int | None
     book_title: str | None
     chapter_no: int | None
@@ -469,6 +470,11 @@ class ReadingState(BaseModel):
     remaining: int  # ... still to study
     readable_until: int  # sentences, from the start, with every word studied or known
     unstudied: list[str]  # surface forms still to study, to mark in the text
+    # Per sentence (a song's line): its marked words, lowercase -> 'english' (the song
+    # switching into English: not Spanish vocabulary) or 'loanword' (an English word used as
+    # Spanish). Empty for anything but a song checked for English (english.py).
+    marked: list[dict[str, Literal["english", "loanword"]]]
+    is_private: bool  # copyrighted: the reader doesn't narrate it (single words still speak)
     finished: bool
 
 
@@ -791,6 +797,8 @@ def create_app(
             remaining=len(session.remaining),
             readable_until=session.readable_until(),
             unstudied=sorted(session.unstudied_forms()),
+            marked=session.marked_words(),
+            is_private=item["is_private"],
             finished=session.finished,
         )
 
@@ -847,6 +855,8 @@ def create_app(
     def reading_look_up(session_id: int, request: LookUp) -> ReadingLookUp:
         session = reading_for(session_id)
         with lock:
+            if session.only_english(request.word):
+                raise HTTPException(404, f"“{request.word}” is English in this song.")
             found = session.look_up(request.word)
             if found is None:
                 raise HTTPException(404, f"“{request.word}” isn't a word the dictionary knows.")

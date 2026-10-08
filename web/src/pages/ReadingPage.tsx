@@ -309,7 +309,10 @@ function Read({
     return { units: state.paragraphs.flat(), starts, breaks }
   }, [state.paragraphs])
   const narration = useNarration(units, verse, breaks)
-  const { available } = useSpeech()
+  // Copyrighted items (private songs) aren't read aloud in full; single words still are.
+  const speech = useSpeech()
+  const available = speech.available && !state.is_private
+  const kinds = new Set(state.marked.flatMap((line) => Object.values(line)))
 
   return (
     <section aria-label="Text" className="space-y-4">
@@ -318,7 +321,24 @@ function Read({
           ? 'Underlined: words you haven’t studied yet. Click any word to look it up.'
           : 'Click any word to look it up.'}
       </p>
+      {kinds.size > 0 && (
+        <p className="flex flex-wrap gap-x-4 text-sm text-ink-2" aria-label="Marked words">
+          {kinds.has('english') && (
+            <span>
+              <span lang="en" className="text-english italic">English</span>: the song in English, nothing to learn
+            </span>
+          )}
+          {kinds.has('loanword') && (
+            <span>
+              <span className="text-loanword underline decoration-dashed">loanword</span>: English used as Spanish
+            </span>
+          )}
+        </p>
+      )}
       {available && <NarrationBar narration={narration} total={units.length} verse={verse} />}
+      {state.is_private && speech.available && (
+        <p className="text-sm text-muted">Narration is off for copyrighted songs. Click a word to hear it.</p>
+      )}
       <article className="space-y-4 text-[1.05rem] leading-relaxed text-ink">
         {state.paragraphs.map((paragraph, i) => {
           const active =
@@ -340,6 +360,7 @@ function Read({
                     active={narration.status === 'idle' ? null : active}
                     onLookUp={onLookUp}
                     marked={marked}
+                    marks={state.marked.slice(starts[i], starts[i] + paragraph.length)}
                   />
                 </div>
                 {available && (

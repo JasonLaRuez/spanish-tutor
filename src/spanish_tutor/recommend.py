@@ -81,7 +81,7 @@ def item(conn: sqlite3.Connection, content_id: int) -> dict | None:
     if not found:
         return None
     detail = found[0]
-    for flag in ("indexed", "started", "finished"):
+    for flag in ("indexed", "started", "finished", "is_private"):
         detail[flag] = bool(detail[flag])
     return detail
 

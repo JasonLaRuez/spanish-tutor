@@ -5,6 +5,7 @@ SELECT c.content_id,
        c.title,
        COALESCE(c.author, b.author) AS author,
        COALESCE(c.source, b.source) AS source,
+       COALESCE(c.is_private, b.is_private) AS is_private,  -- copyrighted, local only
        c.book_id,
        b.title AS book_title,
        c.chapter_no,

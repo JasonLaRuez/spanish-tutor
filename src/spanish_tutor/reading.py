@@ -28,9 +28,10 @@ from langchain_chroma import Chroma
 from langchain_core.embeddings import Embeddings
 from langchain_core.vectorstores import InMemoryVectorStore
 
-from spanish_tutor import content, db, recommend
+from spanish_tutor import content, db, english, recommend
 from spanish_tutor.config import MODEL
 from spanish_tutor.conversation import INSTRUCTIONS, ReplyGenerator, Tutor
+from spanish_tutor.english import is_english
 from spanish_tutor.lexicon import Analysis, TokenAnalysis, normalize_text
 from spanish_tutor.teaching import Lesson, lesson
 from spanish_tutor.words import Event, Lexeme, LexiconIndex, log_events
@@ -120,6 +121,13 @@ class ReadingSession:
         content.start(conn, content_id, chosen_via, self.session_id)
 
         analyze_many = analyze_many or (lambda units: [analyze(u) for u in units])
+        # A song's marked words per line (english.py): its English words are skipped like
+        # names; its English loanwords are ordinary words, only shown marked.
+        self.marks = english.load_marks(conn, content_id)
+        self.english = {
+            n: {w for w, kind in words.items() if kind == "english"}
+            for n, words in self.marks.items()
+        }
         # Per sentence: (surface form, its lexeme or None), and every new word in order.
         self.tokens: list[list[tuple[str, Lexeme | None]]] = []
         self.new_words: list[NewWord] = []
@@ -130,6 +138,9 @@ class ReadingSession:
         ):
             resolved = []
             for form, analyses in tokens:
+                if is_english(form, self.english.get(number + 1)):
+                    resolved.append((form, None))
+                    continue
                 for lemma, pos in analyses:
                     lex = self._lexeme(form, (lemma, pos))
                     resolved.append((form, lex))
@@ -179,7 +190,10 @@ class ReadingSession:
 
     def look_up(self, word: str) -> Lesson | None:
         """A word clicked in the text: taught if unknown (a one-word study turn), else a
-        free reminder. None for anything that isn't a word."""
+        free reminder. None for anything that isn't a word, or is one of the text's English
+        words (english.py)."""
+        if self.only_english(word):
+            return None
         lex = self.index.headword(normalize_text(word))
         if lex is None:
             found = [
@@ -195,6 +209,17 @@ class ReadingSession:
             self._teach([lex])
         context = next((w.context for w in self.new_words if w.lexeme == lex), None)
         return self._lesson(lex, context)
+
+    def only_english(self, word: str) -> bool:
+        """Whether a word appears in the text only as English: marked English on every line
+        that has it."""
+        word = normalize_text(word)
+        lines = [n for n, unit in enumerate(self.units, 1) if word in english.words_of(unit)]
+        return bool(lines) and all(word in self.english.get(n, set()) for n in lines)
+
+    def marked_words(self) -> list[dict[str, str]]:
+        """Per sentence (line): its marked words and their kind, for the reader page."""
+        return [self.marks.get(n, {}) for n in range(1, len(self.units) + 1)]
 
     def finish(self) -> None:
         """Finished reading: `seen` for every known word in the text, and the item finished."""

@@ -602,6 +602,8 @@ export interface components {
             author: string | null;
             /** Source */
             source: string | null;
+            /** Is Private */
+            is_private: boolean;
             /** Book Id */
             book_id: number | null;
             /** Book Title */
@@ -950,6 +952,12 @@ export interface components {
             readable_until: number;
             /** Unstudied */
             unstudied: string[];
+            /** Marked */
+            marked: {
+                [key: string]: "english" | "loanword";
+            }[];
+            /** Is Private */
+            is_private: boolean;
             /** Finished */
             finished: boolean;
         };

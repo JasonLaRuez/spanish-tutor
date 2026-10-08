@@ -427,6 +427,27 @@ CREATE TABLE IF NOT EXISTS song_translation_lines (
     PRIMARY KEY (translation_id, line_no)
 ) WITHOUT ROWID;
 
+-- English inside songs (migration 11): each line's English words, marked once per song by a
+-- model call in context, so an English "come" never counts as Spanish comer. Every step
+-- that reads the text skips them on that line. A song with none still has its check row.
+CREATE TABLE IF NOT EXISTS english_checks (
+    content_id    INTEGER PRIMARY KEY REFERENCES content_items (content_id),
+    model         TEXT NOT NULL,
+    input_tokens  INTEGER,
+    output_tokens INTEGER,
+    checked_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS english_words (
+    content_id INTEGER NOT NULL REFERENCES english_checks (content_id),
+    line_no    INTEGER NOT NULL CHECK (line_no >= 1),  -- as in song_translation_lines
+    word       TEXT NOT NULL,                          -- lowercase
+    -- english: the song switching into English (skipped as vocabulary); loanword: an English
+    -- word used as Spanish (la party), counted and taught, only marked for the reader.
+    kind       TEXT NOT NULL CHECK (kind IN ('english', 'loanword')),
+    PRIMARY KEY (content_id, line_no, word)
+) WITHOUT ROWID;
+
 
 -- --- Evaluation (slice 4.4, migration 9) ----------------------------------------------
 

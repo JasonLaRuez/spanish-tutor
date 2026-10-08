@@ -185,7 +185,25 @@ about it with the tutor, who keeps to your vocabulary and draws on passages of t
 Songs and poems add two steps: translate a few lines into English yourself first, then
 compare with a natural translation and a literal one side by side, with a note wherever
 they differ and the song's fixed expressions explained. The translation is made once per
-song and kept. Bécquer's *Rimas* (public domain) are the demo:
+song and kept.
+
+**Your own songs** stay local: put each one's lyrics in `private/lyrics/` (gitignored) as a
+UTF-8 `.txt` file, one lyric line per line and a blank line between stanzas, then add and
+index it. Many songs mix in English, and words are matched to the dictionary one at a time,
+so an English "come" (*come with me*) would otherwise count as Spanish *comer*. When a song
+is indexed, one model call (about 1¢) marks each line's English words and English loanwords
+in context. English words are skipped everywhere (difficulty, study, credit, lookups, Try
+first) and shown in their own color; loanwords (*la party*, *mi baby*) are ordinary Spanish
+words, shown in a second color so you can see what you already know. Copyrighted songs are
+never narrated in full; single words can still be heard.
+
+```sh
+uv run python -m spanish_tutor.content add-song private/lyrics/la-cancion.txt \
+    --title "La canción" --author "Artista"
+uv run python -m spanish_tutor.content index --batch
+```
+
+Bécquer's *Rimas* (public domain) are the demo:
 
 ```sh
 uv run python -m spanish_tutor.ingest.gutenberg 53552

@@ -25,6 +25,8 @@
   --note-ink: #5a4100;
   --note-line: #f0d48a;
   --danger: #b42318;
+  --english: #7a3fc0; /* a song's English words (violet) */
+  --loanword: #0b7a68; /* English loanwords used as Spanish (teal) */
 }
 
 @media (prefers-color-scheme: dark) {
@@ -50,6 +52,8 @@
     --note-ink: #f2dca0;
     --note-line: #5c4a1c;
     --danger: #f97066;
+    --english: #c4a2f5;
+    --loanword: #4fd1b9;
   }
 }
 
@@ -75,6 +79,8 @@
   --note-ink: #f2dca0;
   --note-line: #5c4a1c;
   --danger: #f97066;
+  --english: #c4a2f5;
+  --loanword: #4fd1b9;
 }
 
 @theme inline {
@@ -98,6 +104,8 @@
   --color-note-ink: var(--note-ink);
   --color-note-line: var(--note-line);
   --color-danger: var(--danger);
+  --color-english: var(--english);
+  --color-loanword: var(--loanword);
   --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 

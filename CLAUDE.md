@@ -1079,6 +1079,44 @@ artifact copy may also exist; ask Jason for its link). Phase structure:
       of 152. *Corazón* as a book is 21.9% unknown, just over the ceiling, so it's "too
       hard for now" until the bank grows a little. Poetry stays hardest (29-33% unknown);
       graded readers 26-31%. Notebook 01 §6.5 recomputes the table.
+  - **English inside songs, loanwords, no narration of private songs (2026-10-08, before
+    Jason adds his 52 songs; his choices).**
+    - **The problem, measured** on made-up Spanglish lines against the real lexicon: most
+      English words are harmless (the resolver marks *you*, *care*, *every* not Spanish;
+      the tagger drops *know*, *tonight*), but English words that are also Spanish words
+      are resolved without context: *come* (come with me) → *comer*, *me* → the pronoun,
+      *dance* → *danzar*, *so*. They'd be counted and taught.
+    - **The fix (`english.py`):** when a song is indexed, one structured call (Opus 5.5,
+      low effort) marks each line's words, in context, as `english` (the song switching
+      into English) or `loanword` (Jason's addition: an English word used as Spanish, *la
+      party*, *mi baby*, *fútbol*). Words not on their line, or lines that don't exist,
+      are dropped; a word given as both counts as English. Only songs are checked, once
+      (`english_checks`); `content index` shows the estimate and asks before checking.
+    - **English words are skipped on their line everywhere:** indexing
+      (`content.analyze_text(..., english)`), the reading session's new words, unstudied
+      forms and finishing credit, lookups (`ReadingSession.only_english`; the API answers
+      "“with” is English in this song."), Try first (all-English lines can't be chosen),
+      and the translation prompt (kept as written). Contractions: the tagger splits
+      *don't* into *do* + *n't*, so each piece of a marked word counts
+      (`english.is_english`). **Loanwords are Spanish vocabulary**: counted, studied and
+      looked up like any word, only shown marked.
+    - **Migration 11 (approved; the `kind` column added at Jason's request the same
+      day):** `english_checks` (one row per checked song: model, tokens) and
+      `english_words` (content_id, line_no, word, kind; WITHOUT ROWID).
+    - **UI (Jason: a color as well as a style):** English words violet italic
+      (`--english`), not clickable, tooltip "English"; loanwords teal with a dashed
+      underline (`--loanword`), clickable, tooltip "English loanword"; both defined for
+      light and dark, with a legend above the text when a song has either.
+      `ReadingState.marked` (per line: word → kind).
+    - **No narration of copyrighted songs (Jason, fair use):** `ReadingState.is_private`;
+      the reader hides the narration bar and the per-stanza ▶ for private items and says
+      so; clicked words, lesson cards and the tutor's replies still speak.
+    - **Measured live:** `tests/test_english_live.py` (5 made-up lines) judged every word
+      right (*come*/*me* English only in "so come with me", *el gato come* Spanish, *party*
+      and *baby* loanwords), 885 in / 157 out tokens, 0.67¢; the estimate constants come
+      from it (a 40-line song is estimated at ~3¢, generously). End to end on a DB copy
+      with a made-up song: the index counted *comer* and *me* once each (the Spanish
+      lines), no *danzar*, *so* or *do*; the check cost 1¢.
   - **Listening (built 2026-10-06; Jason's choices).** Text-to-speech in every skill, as
     the last feature before 4.4. A speaking skill was dropped (pronunciation scoring was
     its point; the Claude API takes no audio).

@@ -22,7 +22,7 @@ every later session. The comparison is one call per submitted attempt, logged as
 
 import sqlite3
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Literal
 
@@ -115,10 +115,22 @@ answer every line number exactly once.
 
 
 def translation_prompt(
-    kind: str, title: str, lines: list[str], expressions: list[Expression]
+    kind: str,
+    title: str,
+    lines: list[str],
+    expressions: list[Expression],
+    english: Mapping[int, set[str]] | None = None,
 ) -> str:
     prompt = TRANSLATION_INSTRUCTIONS.format(kind=kind) + f"\n«{title}»\n"
     prompt += "\n".join(f"{n}. {line}" for n, line in enumerate(lines, 1))
+    if english:
+        prompt += (
+            "\n\nSome lines switch into English. Keep these words as written, in both the "
+            "natural and the literal translation, and translate only the Spanish around them:\n"
+        )
+        prompt += "".join(
+            f"- line {n}: {', '.join(sorted(words))}\n" for n, words in sorted(english.items())
+        )
     if expressions:
         prompt += (
             "\n\nThese lines contain fixed expressions. Use the meaning given here for the "
@@ -188,7 +200,7 @@ class LyricsSession(ReadingSession):
 
     def _new_translation(self) -> list[LineTranslation]:
         prompt = translation_prompt(
-            self.item["kind"], self.item["title"], self.units, self.expressions()
+            self.item["kind"], self.item["title"], self.units, self.expressions(), self.english
         )
         started = time.perf_counter()
         generations = []

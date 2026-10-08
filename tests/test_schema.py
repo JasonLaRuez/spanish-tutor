@@ -349,7 +349,7 @@ def test_pending_migrations_lists_only_what_an_old_database_needs(conn):
     old = connect(":memory:")
     old.executescript((FIXTURES / "schema_v1.sql").read_text(encoding="utf-8"))
     old.execute("PRAGMA user_version = 1")
-    assert pending_migrations(old) == [2, 3, 4, 5, 6, 7, 8, 9, 10]
+    assert pending_migrations(old) == [2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
 
 
 def test_version_2_database_upgrades_to_version_3_keeping_notes(conn):
@@ -818,7 +818,7 @@ def test_version_9_database_gains_collections_with_text_es_still_last(conn):
     init_schema(old)
 
     assert table_shapes(old) == table_shapes(conn)
-    assert old.execute("PRAGMA user_version").fetchone()[0] == 10
+    assert old.execute("PRAGMA user_version").fetchone()[0] == migrations()[-1][0]
     collections = dict(old.execute("SELECT content_id, collection FROM content_items"))
     assert collections == {chapter: None, rima: "Rimas", song: None}
     assert old.execute("PRAGMA foreign_key_check").fetchall() == []
@@ -834,3 +834,20 @@ def test_a_chapter_never_has_a_collection(conn):
         conn.execute("UPDATE content_items SET collection = 'X' WHERE content_id = ?", (chapter,))
     song = add_song(conn)
     conn.execute("UPDATE content_items SET collection = 'Un disco' WHERE content_id = ?", (song,))
+
+
+def test_version_10_database_gains_the_english_tables(conn):
+    old = database_at(10)
+    song = add_song(old)
+    old.commit()
+
+    init_schema(old)
+
+    assert table_shapes(old) == table_shapes(conn)
+    old.execute("INSERT INTO english_checks (content_id, model) VALUES (?, 'm')", (song,))
+    old.execute("INSERT INTO english_words VALUES (?, 1, 'come', 'english')", (song,))
+    old.execute("INSERT INTO english_words VALUES (?, 2, 'party', 'loanword')", (song,))
+    with pytest.raises(sqlite3.IntegrityError):  # only the two kinds
+        old.execute("INSERT INTO english_words VALUES (?, 3, 'hola', 'spanish')", (song,))
+    with pytest.raises(sqlite3.IntegrityError):  # words belong to a check
+        old.execute("INSERT INTO english_words VALUES (999, 1, 'come', 'english')")

@@ -30,12 +30,13 @@ import re
 import sqlite3
 import sys
 from collections import Counter
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from spanish_tutor import db
+from spanish_tutor import db, english
 from spanish_tutor.config import DATA_DIR
+from spanish_tutor.english import is_english
 from spanish_tutor.lexicon import Analysis, TokenAnalysis
 from spanish_tutor.resolve import (
     MAX_FORMS_PER_CALL,
@@ -159,15 +160,21 @@ class Analyzed:
     context: dict[Key, str] = field(default_factory=dict)
 
 
-def analyze_text(text: str, kind: str, analyze_many: AnalyzeMany) -> Analyzed:
+def analyze_text(
+    text: str, kind: str, analyze_many: AnalyzeMany, english: Mapping[int, set[str]] | None = None
+) -> Analyzed:
     """Count every (form, lemma, pos) in a text, per analysis: "del" counts de and el.
 
-    Tokens with no analysis (names, the later words of an expression) aren't counted.
+    Tokens with no analysis (names, the later words of an expression) aren't counted, nor
+    are a song line's English words (`english`: line number -> words; english.py).
     """
     units = sentences(text, kind)
     analyzed = Analyzed()
-    for unit, tokens in zip(units, analyze_many(units), strict=True):
+    english = english or {}
+    for number, (unit, tokens) in enumerate(zip(units, analyze_many(units), strict=True), 1):
         for form, analyses in tokens:
+            if is_english(form, english.get(number)):
+                continue
             for lemma, pos in analyses:
                 key = (form, lemma, pos)
                 analyzed.counts[key] += 1
@@ -260,7 +267,7 @@ def index_item(
     transaction fails, rebuild `index`: it may hold rolled-back rows.
     """
     kind, text = item_kind(conn, content_id)
-    analyzed = analyzed or analyze_text(text, kind, analyze_many)
+    analyzed = analyzed or analyze_text(text, kind, analyze_many, english.load(conn, content_id))
     plan = plan_index(conn, index, analyzed)
     asked = resolver(kind, plan.pending) if resolver and plan.pending else None
 
@@ -332,6 +339,38 @@ def estimate_cost(forms: int) -> float:
     calls = -(-forms // MAX_FORMS_PER_CALL)
     tokens_in = calls * EST_PROMPT_TOKENS + forms * EST_TOKENS_PER_FORM_IN
     return (tokens_in * PRICE_IN + forms * EST_TOKENS_PER_FORM_OUT * PRICE_OUT) / 1e6
+
+
+def unchecked_songs(conn: sqlite3.Connection, ids: Iterable[int]) -> list[int]:
+    """The songs among `ids` whose English hasn't been marked yet (english.py)."""
+    return [
+        content_id
+        for content_id in ids
+        if item_kind(conn, content_id)[0] == "song" and not english.checked(conn, content_id)
+    ]
+
+
+def english_estimate(conn: sqlite3.Connection, songs: Iterable[int]) -> float:
+    return sum(english.estimate_cost(len(sentences(item_kind(conn, s)[1], "song"))) for s in songs)
+
+
+def check_english(
+    conn: sqlite3.Connection, songs: Iterable[int], ask: english.Ask, model: str
+) -> tuple[int, int]:
+    """Mark each song's English words (one call per song) and store them, each song in its
+    own transaction. Returns the tokens used, (in, out)."""
+    tokens_in = tokens_out = 0
+    for content_id in songs:
+        kind, text = item_kind(conn, content_id)
+        title = conn.execute(
+            "SELECT title FROM content_items WHERE content_id = ?", (content_id,)
+        ).fetchone()[0]
+        marks, generation = english.mark(title, sentences(text, kind), ask)
+        with conn:
+            english.store(conn, content_id, marks, model, generation)
+        tokens_in += generation.input_tokens + generation.cache_read_tokens
+        tokens_out += generation.output_tokens
+    return tokens_in, tokens_out
 
 
 @dataclass(frozen=True)
@@ -492,13 +531,27 @@ def cmd_index(
 
     resolver = ClaudeResolver() if resolve else None
     review: list[tuple[int, Outcome]] = []
+    # Songs first get their English (and English loanwords) marked, so analysis can skip it.
+    if resolve and (songs := unchecked_songs(conn, ids)):
+        from spanish_tutor.config import MODEL
+        from spanish_tutor.conversation import ClaudeGenerator
+
+        cost = english_estimate(conn, songs)
+        print(f"{len(songs)} songs to check for English, ~${cost:.2f}")
+        if yes or input("check them? [y/N] ").strip().lower() == "y":
+            tokens_in, tokens_out = check_english(
+                conn, songs, ClaudeGenerator(effort="low").ask, MODEL
+            )
+            dollars = (tokens_in * PRICE_IN + tokens_out * PRICE_OUT) / 1e6
+            print(f"checked: {tokens_in:,} in / {tokens_out:,} out, ${dollars:.2f}")
     if batch:
         # Analyze everything, resolve the distinct forms together (one estimate, one
         # question), then index each item from the decisions just stored.
         analyzed_items = []
         for n, content_id in enumerate(ids, 1):
             kind, text = item_kind(conn, content_id)
-            analyzed_items.append((content_id, kind, analyze_text(text, kind, analyze_many)))
+            marks = english.load(conn, content_id)
+            analyzed_items.append((content_id, kind, analyze_text(text, kind, analyze_many, marks)))
             if n % 25 == 0 or n == len(ids):
                 print(f"analyzed {n} of {len(ids)} items")
         if resolver is not None:
@@ -529,7 +582,7 @@ def cmd_index(
         return
     for content_id in ids:
         kind, text = item_kind(conn, content_id)
-        analyzed = analyze_text(text, kind, analyze_many)
+        analyzed = analyze_text(text, kind, analyze_many, english.load(conn, content_id))
         if resolver is not None:
             # Look first: show what the call would cost, and ask, before spending anything.
             plan = plan_index(conn, index, analyzed)

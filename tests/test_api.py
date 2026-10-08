@@ -781,3 +781,41 @@ def test_the_evaluation_summary_reports_the_log_with_its_n(serve, db_path):
     }
     assert found["complete"]["n"] == 0  # no reply with new words yet
     assert found["new_word_precision"]["n"] == 0
+
+
+def test_a_private_songs_state_marks_its_english_and_says_it_isnt_narrated(serve, db_path):
+    from spanish_tutor import content, english
+
+    conn = db.connect(db_path)
+    with conn:
+        song = content.add_item(
+            conn, "song", "Canción", "El gato come en casa.\nSo come with me",
+            source="private", is_private=True,
+        )  # fmt: skip
+        english.store(
+            conn,
+            song,
+            {2: {"so": "english", "come": "english", "with": "english", "me": "english"}},
+            "m",
+        )
+    conn.close()
+    client, _ = serve(translate=translator((1, 2)))
+
+    state = client.post("/api/reading", json={"content_id": song, "chosen_via": "requested"}).json()
+    assert state["is_private"] is True
+    assert state["marked"] == [
+        {},
+        {"so": "english", "come": "english", "with": "english", "me": "english"},
+    ]
+    session = state["session_id"]
+    response = client.post(f"/api/reading/{session}/lookup", json={"word": "with"})
+    assert (response.status_code, response.json()["detail"]) == (
+        404,
+        "“with” is English in this song.",
+    )
+
+    story = add_story(db_path, STORY)
+    other = client.post(
+        "/api/reading", json={"content_id": story, "chosen_via": "requested"}
+    ).json()
+    assert other["is_private"] is False and other["marked"] == [{}, {}]

@@ -169,6 +169,8 @@ const readingState = (overrides: Partial<ReadingState> = {}): ReadingState => ({
   remaining: 3,
   readable_until: 0,
   unstudied: ['bosque', 'bellota', 'cae'],
+  marked: [{}, {}],
+  is_private: false,
   finished: false,
   ...overrides,
 })
@@ -287,6 +289,8 @@ const rima = readingState({
   remaining: 0,
   unstudied: [],
   readable_until: 3,
+  marked: [{}, {}, {}],
+  is_private: false,
 })
 
 const translation = {
